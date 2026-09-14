@@ -1,0 +1,54 @@
+# Synthetic market-data simulator  (ID: SIM-001)
+
+| Field            | Value |
+|------------------|-------|
+| Version          | 1.0.0 |
+| Owner            | Market Risk Methodology |
+| Approval status  | Draft |
+| Code             | `novera.simulation.market_data` |
+| Last validated   | 2026-09-14 |
+
+## Definition
+Produces a reproducible daily history for every factor in the risk-factor universe, plus
+the business-date snapshot and the previous-day snapshot used by the platform. It exists
+so the platform can be demonstrated offline with realistic cross-asset behaviour. It is
+not a forecast and makes no claim about real markets.
+
+## Mathematical method
+- Global factor `g_t ~ N(0,1)` daily. Each factor's standardised shock is
+  `z = beta * g + w * common_group + sqrt(1 - beta^2 - w^2) * eps`.
+- Prices, spreads, vols: `log S_{t+1} = log S_t + sigma sqrt(dt) m_t z_t - sigma^2 dt / 2 + d_t`,
+  where `m_t` is the episode vol multiplier and `d_t` the episode drift.
+- Zero rates: `r_{t+1} = r_t + sigma_d m_t (level + 0.45 slope_load * s + 0.25 curv_load * c) + d_t - 0.003 (r_t - r_base)`.
+- Spreads and ATM vols mean-revert in log space to their base levels.
+- Vol surface node = ATM(T) * term(T) * (1 - skew * k * lm + smile * (k * lm)^2), where
+  `lm = ln(K/F) / sqrt(T)`, `k = 2.5`; equity skew 0.30, FX skew 0.03, smile 0.10 / 0.12.
+- EUR/GBP is derived from EUR/USD and GBP/USD so triangular consistency holds.
+- Commodity curves: spot node times `(1 + (slope + tilt_t) * T)`.
+
+## Inputs
+Base levels and vols in `simulation/reference_levels.py`; episodes in
+`DEFAULT_EPISODES`; seed and horizon in `MarketSimConfig`.
+
+## Assumptions
+Constant correlations except through the vol multiplier; lognormal returns; no jumps
+outside the episodes; no holidays (weekdays only); no intraday data.
+
+## Calibration
+Annualised vols set to plausible 2024-2026 levels. Episode sizes chosen to be visibly
+larger than typical daily noise (crash: equities -27%, vol x2.3; rates shock: +150bp short,
++90bp long). Post-episode decay of 80% of the vol move and 60% of the spread move over 60 days.
+
+## Limitations
+Synthetic history cannot be used to validate a VaR model against real events. Smile
+shape is static outside episodes. Correlations across currencies' rate curves come only
+through the global factor. Not suitable for any regulatory purpose.
+
+## Validation tests
+`tests/test_market_data.py`: reproducibility, positivity, skew sign, triangular FX
+consistency, backwardation shape, drawdown and rates-shock visibility, storage round trip.
+
+## Change history
+| Version | Date | Change | Author |
+|---------|------|--------|--------|
+| 1.0.0 | 2026-09-14 | Initial model | Novera |

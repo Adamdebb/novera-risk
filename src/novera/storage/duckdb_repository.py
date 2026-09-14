@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import pandas as pd
 from pydantic import TypeAdapter
 
 from novera.domain.counterparties import CSA, Counterparty, NettingSet
@@ -28,6 +29,8 @@ from novera.domain.organisation import (
 )
 from novera.domain.snapshots import PortfolioSnapshot
 from novera.domain.trades import Trade
+from novera.market_data.risk_factors import RiskFactor
+from novera.market_data.snapshot import MarketSnapshot
 
 _TRADE = TypeAdapter(Trade)
 
@@ -91,6 +94,34 @@ CREATE TABLE IF NOT EXISTS trade (
     trade_date DATE NOT NULL,
     payload JSON NOT NULL,
     PRIMARY KEY (snapshot_id, trade_id, version)
+);
+CREATE TABLE IF NOT EXISTS risk_factor (
+    factor_id VARCHAR PRIMARY KEY,
+    factor_type VARCHAR NOT NULL,
+    asset_class VARCHAR NOT NULL,
+    currency VARCHAR NOT NULL,
+    underlying VARCHAR NOT NULL,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS market_history (
+    as_of DATE NOT NULL,
+    factor_id VARCHAR NOT NULL,
+    value DOUBLE NOT NULL,
+    PRIMARY KEY (as_of, factor_id)
+);
+CREATE TABLE IF NOT EXISTS market_snapshot (
+    snapshot_id VARCHAR PRIMARY KEY,
+    as_of DATE NOT NULL,
+    source VARCHAR NOT NULL,
+    factor_count INTEGER NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS market_value (
+    snapshot_id VARCHAR NOT NULL,
+    factor_id VARCHAR NOT NULL,
+    value DOUBLE NOT NULL,
+    observed_at DATE NOT NULL,
+    PRIMARY KEY (snapshot_id, factor_id)
 );
 """
 
@@ -266,5 +297,81 @@ class DuckDBRepository:
         rows = self._conn.execute(
             "SELECT snapshot_id, business_date, trade_count FROM portfolio_snapshot "
             "ORDER BY business_date, created_at"
+        ).fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
+
+    # --- market data -----------------------------------------------------------------
+    def save_risk_factors(self, items: list[RiskFactor]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO risk_factor VALUES (?, ?, ?, ?, ?, ?)",
+            [(f.factor_id, f.factor_type.value, f.asset_class, f.currency, f.underlying, f.model_dump_json())
+             for f in items],
+        )
+
+    def load_risk_factors(self) -> list[RiskFactor]:
+        rows = self._conn.execute("SELECT payload FROM risk_factor ORDER BY factor_id").fetchall()
+        return [RiskFactor(**json.loads(p)) for (p,) in rows]
+
+    def save_market_history(self, history: pd.DataFrame) -> int:
+        """Bulk insert; rows already present for (as_of, factor_id) are replaced."""
+        df = history[["as_of", "factor_id", "value"]].copy()
+        df["as_of"] = pd.to_datetime(df["as_of"]).dt.date
+        self._conn.register("_history_df", df)  # duckdb-only: DataFrame scan
+        self._conn.execute(
+            "INSERT OR REPLACE INTO market_history SELECT as_of, factor_id, value FROM _history_df"
+        )
+        self._conn.unregister("_history_df")
+        return len(df)
+
+    def load_market_history(self, factor_ids: list[str] | None = None, start: date | None = None,
+                            end: date | None = None) -> pd.DataFrame:
+        clauses, params = [], []
+        if factor_ids:
+            clauses.append(f"factor_id IN ({', '.join('?' for _ in factor_ids)})")
+            params += factor_ids
+        if start is not None:
+            clauses.append("as_of >= ?")
+            params.append(start)
+        if end is not None:
+            clauses.append("as_of <= ?")
+            params.append(end)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self._conn.execute(
+            f"SELECT as_of, factor_id, value FROM market_history {where} ORDER BY as_of, factor_id", params
+        ).df()  # duckdb-only: .df()
+
+    def save_market_snapshot(self, snapshot: MarketSnapshot) -> str:
+        sid = snapshot.snapshot_id
+        if self._conn.execute("SELECT 1 FROM market_snapshot WHERE snapshot_id = ?", [sid]).fetchone():
+            return sid
+        self._conn.execute(
+            "INSERT INTO market_snapshot (snapshot_id, as_of, source, factor_count) VALUES (?, ?, ?, ?)",
+            [sid, snapshot.as_of, snapshot.source, len(snapshot.values)],
+        )
+        self._conn.executemany(
+            "INSERT INTO market_value VALUES (?, ?, ?, ?)",
+            [(sid, k, v, snapshot.observation_date(k)) for k, v in snapshot.values.items()],
+        )
+        return sid
+
+    def load_market_snapshot(self, snapshot_id: str) -> MarketSnapshot:
+        head = self._conn.execute(
+            "SELECT as_of, source FROM market_snapshot WHERE snapshot_id = ?", [snapshot_id]
+        ).fetchone()
+        if head is None:
+            raise KeyError(f"market snapshot {snapshot_id!r} not found")
+        rows = self._conn.execute(
+            "SELECT factor_id, value, observed_at FROM market_value WHERE snapshot_id = ?", [snapshot_id]
+        ).fetchall()
+        values = {r[0]: r[1] for r in rows}
+        observed = {r[0]: r[2] for r in rows if r[2] != head[0]}
+        snap = MarketSnapshot(as_of=head[0], values=values, observed_at=observed, source=head[1])
+        if snap.snapshot_id != snapshot_id:
+            raise RuntimeError(f"market snapshot {snapshot_id} failed integrity check on load")
+        return snap
+
+    def list_market_snapshots(self) -> list[tuple[str, date, int]]:
+        rows = self._conn.execute(
+            "SELECT snapshot_id, as_of, factor_count FROM market_snapshot ORDER BY as_of, created_at"
         ).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]

@@ -27,6 +27,42 @@ SWAP_CURVES: dict[str, dict[str, float]] = {
             "5Y": .1160, "7Y": .1170, "10Y": .1180, "15Y": .1185, "20Y": .1185, "30Y": .1185},
     "ZAR": {"1M": .0780, "3M": .0775, "6M": .0770, "1Y": .0765, "2Y": .0770, "3Y": .0780,
             "5Y": .0810, "7Y": .0840, "10Y": .0880, "15Y": .0920, "20Y": .0940, "30Y": .0950},
+    # Currencies traded only through FX; curves needed for forward pricing.
+    "CHF": {"1M": .0045, "3M": .0045, "6M": .0048, "1Y": .0052, "2Y": .0060, "3Y": .0068,
+            "5Y": .0080, "7Y": .0090, "10Y": .0102, "15Y": .0115, "20Y": .0120, "30Y": .0120},
+    "CAD": {"1M": .0300, "3M": .0298, "6M": .0292, "1Y": .0285, "2Y": .0282, "3Y": .0285,
+            "5Y": .0295, "7Y": .0305, "10Y": .0320, "15Y": .0335, "20Y": .0340, "30Y": .0338},
+    "AUD": {"1M": .0400, "3M": .0398, "6M": .0392, "1Y": .0385, "2Y": .0380, "3Y": .0382,
+            "5Y": .0392, "7Y": .0402, "10Y": .0418, "15Y": .0435, "20Y": .0442, "30Y": .0440},
+    "NZD": {"1M": .0420, "3M": .0415, "6M": .0405, "1Y": .0392, "2Y": .0385, "3Y": .0388,
+            "5Y": .0398, "7Y": .0408, "10Y": .0425, "15Y": .0440, "20Y": .0445, "30Y": .0442},
+    "SGD": {"1M": .0280, "3M": .0278, "6M": .0272, "1Y": .0265, "2Y": .0260, "3Y": .0262,
+            "5Y": .0270, "7Y": .0278, "10Y": .0290, "15Y": .0300, "20Y": .0305, "30Y": .0305},
+    "INR": {"1M": .0650, "3M": .0650, "6M": .0655, "1Y": .0660, "2Y": .0665, "3Y": .0670,
+            "5Y": .0680, "7Y": .0690, "10Y": .0700, "15Y": .0710, "20Y": .0715, "30Y": .0715},
+    "TRY": {"1M": .4200, "3M": .4100, "6M": .3900, "1Y": .3600, "2Y": .3200, "3Y": .3000,
+            "5Y": .2800, "7Y": .2700, "10Y": .2600, "15Y": .2500, "20Y": .2500, "30Y": .2500},
+    "ARS": {"1M": .5500, "3M": .5300, "6M": .5000, "1Y": .4600, "2Y": .4200, "3Y": .4000,
+            "5Y": .3800, "7Y": .3700, "10Y": .3600, "15Y": .3500, "20Y": .3500, "30Y": .3500},
+}
+# Currencies with a government bond market in the simulated bank.
+BOND_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "GBP", "JPY", "MXN", "BRL", "ZAR")
+
+# Daily zero-rate volatility (decimal) per currency, and equity/vol correlation inputs.
+RATES_DAILY_VOL: dict[str, float] = {
+    "USD": .00060, "EUR": .00045, "GBP": .00060, "JPY": .00025, "MXN": .00100, "BRL": .00130,
+    "ZAR": .00110, "CHF": .00035, "CAD": .00050, "AUD": .00055, "NZD": .00055, "SGD": .00040,
+    "INR": .00040, "TRY": .00400, "ARS": .00600,
+}
+
+# Vol surface grid and smile parameters.
+VOL_EXPIRIES: tuple[str, ...] = ("1M", "3M", "6M", "1Y", "2Y")
+VOL_MONEYNESS: tuple[float, ...] = (0.80, 0.90, 1.00, 1.10, 1.20)
+# Commodity curve tenors and annualised slope (positive = contango) per commodity.
+COMMODITY_TENORS: tuple[str, ...] = ("1M", "3M", "6M", "1Y", "2Y", "3Y")
+COMMODITY_SLOPE: dict[str, float] = {
+    "BRENT": -0.04, "WTI": -0.05, "NATGAS": 0.10, "GOLD": 0.045, "SILVER": 0.045,
+    "COPPER": 0.01, "ALUMINIUM": 0.02,
 }
 
 # Government spread to swap curve (decimal). Negative means govies yield less than swaps.

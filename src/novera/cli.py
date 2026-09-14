@@ -37,8 +37,10 @@ def simulate(
     trades: int = typer.Option(1500, help="Number of trades before injected problems"),
     seed: int = typer.Option(42, help="Random seed for reproducibility"),
     no_inject: bool = typer.Option(False, help="Do not plant the demo problems"),
+    years: float = typer.Option(3.0, help="Years of daily market-data history"),
+    no_market_data: bool = typer.Option(False, help="Skip market-data generation"),
 ) -> None:
-    """Build the simulated bank and portfolio, store them, and print a summary."""
+    """Build the simulated bank, portfolio and market data, store them, and print a summary."""
     from collections import Counter
     from datetime import date as _date
 
@@ -62,16 +64,34 @@ def simulate(
         repo.save_counterparties(cp.counterparties)
         repo.save_netting_sets(cp.netting_sets, cp.csas)
         sid = repo.save_portfolio_snapshot(gen.snapshot)
+        md = None
+        if not no_market_data:
+            from novera.simulation.market_data import MarketSimConfig, generate_market_data
+
+            md = generate_market_data(MarketSimConfig(end_date=bd, years=years, seed=seed,
+                                                      plant_data_quality_problems=not no_inject))
+            repo.save_risk_factors(md.universe)
+            n_rows = repo.save_market_history(md.history)
+            prev_id = repo.save_market_snapshot(md.previous_snapshot)
+            md_id = repo.save_market_snapshot(md.snapshot)
     snap = gen.snapshot
     typer.echo(f"{org.firm.name}: {len(org.legal_entities)} legal entities, {len(org.desks)} desks, "
                f"{len(org.books)} books, {len(cp.counterparties)} counterparties")
     typer.echo(f"snapshot {sid} for {bd}: {len(snap)} trades")
     for ac, n in sorted(Counter(t.asset_class.value for t in snap.trades).items()):
         typer.echo(f"  {ac:<14} {n:>5}")
-    if gen.injections:
+    if md is not None:
+        typer.echo(f"market data: {len(md.universe)} risk factors, {n_rows:,} history rows over "
+                   f"{md.history['as_of'].nunique()} days")
+        typer.echo(f"market snapshots: {prev_id} ({md.previous_snapshot.as_of}), "
+                   f"{md_id} ({md.snapshot.as_of})")
+    if gen.injections or (md is not None and md.planted):
         typer.echo("planted problems:")
         for inj in gen.injections:
             typer.echo(f"  - {inj.name}: {inj.description}")
+        if md is not None:
+            for p in md.planted:
+                typer.echo(f"  - {p}")
 
 
 if __name__ == "__main__":

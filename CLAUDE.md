@@ -71,6 +71,9 @@ uv run novera --help          # CLI
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload
 ```
+If `uv run` fails with `ModuleNotFoundError: No module named 'novera'`, Python skipped the
+editable `.pth` file because macOS flagged it hidden after a uv rebuild. Fix:
+`uv sync --all-extras --reinstall-package novera`. Tests are immune (pytest `pythonpath`).
 
 ## Do not
 - Do not read or use `../z-My_Tests` (owner's private brainstorming).
