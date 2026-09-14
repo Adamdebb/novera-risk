@@ -50,12 +50,21 @@ Still to do in this phase: P&L attribution, concentration and liquidity measures
 Carlo VaR, VaR backtesting (Kupiec, Christoffersen), daily risk pack, morning dashboard
 with drill-down.
 
-## Phase 3 — Production workflow and trust
+## Phase 3 — Production workflow and trust (current)
 
-Scheduled EOD pipeline, run comparison, data-quality controls ("can I trust today's
-VaR"), independent-challenger reconciliation, audit trail, alerts and escalation,
-real market-data adapters (FRED, Yahoo, crypto exchanges) so named historical
-scenarios (2008, 2011, 2015, 2016, 2020, 2022, 2023) use real history.
+- [x] Governed EOD run: run id, snapshot ids, model versions, config hash, timings,
+      immutable result tables and Parquet scenario matrices, audit events
+- [x] Data-quality checks and verdict (DQ-001): stale and missing factors with the trades
+      they affect, invalid and dangling trades, unpriced and dead trades, unexplained P&L
+- [x] Daily P&L explain: full-revaluation waterfall with a sensitivity challenger (MR-007)
+- [x] Read API (FastAPI) and Streamlit morning dashboard with drill-down, VaR, stress,
+      limits, P&L, data quality, runs and audit, all from the stored run
+- [ ] Run comparison (any two runs side by side)
+- [ ] Breach workflow: acknowledge, escalate, close, with approvals
+- [ ] Independent-challenger reconciliation of externally ingested risk results
+- [ ] Scheduler and alerts
+- [ ] Real market-data adapters (FRED, Yahoo, crypto exchanges) so named historical
+      scenarios (2008, 2011, 2015, 2016, 2020, 2022, 2023) use real history
 
 ## Phase 4 — Counterparty risk
 

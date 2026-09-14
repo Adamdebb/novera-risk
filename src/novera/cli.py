@@ -8,6 +8,8 @@ from novera import __version__
 from novera.config import get_settings
 
 app = typer.Typer(no_args_is_help=True, help="Market and counterparty risk intelligence platform.")
+run_app = typer.Typer(no_args_is_help=True, help="Governed risk runs.")
+app.add_typer(run_app, name="run")
 
 
 @app.command()
@@ -239,6 +241,41 @@ def risk(
     else:
         typer.echo("  Limits: none stored (run `novera simulate` to seed)")
     pd.set_option("display.width", 200)
+
+
+@run_app.command("eod")
+def run_eod_cmd(
+    business_date: str = typer.Option(None, help="YYYY-MM-DD; default latest market snapshot"),
+    workers: int = typer.Option(0, help="Processes for full-revaluation VaR (0 = all cores but one)"),
+) -> None:
+    """Run the end-of-day pipeline and store an auditable run."""
+    from datetime import date as _date
+
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.eod import EODConfig, run_eod
+
+    s = get_settings()
+    bd = _date.fromisoformat(business_date) if business_date else None
+    with DuckDBRepository(s.db_path) as repo:
+        res = run_eod(repo, EODConfig(workers=workers or None), bd)
+    r, m = res.run, 1e6
+    sm = r.summary
+    typer.echo(f"run {r.run_id}  {r.business_date}  status {r.status}  verdict {r.verdict}")
+    typer.echo(
+        f"  portfolio {r.portfolio_snapshot_id}  market {r.market_snapshot_id}  "
+        f"previous {r.previous_market_snapshot_id}  config {r.config_hash}"
+    )
+    typer.echo(
+        f"  PV {sm['pv'] / m:,.1f}m   VaR {sm['var'] / m:,.2f}m   ES {sm['es'] / m:,.2f}m   "
+        f"challenger {sm['challenger_var'] / m:,.2f}m"
+    )
+    typer.echo(f"  worst stress: {sm['worst_stress_name']} {sm['worst_stress'] / m:,.1f}m")
+    typer.echo(f"  limits {sm['limits_monitored']}: {sm['breaches']} breach, {sm['warnings']} warning")
+    typer.echo(f"  data quality: {sm['dq_findings']} findings -> {sm['dq_verdict']}")
+    if sm.get("pnl_total") is not None:
+        steps = ", ".join(f"{k} {v / m:+.2f}" for k, v in sm["pnl_steps"].items() if abs(v) > 1e3)
+        typer.echo(f"  P&L {sm['pnl_total'] / m:+,.2f}m  [{steps}]")
+    typer.echo("  timings: " + ", ".join(f"{k} {v:.1f}s" for k, v in r.timings.items()))
 
 
 if __name__ == "__main__":

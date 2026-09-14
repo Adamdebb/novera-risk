@@ -22,3 +22,6 @@ __all__ = [
     "historical_var",
     "taylor_var",
 ]
+from novera.risk.pnl_attribution import PnLExplain, explain_pnl  # noqa: E402
+
+__all__ += ["PnLExplain", "explain_pnl"]

@@ -20,6 +20,7 @@ dependencies = [
     "python-dateutil>=2.9",
     "QuantLib>=1.34",
     "anthropic>=0.30",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +57,7 @@ select = ["E", "F", "I", "B", "UP", "N", "W"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "N813"]
+"src/novera/api/app.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"
