@@ -365,3 +365,8 @@ def csa_what_if(run_id: str, body: CSAWhatIfBody, svc: RiskService = Depends(ser
         body.uncollateralised,
         body.margin_period_days,
     )
+
+
+@app.get("/runs/{run_id}/capital")
+def capital(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.capital, run_id)

@@ -48,7 +48,7 @@ def db(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=150), workers=1),
+        res = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
                       runs_dir=runs_dir)
     return {"path": str(path), "run_id": res.run.run_id, "runs_dir": runs_dir, "md": md, "gen": gen}
 

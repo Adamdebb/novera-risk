@@ -576,6 +576,29 @@ class RiskService:
             "epe_after": float(after[after["years"] <= 1]["ee"].mean()),
         }
 
+    # --- regulatory capital ------------------------------------------------------------------------
+    def capital(self, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        summ = self.repo.load_run_frame(r.run_id, "reg_summary")
+        if summ.empty:
+            return {"run_id": r.run_id, "available": False}
+        return {
+            "run_id": r.run_id,
+            "available": True,
+            "summary": summ.iloc[0].to_dict(),
+            "components": _records(self.repo.load_run_frame(r.run_id, "reg_capital")),
+            "by_desk": _records(self.repo.load_run_frame(r.run_id, "reg_by_desk")),
+            "frtb_sa_classes": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_sa_classes")),
+            "frtb_sa_detail": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_sa_detail")),
+            "ima": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_ima_summary")),
+            "pla": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_ima_pla")),
+            "saccr_counterparty": _records(self.repo.load_run_frame(r.run_id, "reg_saccr_counterparty")),
+            "saccr_netting": _records(self.repo.load_run_frame(r.run_id, "reg_saccr_netting")),
+            "simm": _records(self.repo.load_run_frame(r.run_id, "reg_simm")),
+            "ba_cva": _records(self.repo.load_run_frame(r.run_id, "reg_ba_cva")),
+            "cash_ladder": _records(self.repo.load_run_frame(r.run_id, "reg_cash_ladder")),
+        }
+
 
 class RiskWriteService:
     """Write side: breach actions and temporary increases. Opened on a writable connection."""

@@ -99,6 +99,7 @@ def simulate_exposure(
     reporting: str,
     cfg: ExposureSimConfig | None = None,
     workers: int | None = None,
+    initial_margin: dict[str, float] | None = None,
 ) -> ExposureResult:
     cfg = cfg or ExposureSimConfig()
     bil = _bilateral(trades)
@@ -151,7 +152,7 @@ def simulate_exposure(
         cfg.paths,
     )
     res.proxy_paths = {f: np.vstack(v) for f, v in paths.proxy_paths.items() if v}
-    res.profiles = collateralise(res, cfg.margin_period_days)
+    res.profiles = collateralise(res, cfg.margin_period_days, initial_margin=initial_margin)
     return res
 
 
@@ -179,7 +180,10 @@ def collateral_balance(v: np.ndarray, years: np.ndarray, csa: CSA | None, mpor_d
 
 
 def collateralise(
-    res: ExposureResult, mpor_days: int = 10, csa_override: dict[str, CSA | None] | None = None
+    res: ExposureResult,
+    mpor_days: int = 10,
+    csa_override: dict[str, CSA | None] | None = None,
+    initial_margin: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Profiles per netting set: gross and collateralised EE, ENE, PFE95, PFE99 by grid point.
     ``csa_override`` maps netting_set_id to a CSA (or None) to run a what-if on terms."""
@@ -192,7 +196,8 @@ def collateralise(
         else:
             csa = res.csas.get(ns.csa_id) if ns.csa_id else None
         bal = collateral_balance(v, years, csa, mpor_days)
-        e_gross, e_coll = np.maximum(v, 0.0), np.maximum(v - bal, 0.0)
+        im = float((initial_margin or {}).get(k, 0.0)) if csa is not None else 0.0
+        e_gross, e_coll = np.maximum(v, 0.0), np.maximum(v - bal - im, 0.0)
         ne_gross, ne_coll = np.maximum(-v, 0.0), np.maximum(bal - v, 0.0)
         for i, (label, d, yrs) in enumerate(res.grid):
             rows.append(
@@ -214,6 +219,7 @@ def collateralise(
                     "ene_gross": float(ne_gross[i].mean()),
                     "mean_value": float(v[i].mean()),
                     "mean_collateral": float(bal[i].mean()),
+                    "initial_margin": im,
                 }
             )
     return pd.DataFrame(rows)

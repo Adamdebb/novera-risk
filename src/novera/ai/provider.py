@@ -207,6 +207,10 @@ def _plan(q: str) -> list[tuple[str, dict[str, Any]]]:
         return [("compare_runs", {"by": "asset_class"}), ("pnl", {"by": "asset_class"})]
     if any(k in ql for k in ("closest", "near", "breach", "limit", "utilis")):
         return [("limits", {"status": "BREACH"}), ("limits", {"status": "WARNING"}), ("breaches", {})]
+    if any(
+        k in ql for k in ("capital", "frtb", "rwa", "sa-ccr", "saccr", "simm", "initial margin", "regulat")
+    ):
+        return [("capital", {})]
     if any(k in ql for k in ("concentrat", "hhi", "largest position", "biggest position")):
         return [("concentration", {})]
     if any(k in ql for k in ("liquid", "days to", "unwind", "exit")):
@@ -478,6 +482,28 @@ def _compose(question: str, results: list[tuple[str, dict[str, Any], dict[str, A
                         f"- Under {s0['scenario']}, current exposure goes from {_fmt_m(s0['current'])} to "
                         f"{_fmt_m(s0['stressed'])}."
                     )
+        elif name == "capital":
+            if "error" in res:
+                lines.append(f"- {res['error']}")
+            else:
+                c = res["capital_m"]
+                lines.append(
+                    f"FRTB SA {_fmt_m(c['frtb_sa'])} (SBM {_fmt_m(c['frtb_sa_sbm'])}, DRC "
+                    f"{_fmt_m(c['frtb_sa_drc'])}) versus IMA {_fmt_m(c['frtb_ima'])} (IMES {_fmt_m(c['imes'])} "
+                    f"x {res['ima_multiplier']}, NMRF {res['nmrf']}); SA-CCR EAD {_fmt_m(c['saccr_ead'])}, "
+                    f"RWA {_fmt_m(c['saccr_rwa'])}, capital {_fmt_m(c['saccr_capital'])}; BA-CVA "
+                    f"{_fmt_m(c['ba_cva_capital'])}; SIMM IM {_fmt_m(c['simm_im'])}."
+                )
+                lines.append(
+                    "- FRTB SA by class: "
+                    + ", ".join(f"{x['class']} {_fmt_m(x['delta'])}" for x in res["frtb_sa_by_class_m"])
+                    + "."
+                )
+                lines.append(
+                    "- Largest desks: "
+                    + ", ".join(f"{x['desk_id']} SA {_fmt_m(x['frtb_sa'])}" for x in res["by_desk_m"][:4])
+                    + "."
+                )
         elif name == "positions":
             lines.append(
                 "PV by "

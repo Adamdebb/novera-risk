@@ -31,6 +31,7 @@ from novera.limits import RiskInputs, effective_limits, expire_increases, monito
 from novera.market_data.history import MarketHistory
 from novera.pricing import valuation as valuation_mod
 from novera.pricing.valuation import value_portfolio
+from novera.regulatory import run_regulatory
 from novera.risk import (
     HYPOTHETICAL_LIBRARY,
     Portfolio,
@@ -83,6 +84,7 @@ class EODConfig:
     pnl_abs_tolerance: float = 50_000.0
     actor: str = "eod-scheduler"
     counterparty: bool | None = None  # None: follow settings.exposure_enabled
+    regulatory: bool | None = None  # None: follow settings.regulatory_enabled
     exposure_paths: int | None = None  # None: settings.exposure_paths
 
     def as_dict(self) -> dict[str, Any]:
@@ -92,6 +94,7 @@ class EODConfig:
             "include_historical_stress": self.include_historical_stress,
             "pnl_abs_tolerance": self.pnl_abs_tolerance,
             "counterparty": self.counterparty,
+            "regulatory": self.regulatory,
             "exposure_paths": self.exposure_paths,
         }
 
@@ -337,6 +340,11 @@ def run_eod(
                 runs_dir,
                 extras={"mc": mc, "bt_static": bt_static, "bt_live": bt_live, "conc": conc, "liq": liq},
             )
+        do_reg = settings.regulatory_enabled if cfg.regulatory is None else cfg.regulatory
+        if do_reg:
+            with _timed(timings, "regulatory"):
+                reg = run_regulatory(repo, run.run_id, settings, runs_dir=runs_dir)
+                run.summary["regulatory"] = reg.summary()
         do_cp = settings.exposure_enabled if cfg.counterparty is None else cfg.counterparty
         if do_cp:
             with _timed(timings, "counterparty"):

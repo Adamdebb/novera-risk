@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     lgd: float = Field(default=0.6, description="Loss given default for CVA and DVA")
     exposure_paths: int = 1000
     exposure_enabled: bool = True
+    regulatory_enabled: bool = True
 
     # Scheduler.
     eod_time: str = Field(

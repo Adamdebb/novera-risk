@@ -304,6 +304,37 @@ def run_counterparty_cmd(
         )
 
 
+@run_app.command("regulatory")
+def run_regulatory_cmd(run_id: str = typer.Option("latest")) -> None:
+    """FRTB SA and IMA, SA-CCR, SIMM-lite, BA-CVA and the cash ladder on a stored run."""
+    from novera.api.service import RiskService
+    from novera.regulatory import run_regulatory
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(get_settings().db_path) as repo:
+        rid = RiskService(repo).resolve(run_id).run_id
+        rr = run_regulatory(repo, rid)
+    m = 1e6
+    sm = rr.summary()
+    typer.echo(f"run {rid}")
+    typer.echo(
+        f"  FRTB SA {sm['frtb_sa'] / m:,.1f}m (SBM {sm['frtb_sa_sbm'] / m:,.1f}m, "
+        f"DRC {sm['frtb_sa_drc'] / m:,.1f}m)"
+        f"   FRTB IMA {sm['frtb_ima'] / m:,.1f}m (IMES {sm['imes'] / m:,.1f}m x {sm['ima_multiplier']}, "
+        f"SES {sm['ses'] / m:,.1f}m, NMRF {sm['nmrf']})"
+    )
+    typer.echo(
+        f"  SA-CCR EAD {sm['saccr_ead'] / m:,.1f}m  RWA {sm['saccr_rwa'] / m:,.1f}m  capital "
+        f"{sm['saccr_capital'] / m:,.1f}m   BA-CVA {sm['ba_cva_capital'] / m:,.1f}m   SIMM IM "
+        f"{sm['simm_im'] / m:,.1f}m   PLA red desks {sm['pla_red_desks']}"
+    )
+    for _, r in rr.by_desk.head(6).iterrows():
+        typer.echo(
+            f"  {r['desk_id']:<16} FRTB SA {r['frtb_sa'] / m:>7.1f}m  IMA {r['frtb_ima'] / m:>6.1f}m  "
+            f"SA-CCR {r['saccr'] / m:>5.1f}m  CVA {r['ba_cva'] / m:>5.1f}m"
+        )
+
+
 @run_app.command("eod")
 def run_eod_cmd(
     business_date: str = typer.Option(None, help="YYYY-MM-DD; default latest market snapshot"),

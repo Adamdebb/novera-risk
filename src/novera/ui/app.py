@@ -64,6 +64,7 @@ with st.sidebar:
             "Limits",
             "Breaches",
             "Counterparty",
+            "Capital",
             "P&L explain",
             "Data quality",
             "Concentration & liquidity",
@@ -554,6 +555,72 @@ elif page == "Counterparty":
     if not tr.empty:
         tr["pv"] = tr["pv"] / M
         st.dataframe(tr.round(2), hide_index=True, use_container_width=True)
+
+elif page == "Capital":
+    header("Regulatory capital")
+    cap = client.capital(run_id)
+    if not cap.get("available"):
+        st.info("No regulatory run stored for this run. Run `uv run novera run regulatory`.")
+        st.stop()
+    sm = cap["summary"]
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("FRTB SA", money(sm["frtb_sa"]), f"SBM {money(sm['frtb_sa_sbm'])}")
+    c2.metric("FRTB IMA", money(sm["frtb_ima"]), f"IMES {money(sm['imes'])} x {sm['ima_multiplier']:.2f}")
+    c3.metric("SA-CCR capital", money(sm["saccr_capital"]), f"EAD {money(sm['saccr_ead'])}")
+    c4.metric("BA-CVA capital", money(sm["ba_cva_capital"]))
+    c5.metric("SIMM-lite IM", money(sm["simm_im"]), f"NMRF {int(sm['nmrf'])}")
+    st.caption(
+        "FRTB SA (REG-001) and IMA (REG-002) are alternatives; SA-CCR (REG-003), BA-CVA (REG-005) and the "
+        "initial margin (REG-004) add to them. Parameters are published-style, not a licensed calibration."
+    )
+    st.subheader("Capital by component")
+    comp = df(cap["components"])
+    if not comp.empty:
+        comp["capital"] = comp["capital"] / M
+        st.bar_chart(comp.set_index("component")["capital"])
+    st.subheader("By desk (standardised stack: FRTB SA + SA-CCR + BA-CVA; IMA shown for comparison)")
+    bd = df(cap["by_desk"])
+    if not bd.empty:
+        for c_ in ("frtb_sa", "frtb_ima", "saccr", "ba_cva", "total_sa"):
+            bd[c_] = bd[c_] / M
+        st.dataframe(bd.round(1), use_container_width=True, hide_index=True)
+    left, right = st.columns(2)
+    with left:
+        st.subheader("FRTB SA by risk class")
+        cl = df(cap["frtb_sa_classes"])
+        if not cl.empty:
+            for c_ in ("delta", "vega", "curvature"):
+                cl[c_] = cl[c_] / M
+            st.dataframe(cl.round(1), hide_index=True, use_container_width=True)
+        st.subheader("P&L attribution test by desk")
+        pla = df(cap["pla"])
+        if not pla.empty:
+            st.dataframe(pla.round(3), hide_index=True, use_container_width=True)
+    with right:
+        st.subheader("SA-CCR by counterparty")
+        sc = df(cap["saccr_counterparty"])
+        if not sc.empty:
+            for c_ in ("ead", "rc", "pfe", "rwa", "capital"):
+                sc[c_] = sc[c_] / M
+            st.dataframe(sc.round(1), hide_index=True, use_container_width=True)
+        st.subheader("Initial margin by netting set")
+        sim = df(cap["simm"])
+        if not sim.empty:
+            sim["im"] = sim["im"] / M
+            st.dataframe(
+                sim[["netting_set_id", "counterparty_id", "im"]].round(1).head(15),
+                hide_index=True,
+                use_container_width=True,
+            )
+    st.subheader("Funding cash ladder (contractual, reporting currency)")
+    lad = df(cap["cash_ladder"])
+    if not lad.empty:
+        ccy = st.selectbox("Currency", sorted(lad["currency"].unique()), index=0)
+        sub = lad[lad["currency"] == ccy].copy()
+        for c_ in ("inflow", "outflow", "net", "cumulative_net"):
+            sub[c_] = sub[c_] / M
+        st.dataframe(sub.round(1), hide_index=True, use_container_width=True)
+        st.bar_chart(sub.set_index("bucket")["net"])
 
 elif page == "P&L explain":
     header("Daily P&L explain")
