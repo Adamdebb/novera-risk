@@ -207,6 +207,12 @@ def _plan(q: str) -> list[tuple[str, dict[str, Any]]]:
         return [("compare_runs", {"by": "asset_class"}), ("pnl", {"by": "asset_class"})]
     if any(k in ql for k in ("closest", "near", "breach", "limit", "utilis")):
         return [("limits", {"status": "BREACH"}), ("limits", {"status": "WARNING"}), ("breaches", {})]
+    if any(k in ql for k in ("concentrat", "hhi", "largest position", "biggest position")):
+        return [("concentration", {})]
+    if any(k in ql for k in ("liquid", "days to", "unwind", "exit")):
+        return [("liquidity", {})]
+    if any(k in ql for k in ("backtest", "exception", "kupiec", "traffic light")):
+        return [("backtest", {})]
     if any(k in ql for k in ("trust", "data quality", "stale", "missing")):
         return [("data_quality", {})]
     if "stress" in ql or "scenario" in ql:
@@ -393,6 +399,36 @@ def _compose(question: str, results: list[tuple[str, dict[str, Any], dict[str, A
                 )
                 + "."
             )
+        elif name == "concentration":
+            for f in res["flags"][:6]:
+                lines.append(f"- {f}")
+            lines.append(
+                "- Largest contributors: "
+                + ", ".join(
+                    f"{x['trade_id']} ({x['desk_id']}) {x['component_var_m']}m, {x['share_of_var']:.0%}"
+                    for x in res["top_positions_m"][:4]
+                )
+                + "."
+            )
+        elif name == "liquidity":
+            lines.append(
+                f"Liquidity-adjusted VaR {_fmt_m(res['liquidity_adjusted_var_m'])} versus VaR "
+                f"{_fmt_m(res['var_m'])}; weighted horizon {res['weighted_horizon_days']} days."
+            )
+            lines.append(
+                "- By horizon: "
+                + ", ".join(f"{b['bucket']} {b['share']:.0%}" for b in res["by_bucket"])
+                + "."
+            )
+            for f in res["flags"][:4]:
+                lines.append(f"- {f}")
+        elif name == "backtest":
+            for x in res["summary"]:
+                lines.append(
+                    f"- {x['kind']}: {x['exceptions']} exceptions in {x['days']} days (expected "
+                    f"{x['expected_exceptions']:.1f}), Kupiec p {x['kupiec_pvalue']:.2f}, Christoffersen p "
+                    f"{x['christoffersen_pvalue']:.2f}, zone {x['zone']}."
+                )
         elif name == "positions":
             lines.append(
                 "PV by "

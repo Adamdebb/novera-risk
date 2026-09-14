@@ -68,8 +68,8 @@ def app(db_path, monkeypatch):
 
 
 @pytest.mark.parametrize("page", ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches",
-                                  "P&L explain", "Data quality", "Compare runs", "Challenger", "Alerts & jobs",
-                                  "Runs & audit"])
+                                  "P&L explain", "Data quality", "Concentration & liquidity", "Compare runs",
+                                  "Challenger", "Risk pack", "Alerts & jobs", "Runs & audit"])
 def test_every_page_renders(app, page):
     app.sidebar.radio[0].set_value(page).run()
     assert not app.exception, [e.value for e in app.exception]

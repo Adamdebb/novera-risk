@@ -62,7 +62,7 @@ def test_service_summary_and_frames(db_path):
         assert s["var_by_asset_class"] and s["summary"]["var"] > 0
         assert svc.positions(by="desk_id")
         assert svc.var_by("desk_id")
-        assert {r["method"] for r in svc.var_summary()} == {"historical_full_revaluation", "delta_gamma_vega"}
+        assert {"historical_full_revaluation", "delta_gamma_vega"} <= {r["method"] for r in svc.var_summary()}
         assert svc.sensitivities(measure="DV01", by="desk_id", desk_id="USD_RATES")
         assert svc.stress(by="asset_class") and svc.stress(by=None)
         assert svc.limits() and all(r["status"] for r in svc.limits())
@@ -156,3 +156,12 @@ def test_ops_endpoints(client):
     assert client.get("/jobs").status_code == 200
     assert client.get("/market-data/provenance").status_code == 200
     assert client.get("/runs/latest/reconciliation").status_code == 404
+
+
+def test_measure_endpoints(client):
+    assert client.get("/runs/latest/concentration").json()["by_dimension"]
+    liq = client.get("/runs/latest/liquidity").json()
+    assert liq["liquidity_adjusted_var"] >= liq["var"]
+    assert client.get("/runs/latest/backtest").json()["summary"]
+    r = client.post("/runs/latest/risk-pack", params={"pdf": False})
+    assert r.status_code == 200 and r.json()["html"].endswith(".html")

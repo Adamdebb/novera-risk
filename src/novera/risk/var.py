@@ -124,19 +124,14 @@ def historical_var(pf: Portfolio, history: MarketHistory, cfg: VaRConfig | None 
     )
 
 
-def taylor_var(
-    pf: Portfolio, sens: pd.DataFrame, history: MarketHistory, cfg: VaRConfig | None = None
-) -> VaRResult:
-    """Delta-gamma-vega approximation on the same historical scenarios.
+def taylor_pnl_matrix(pf: Portfolio, sens: pd.DataFrame, scen: pd.DataFrame) -> pd.DataFrame:
+    """Delta-gamma-vega P&L of every trade under a scenario matrix (rows scenarios, columns
+    factor ids in shock units):
 
     P&L_s ≈ Σ_f delta_f · x_f,s / bump_f + ½ Σ_f gamma_f · (x_f,s / bump_f)² + Σ_u vega_u · Δvol_u,s / 0.01
-    where x is the scenario shock in factor units. Commodity curves use the mean node return;
-    vega uses the mean ATM vol change of the surface.
+
+    Commodity curves use the mean node return; vega uses the mean ATM vol change of the surface.
     """
-    cfg = cfg or VaRConfig()
-    scen = historical_shocks(
-        history, pf.as_of, cfg.window_days, cfg.horizon_days, pf.universe, factor_ids=list(pf.base.values)
-    )
     cols = pf.priced_ids
     pos = {tid: j for j, tid in enumerate(cols)}
     mat = np.zeros((len(scen), len(cols)))
@@ -146,7 +141,6 @@ def taylor_var(
             members = [c for c in scen.columns if c.startswith(fid)]
             if fid.startswith("VOL:"):
                 base_vols = np.array([pf.base.values[m] for m in members])
-                # relative vol moves -> absolute vol-point moves, averaged
                 return (scen[members].to_numpy() * base_vols).mean(axis=1)
             return scen[members].to_numpy().mean(axis=1) if members else None
         return scen[fid].to_numpy() if fid in scen.columns else None
@@ -157,17 +151,24 @@ def taylor_var(
         x = shock_series(fid)
         if x is None:
             continue
-        bump = BUMPS.get(measure, 1.0)
-        units = x / bump  # number of bumps moved in this scenario
+        units = x / BUMPS.get(measure, 1.0)
         for _, r in grp.iterrows():
             j = pos.get(r["trade_id"])
             if j is None:
                 continue
-            if measure == "GAMMA":
-                mat[:, j] += 0.5 * r["value"] * units**2
-            else:
-                mat[:, j] += r["value"] * units
-    pnl = pd.DataFrame(mat, index=scen.index, columns=cols)
+            mat[:, j] += 0.5 * r["value"] * units**2 if measure == "GAMMA" else r["value"] * units
+    return pd.DataFrame(mat, index=scen.index, columns=cols)
+
+
+def taylor_var(
+    pf: Portfolio, sens: pd.DataFrame, history: MarketHistory, cfg: VaRConfig | None = None
+) -> VaRResult:
+    """Delta-gamma-vega approximation on the same historical scenarios (the challenger)."""
+    cfg = cfg or VaRConfig()
+    scen = historical_shocks(
+        history, pf.as_of, cfg.window_days, cfg.horizon_days, pf.universe, factor_ids=list(pf.base.values)
+    )
+    pnl = taylor_pnl_matrix(pf, sens, scen)
     port = pnl.sum(axis=1)
     var, es, var_date = tail_measures(port, cfg)
     return VaRResult(

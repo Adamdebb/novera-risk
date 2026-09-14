@@ -390,6 +390,54 @@ class RiskService:
     def provenance(self) -> list[dict]:
         return _records(self.repo.load_market_provenance())
 
+    # --- concentration, liquidity, backtest, risk pack -------------------------------------------
+    def concentration(self, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        flags = self.repo.load_run_frame(r.run_id, "risk_flags")
+        return {
+            "run_id": r.run_id,
+            "by_dimension": _records(self.repo.load_run_frame(r.run_id, "concentration")),
+            "top_positions": _records(self.repo.load_run_frame(r.run_id, "concentration_top")),
+            "tenor": _records(self.repo.load_run_frame(r.run_id, "concentration_tenor")),
+            "flags": [x["message"] for x in _records(flags) if x.get("kind") == "CONCENTRATION"],
+        }
+
+    def liquidity(self, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        flags = self.repo.load_run_frame(r.run_id, "risk_flags")
+        trades = self.repo.load_run_frame(r.run_id, "liquidity_trades")
+        return {
+            "run_id": r.run_id,
+            "var": r.summary.get("var"),
+            "liquidity_adjusted_var": r.summary.get("liquidity_adjusted_var"),
+            "horizon_days": r.summary.get("liquidity_horizon_days"),
+            "by_bucket": _records(self.repo.load_run_frame(r.run_id, "liquidity_buckets")),
+            "by_desk": _records(self.repo.load_run_frame(r.run_id, "liquidity_desks")),
+            "slowest": _records(trades.head(20)) if len(trades) else [],
+            "flags": [x["message"] for x in _records(flags) if x.get("kind") == "LIQUIDITY"],
+        }
+
+    def backtest(self, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        return {
+            "run_id": r.run_id,
+            "summary": _records(self.repo.load_run_frame(r.run_id, "backtest_summary")),
+            "series": _records(self.repo.load_run_frame(r.run_id, "backtest_series")),
+            "live_series": _records(self.repo.load_run_frame(r.run_id, "backtest_live_series")),
+        }
+
+    def risk_pack(self, run_id: str | None, out_dir: str, pdf: bool = True) -> dict[str, Any]:
+        from pathlib import Path as _Path
+
+        from novera.reporting import build_pack
+
+        files = build_pack(self.repo, run_id, _Path(out_dir), pdf=pdf)
+        return {
+            "html": str(files.html),
+            "xlsx": str(files.xlsx),
+            "pdf": str(files.pdf) if files.pdf else None,
+        }
+
 
 class RiskWriteService:
     """Write side: breach actions and temporary increases. Opened on a writable connection."""

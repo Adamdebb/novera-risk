@@ -46,6 +46,7 @@ WRITE_METHODS = {
     "cancel_increase",
 }
 COPILOT_METHODS = {"ask", "commentary", "copilot_history", "copilot_provider"}
+PACK_METHODS = {"risk_pack"}
 
 
 class LocalClient:
@@ -69,6 +70,12 @@ class LocalClient:
         if name in WRITE_METHODS:
             with DuckDBRepository(self.db_path) as repo:
                 return getattr(RiskWriteService(repo), name)(*a, **kw)
+        if name in PACK_METHODS:
+            from novera.config import get_settings
+
+            kw.setdefault("out_dir", str(get_settings().data_dir / "reports"))
+            with DuckDBRepository(self.db_path, read_only=True) as repo:
+                return RiskService(repo).risk_pack(*a, **kw)
         with DuckDBRepository(self.db_path, read_only=True) as repo:
             return getattr(RiskService(repo), name)(*a, **kw)
 
@@ -225,6 +232,20 @@ class HttpClient:
 
     def provenance(self):
         return self._get("/market-data/provenance")
+
+    def concentration(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/concentration")
+
+    def liquidity(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/liquidity")
+
+    def backtest(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/backtest")
+
+    def risk_pack(self, run_id=None, out_dir=None, pdf=True):
+        r = self.http.post(f"/runs/{self._rid(run_id)}/risk-pack", params={"pdf": pdf}, timeout=300)
+        r.raise_for_status()
+        return r.json()
 
 
 def make_client(settings) -> RiskClient:

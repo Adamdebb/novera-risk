@@ -35,15 +35,24 @@ from novera.risk import (
     Portfolio,
     VaRConfig,
     compute_sensitivities,
+    concentration,
     explain_pnl,
     historical_var,
+    liquidity,
+    live_backtest,
+    monte_carlo_var,
     run_stress,
+    static_backtest,
     stress_table,
     taylor_var,
 )
 from novera.risk import sensitivities as sens_mod
 from novera.risk import stress as stress_mod
 from novera.risk import var as var_mod
+from novera.risk.backtest import MODEL_VERSION as BACKTEST_VERSION
+from novera.risk.concentration import MODEL_VERSION as CONC_VERSION
+from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
+from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
 from novera.risk.stress import historical_episodes_from_simulation
 from novera.simulation.market_data import DEFAULT_EPISODES
@@ -57,6 +66,10 @@ MODEL_VERSIONS = {
     "var": var_mod.MODEL_VERSION,
     "stress": stress_mod.MODEL_VERSION,
     "pnl_attribution": PNL_VERSION,
+    "monte_carlo": MC_VERSION,
+    "backtest": BACKTEST_VERSION,
+    "concentration": CONC_VERSION,
+    "liquidity": LIQ_VERSION,
 }
 
 
@@ -180,6 +193,11 @@ def run_eod(
         hs = historical_var(pf, history, cfg.var)
     with _timed(timings, "var_challenger"):
         tv = taylor_var(pf, sens, history, cfg.var)
+    with _timed(timings, "monte_carlo"):
+        mc = monte_carlo_var(pf, sens, history, cfg.var)
+    with _timed(timings, "backtest"):
+        bt_static = static_backtest(hs.portfolio_pnl, cfg.var.confidence)
+        bt_live = live_backtest(repo.list_runs(run_type="EOD", limit=1000) + [], cfg.var.confidence)
     with _timed(timings, "stress"):
         scenarios = list(HYPOTHETICAL_LIBRARY)
         if cfg.include_historical_stress:
@@ -191,6 +209,15 @@ def run_eod(
             if limits
             else pd.DataFrame()
         )
+    with _timed(timings, "concentration"):
+        conc = concentration(val.table, hs.contributions, sens)
+        far = {
+            t.trade_id
+            for t in snapshot.trades
+            if t.product_type.value == "COMMODITY_FUTURE"
+            and (t.instrument.expiry_date - market.as_of).days > 300
+        }
+        liq = liquidity(val.table, hs.var, far)
     with _timed(timings, "pnl"):
         pnl = None
         if prev_market is not None:
@@ -250,6 +277,15 @@ def run_eod(
         "var_scaled": hs.var_scaled,
         "var_scenario_date": str(hs.var_scenario_date),
         "challenger_var": tv.var,
+        "monte_carlo_var": mc.var,
+        "monte_carlo_es": mc.es,
+        "backtest_zone": bt_static.zone,
+        "backtest_exceptions": bt_static.exceptions,
+        "backtest_days": bt_static.days,
+        "liquidity_adjusted_var": liq.liquidity_adjusted_var,
+        "liquidity_horizon_days": liq.horizon_days,
+        "concentration_flags": len(conc.flags),
+        "liquidity_flags": len(liq.flags),
         "worst_stress_id": worst["scenario_id"] if worst is not None else None,
         "worst_stress_name": worst["name"] if worst is not None else None,
         "worst_stress": float(worst["total"]) if worst is not None else None,
@@ -281,7 +317,21 @@ def run_eod(
     result = EODResult(run, val.table, sens, hs, tv, stress, limit_table, dq, pnl, events, sync)
     if persist:
         with _timed(timings, "persist"):
-            _persist(repo, run, val.table, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir)
+            _persist(
+                repo,
+                run,
+                val.table,
+                sens,
+                hs,
+                tv,
+                stress,
+                limit_table,
+                dq,
+                pnl,
+                events,
+                runs_dir,
+                extras={"mc": mc, "bt_static": bt_static, "bt_live": bt_live, "conc": conc, "liq": liq},
+            )
         if settings.alerts_enabled:
             with _timed(timings, "alerts"):
                 sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))
@@ -294,9 +344,41 @@ def run_eod(
     return result
 
 
-def _persist(repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir) -> None:
+def _persist(
+    repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir, extras=None
+) -> None:
     rid = run.run_id
     repo.save_run(run)
+    if extras:
+        mc, bts, btl, conc, liq = (extras[k] for k in ("mc", "bt_static", "bt_live", "conc", "liq"))
+        repo.save_run_frame(rid, "var_contributions_monte_carlo", mc.contributions.assign(method=mc.method))
+        repo.save_run_frame(rid, "backtest_summary", pd.DataFrame([bts.summary(), btl.summary()]))
+        repo.save_run_frame(rid, "backtest_series", bts.series.assign(kind=bts.kind))
+        if len(btl.series):
+            repo.save_run_frame(rid, "backtest_live_series", btl.series.assign(kind=btl.kind))
+        repo.save_run_frame(rid, "concentration", conc.by_dimension)
+        repo.save_run_frame(rid, "concentration_top", conc.top_positions)
+        repo.save_run_frame(rid, "concentration_tenor", conc.tenor)
+        repo.save_run_frame(
+            rid,
+            "liquidity_trades",
+            liq.by_trade.assign(horizon_bucket=lambda d: d["horizon_bucket"].astype(str)),
+        )
+        repo.save_run_frame(
+            rid,
+            "liquidity_buckets",
+            liq.by_bucket.assign(horizon_bucket=lambda d: d["horizon_bucket"].astype(str)),
+        )
+        repo.save_run_frame(rid, "liquidity_desks", liq.by_desk)
+        repo.save_run_frame(
+            rid,
+            "risk_flags",
+            pd.DataFrame(
+                [{"kind": "CONCENTRATION", "message": f} for f in conc.flags]
+                + [{"kind": "LIQUIDITY", "message": f} for f in liq.flags],
+                columns=["kind", "message"],
+            ),
+        )
     repo.save_run_frame(rid, "valuation", valuation)
     repo.save_run_frame(rid, "sensitivities", sens)
     var_summary = pd.DataFrame(
@@ -327,6 +409,30 @@ def _persist(repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, e
             },
         ]
     )
+    if extras:
+        mc = extras["mc"]
+        var_summary = pd.concat(
+            [
+                var_summary,
+                pd.DataFrame(
+                    [
+                        {
+                            "method": mc.method,
+                            "var": mc.var,
+                            "es": mc.es,
+                            "var_scaled": mc.var_scaled,
+                            "es_scaled": mc.es_scaled,
+                            "confidence": mc.config.confidence,
+                            "es_confidence": mc.config.es_confidence,
+                            "window_days": mc.config.window_days,
+                            "scenarios": len(mc.pnl),
+                            "var_scenario_date": mc.var_scenario_date,
+                        }
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
     repo.save_run_frame(rid, "var_summary", var_summary)
     repo.save_run_frame(rid, "var_contributions", hs.contributions.assign(method=hs.method))
     repo.save_run_frame(rid, "var_contributions_challenger", tv.contributions.assign(method=tv.method))

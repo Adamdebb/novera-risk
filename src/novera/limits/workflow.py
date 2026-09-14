@@ -128,8 +128,8 @@ def sync_breaches(
             )
             out.raised.append(b)
             continue
-        if b.latest_run_id == run_id:
-            continue
+        if b.latest_run_id == run_id or business_date < b.latest_date:
+            continue  # same run, or a backfill of an earlier date: never rewind breach state
         if b.latest_date < business_date:
             b.consecutive_days += 1
         b.latest_run_id, b.latest_date = run_id, business_date
@@ -174,7 +174,7 @@ def sync_breaches(
     # Open breaches whose limit is no longer breached on this run.
     breached_ids = set(breached["limit_id"])
     for lid, b in open_by_limit.items():
-        if lid in breached_ids or lid not in set(limit_table["limit_id"]):
+        if lid in breached_ids or lid not in set(limit_table["limit_id"]) or business_date < b.latest_date:
             continue
         row = limit_table[limit_table["limit_id"] == lid].iloc[0]
         b.within_limit_on_latest_run = True

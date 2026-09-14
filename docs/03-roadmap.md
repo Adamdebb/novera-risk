@@ -46,9 +46,9 @@ stress loss, DV01 ladders and buckets, CS01, deltas, vega, concentration shares,
 counterparty exposure) with utilisation and status (MR-006). On the demo date four
 breach and fifteen warn, matching the planted problems.
 
-Still to do in this phase: P&L attribution, concentration and liquidity measures, Monte
-Carlo VaR, VaR backtesting (Kupiec, Christoffersen), daily risk pack, morning dashboard
-with drill-down.
+All Phase 2 items are delivered (some in the Phase 3 work stream): P&L attribution
+(MR-007), concentration (MR-012), liquidity (MR-013), Monte Carlo VaR (MR-010), VaR
+backtesting (MR-011), the daily risk pack (RP-001) and the morning dashboard.
 
 ## Phase 3 — Production workflow and trust (complete)
 
@@ -75,8 +75,10 @@ with drill-down.
 - [x] Real market-data adapters (MD-001): FRED, Yahoo Finance, Coinbase via `novera fetch`,
       provenance recorded, named crisis windows become stress scenarios when covered
 
-Phase 3 is complete. Deferred from Phase 2 and still open: Monte Carlo VaR, VaR
-backtesting (Kupiec, Christoffersen), concentration and liquidity measures, risk pack export.
+Phase 3 is complete, and the Phase 2 leftovers are closed: Monte Carlo VaR on the
+delta-gamma-vega expansion (MR-010), static and live VaR backtesting with Kupiec,
+Christoffersen and the Basel zone (MR-011), concentration (MR-012) and liquidity (MR-013)
+measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
 
 ## Phase 4 — Counterparty risk (next)
 

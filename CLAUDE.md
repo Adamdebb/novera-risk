@@ -75,6 +75,7 @@ uv run novera ask "..."       # Risk Copilot; scripted provider unless ANTHROPIC
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
 uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
 uv run novera fetch           # real market data into the history (network, optional FRED key)
+uv run novera report          # daily risk pack (HTML, PDF via Playwright Chromium, Excel)
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload
