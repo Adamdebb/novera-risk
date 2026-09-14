@@ -44,7 +44,7 @@ def db_path(tmp_path_factory):
 @pytest.fixture(scope="module")
 def result(db_path, tmp_path_factory):
     with DuckDBRepository(db_path) as repo:
-        return run_eod(repo, EODConfig(var=VaRConfig(window_days=200), workers=1),
+        return run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=200), workers=1),
                        runs_dir=tmp_path_factory.mktemp("runs"))
 
 
@@ -108,7 +108,7 @@ def test_results_persisted_and_reloadable(result, db_path):
 
 def test_rerun_is_reproducible(db_path, result, tmp_path_factory):
     with DuckDBRepository(db_path) as repo:
-        again = run_eod(repo, EODConfig(var=VaRConfig(window_days=200), workers=1), persist=False)
+        again = run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=200), workers=1), persist=False)
     assert again.run.run_id != result.run.run_id
     assert again.run.summary["var"] == pytest.approx(result.run.summary["var"])
     assert again.run.config_hash == result.run.config_hash

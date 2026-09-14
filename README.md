@@ -43,6 +43,8 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 - Three VaR methods (historical full revaluation, delta-gamma-vega challenger, Monte
   Carlo), backtesting with Kupiec and Christoffersen tests, concentration and liquidity
   measures, and a daily risk pack in HTML, PDF and Excel.
+- Counterparty risk: Monte Carlo exposure profiles with full revaluation, CSA collateral
+  with an instant what-if on terms, CVA and DVA, wrong-way indicators, PFE-based limits.
 - Operations: a scheduler that advances the simulated world and runs EOD with retries,
   alerts to Slack or email, an independent-challenger reconciliation that attributes the
   gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).
@@ -63,6 +65,7 @@ uv run novera breach list
 uv run novera ask "Why did VaR change since yesterday?"
 uv run novera schedule --once      # advance one business day and run EOD, with alerts
 uv run novera vendor-feed && uv run novera reconcile data/feeds/official_risk_2026-09-15.csv
+uv run novera run counterparty     # exposure, collateral, CVA, wrong-way on the latest run (~3 minutes)
 uv run novera report               # daily risk pack: HTML, PDF, Excel in data/reports
 uv run novera fetch --sources yahoo,coinbase --start 2019-01-01   # optional, needs network
 uv run streamlit run src/novera/ui/app.py           # morning dashboard

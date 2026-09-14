@@ -242,6 +242,19 @@ class HttpClient:
     def backtest(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/backtest")
 
+    def counterparties(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/counterparties")
+
+    def counterparty(self, counterparty_id, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/counterparties/{counterparty_id}")
+
+    def csa_what_if(self, netting_set_id, run_id=None, **terms):
+        r = self.http.post(
+            f"/runs/{self._rid(run_id)}/csa-what-if", json={"netting_set_id": netting_set_id, **terms}
+        )
+        r.raise_for_status()
+        return r.json()
+
     def risk_pack(self, run_id=None, out_dir=None, pdf=True):
         r = self.http.post(f"/runs/{self._rid(run_id)}/risk-pack", params={"pdf": pdf}, timeout=300)
         r.raise_for_status()

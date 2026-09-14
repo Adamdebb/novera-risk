@@ -392,6 +392,69 @@ def build_tools(db_path: str) -> list[Tool]:
             "exception_dates": exc[-10:],
         }
 
+    def counterparty_tool(counterparty_id: str | None = None, run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            if counterparty_id:
+                d = s.counterparty(counterparty_id, r.run_id)
+                return {
+                    "run_id": r.run_id,
+                    "counterparty": d["counterparty"],
+                    "profile_m": [
+                        {
+                            "step": x["step"],
+                            "ee": _m(x["ee"]),
+                            "pfe95": _m(x["pfe95"]),
+                            "ee_gross": _m(x["ee_gross"]),
+                            "collateral": _m(x["mean_collateral"]),
+                        }
+                        for x in d["profile"]
+                    ],
+                    "netting_sets": [
+                        {
+                            "netting_set_id": n["netting_set_id"],
+                            "legal_entity": n["legal_entity_id"],
+                            "csa": n["csa"],
+                        }
+                        for n in d["netting_sets"]
+                    ],
+                    "cva_m": [
+                        {"netting_set_id": x["netting_set_id"], "cva": _m(x["cva"]), "dva": _m(x["dva"])}
+                        for x in d["cva"]
+                    ],
+                    "wrong_way": d["wwr"],
+                    "stressed_exposure_m": [
+                        {
+                            "scenario": x["scenario_id"],
+                            "current": _m(x["current_exposure"]),
+                            "stressed": _m(x["stressed_exposure"]),
+                        }
+                        for x in d["stressed"][:6]
+                    ],
+                }
+            c = s.counterparties(r.run_id)
+        return {
+            "run_id": r.run_id,
+            "notes": c["notes"],
+            "counterparties": [
+                {
+                    "counterparty_id": x["counterparty_id"],
+                    "rating": x["rating"],
+                    "collateralised": x["collateralised"],
+                    "current_exposure_m": _m(x["current_exposure"]),
+                    "epe_m": _m(x["epe"]),
+                    "peak_pfe95_m": _m(x["peak_pfe95"]),
+                    "peak_pfe95_gross_m": _m(x["peak_pfe95_gross"]),
+                    "cva_m": _m(x["cva"]),
+                    "dva_m": _m(x["dva"]),
+                    "wrong_way": x["wrong_way"],
+                    "wwr_correlation": x["wwr_correlation"],
+                }
+                for x in c["summary"][:15]
+            ],
+        }
+
     def what_if_tool(shocks: list[dict], run_id: str | None = None, by: str = "asset_class") -> dict:
         repo, s = svc()
         with repo:
@@ -531,6 +594,14 @@ def build_tools(db_path: str) -> list[Tool]:
             "static-portfolio test and the live series.",
             _obj({"run_id": RUN}),
             backtest_tool,
+        ),
+        Tool(
+            "counterparty_exposure",
+            "Counterparty risk from the exposure engine: EPE, peak PFE95 after and before "
+            "collateral, CVA, DVA, wrong-way flags for all counterparties, or the full profile, netting sets, CSA "
+            "terms and stressed exposure for one counterparty_id.",
+            _obj({"counterparty_id": {"type": "string"}, "run_id": RUN}),
+            counterparty_tool,
         ),
         Tool(
             "what_if",

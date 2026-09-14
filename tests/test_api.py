@@ -41,8 +41,12 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        run_eod(repo, EODConfig(var=VaRConfig(window_days=150), workers=1),
-                runs_dir=tmp_path_factory.mktemp("runs"))
+        res = run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=150), workers=1),
+                      runs_dir=tmp_path_factory.mktemp("runs"))
+        from novera.counterparty_risk import ExposureSimConfig, run_counterparty
+
+        data_dir = path.parent / "data"
+        run_counterparty(repo, res.run.run_id, ExposureSimConfig(paths=20), runs_dir=data_dir / "runs", workers=1)
     return path
 
 
@@ -51,6 +55,7 @@ def client(db_path):
     import novera.api.app as app_module
 
     app_module.settings.db_path = db_path
+    app_module.settings.data_dir = db_path.parent / "data"
     return TestClient(app_module.app)
 
 
@@ -165,3 +170,15 @@ def test_measure_endpoints(client):
     assert client.get("/runs/latest/backtest").json()["summary"]
     r = client.post("/runs/latest/risk-pack", params={"pdf": False})
     assert r.status_code == 200 and r.json()["html"].endswith(".html")
+
+
+def test_counterparty_endpoints(client):
+    cps = client.get("/runs/latest/counterparties").json()
+    assert cps["summary"] and cps["notes"]["paths"] == "20"
+    cid = cps["summary"][0]["counterparty_id"]
+    d = client.get(f"/runs/latest/counterparties/{cid}").json()
+    assert d["profile"] and d["netting_sets"]
+    ns = d["netting_sets"][0]["netting_set_id"]
+    r = client.post("/runs/latest/csa-what-if", json={"netting_set_id": ns, "uncollateralised": True})
+    assert r.status_code == 200 and r.json()["what_if_csa"] is None and r.json()["after"] and r.json()["before"]
+    assert client.get("/runs/latest/counterparties/NOPE").status_code == 404

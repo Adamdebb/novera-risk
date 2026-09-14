@@ -64,6 +64,16 @@ class DecisionBody(BaseModel):
     comment: str = ""
 
 
+class CSAWhatIfBody(BaseModel):
+    netting_set_id: str
+    threshold_they_post: float | None = None
+    threshold_we_post: float | None = None
+    minimum_transfer_amount: float | None = None
+    independent_amount: float | None = None
+    uncollateralised: bool = False
+    margin_period_days: int = 10
+
+
 class AskBody(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     run_id: str | None = None
@@ -329,3 +339,29 @@ def backtest(run_id: str, svc: RiskService = Depends(service)):
 @app.post("/runs/{run_id}/risk-pack")
 def risk_pack(run_id: str, pdf: bool = True, svc: RiskService = Depends(service)):
     return _guard(svc.risk_pack, run_id, str(settings.data_dir / "reports"), pdf)
+
+
+# --- counterparty risk ------------------------------------------------------------------------------
+@app.get("/runs/{run_id}/counterparties")
+def counterparties(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.counterparties, run_id)
+
+
+@app.get("/runs/{run_id}/counterparties/{counterparty_id}")
+def counterparty(run_id: str, counterparty_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.counterparty, counterparty_id, run_id)
+
+
+@app.post("/runs/{run_id}/csa-what-if")
+def csa_what_if(run_id: str, body: CSAWhatIfBody, svc: RiskService = Depends(service)):
+    return _guard(
+        svc.csa_what_if,
+        body.netting_set_id,
+        run_id,
+        body.threshold_they_post,
+        body.threshold_we_post,
+        body.minimum_transfer_amount,
+        body.independent_amount,
+        body.uncollateralised,
+        body.margin_period_days,
+    )

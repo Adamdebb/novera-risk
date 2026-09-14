@@ -33,7 +33,7 @@ from novera.workflows.eod import EODConfig, run_eod
 from novera.workflows.scheduler import next_fire_time, run_once, serve
 
 D1 = date(2026, 9, 11)
-CFG = EODConfig(var=VaRConfig(window_days=120), workers=1)
+CFG = EODConfig(counterparty=False, var=VaRConfig(window_days=120), workers=1)
 
 
 @pytest.fixture(scope="module")

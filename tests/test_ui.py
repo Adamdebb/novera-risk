@@ -43,7 +43,7 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(var=VaRConfig(window_days=120), workers=1),
+        res = run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=120), workers=1),
                       runs_dir=tmp_path_factory.mktemp("runs"))
         from novera.reconciliation import reconcile
         from novera.simulation.vendor_feed import VendorFeedConfig, generate_vendor_feed
@@ -51,6 +51,10 @@ def db_path(tmp_path_factory):
         csv, meta = generate_vendor_feed(repo, res.run.run_id, tmp_path_factory.mktemp("feed"),
                                          VendorFeedConfig(var_window_days=100))
         reconcile(repo, res.run.run_id, csv, meta)
+        from novera.counterparty_risk import ExposureSimConfig, run_counterparty
+
+        run_counterparty(repo, res.run.run_id, ExposureSimConfig(paths=20), runs_dir=tmp_path_factory.mktemp("cpr"),
+                         workers=1)
     return path
 
 
@@ -68,7 +72,7 @@ def app(db_path, monkeypatch):
 
 
 @pytest.mark.parametrize("page", ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches",
-                                  "P&L explain", "Data quality", "Concentration & liquidity", "Compare runs",
+                                  "Counterparty", "P&L explain", "Data quality", "Concentration & liquidity", "Compare runs",
                                   "Challenger", "Risk pack", "Alerts & jobs", "Runs & audit"])
 def test_every_page_renders(app, page):
     app.sidebar.radio[0].set_value(page).run()

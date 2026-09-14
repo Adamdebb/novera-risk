@@ -268,6 +268,42 @@ def risk(
     pd.set_option("display.width", 200)
 
 
+@run_app.command("counterparty")
+def run_counterparty_cmd(
+    run_id: str = typer.Option("latest"),
+    paths: int = typer.Option(0, help="Monte Carlo paths (0 = settings)"),
+    workers: int = typer.Option(0),
+) -> None:
+    """Run the counterparty exposure engine on a stored run: EE, PFE, collateral, CVA, DVA, wrong-way."""
+    from novera.api.service import RiskService
+    from novera.counterparty_risk import ExposureSimConfig, run_counterparty
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    s = get_settings()
+    with DuckDBRepository(s.db_path) as repo:
+        rid = RiskService(repo).resolve(run_id).run_id
+        cr = run_counterparty(
+            repo, rid, ExposureSimConfig(paths=paths or s.exposure_paths), s, workers=workers or None
+        )
+    m = 1e6
+    cps = cr.counterparty_summary
+    typer.echo(
+        f"run {rid}: {len(cps)} counterparties, {cr.notes['paths']} paths, grid {' '.join(cr.notes['grid'])}"
+    )
+    typer.echo(
+        f"  total EPE {cps['epe'].sum() / m:,.1f}m  CVA {cps['cva'].sum() / m:,.2f}m  DVA "
+        f"{cps['dva'].sum() / m:,.2f}m  wrong-way flags {int(cps['wrong_way'].fillna(False).sum())}"
+    )
+    for _, r in cps.head(8).iterrows():
+        typer.echo(
+            f"  {r['counterparty_id']:<12} {str(r['rating']):<4} CE {r['current_exposure'] / m:>7.1f}m  EPE "
+            f"{r['epe'] / m:>6.1f}m  PFE95 {r['peak_pfe95'] / m:>7.1f}m ({r['peak_pfe95_step']}) gross "
+            f"{r['peak_pfe95_gross'] / m:>7.1f}m  CVA {r['cva'] / m:>5.2f}m"
+            + ("  WWR" if r.get("wrong_way") else "")
+            + ("  no CSA" if not r["collateralised"] else "")
+        )
+
+
 @run_app.command("eod")
 def run_eod_cmd(
     business_date: str = typer.Option(None, help="YYYY-MM-DD; default latest market snapshot"),
