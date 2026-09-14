@@ -370,3 +370,8 @@ def csa_what_if(run_id: str, body: CSAWhatIfBody, svc: RiskService = Depends(ser
 @app.get("/runs/{run_id}/capital")
 def capital(run_id: str, svc: RiskService = Depends(service)):
     return _guard(svc.capital, run_id)
+
+
+@app.get("/runs/{run_id}/fund")
+def fund(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.fund, run_id)

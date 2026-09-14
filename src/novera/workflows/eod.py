@@ -27,6 +27,7 @@ from novera.data_quality import (
     check_trades,
     check_valuation,
 )
+from novera.fund import run_fund
 from novera.limits import RiskInputs, effective_limits, expire_increases, monitor, sync_breaches
 from novera.market_data.history import MarketHistory
 from novera.pricing import valuation as valuation_mod
@@ -340,7 +341,10 @@ def run_eod(
                 runs_dir,
                 extras={"mc": mc, "bt_static": bt_static, "bt_live": bt_live, "conc": conc, "liq": liq},
             )
-        do_reg = settings.regulatory_enabled if cfg.regulatory is None else cfg.regulatory
+        is_fund = org.firm.firm_type == "HEDGE_FUND"
+        pfe: dict[str, float] | None = None
+        fund_metrics: dict[str, float] | None = None
+        do_reg = (settings.regulatory_enabled if cfg.regulatory is None else cfg.regulatory) and not is_fund
         if do_reg:
             with _timed(timings, "regulatory"):
                 reg = run_regulatory(repo, run.run_id, settings, runs_dir=runs_dir)
@@ -371,29 +375,37 @@ def run_eod(
                     "wrong_way_flags": int(cps["wrong_way"].fillna(False).sum()) if "wrong_way" in cps else 0,
                     "paths": cfg.exposure_paths or settings.exposure_paths,
                 }
-                # Re-monitor with PFE-based counterparty exposure and refresh the stored limits table.
                 pfe = {str(r["counterparty_id"]): float(r["peak_pfe95"]) for _, r in cps.iterrows()}
-                limit_table = (
-                    monitor(
-                        limits,
-                        RiskInputs(val.table, sens, hs, stress, counterparty_pfe=pfe),
-                        market.as_of,
-                        base_amounts,
-                        increase_ids,
-                    )
-                    if limits
-                    else pd.DataFrame()
+        if is_fund:
+            with _timed(timings, "fund"):
+                fr = run_fund(repo, run.run_id, settings, runs_dir=runs_dir)
+                run.summary["fund"] = fr.summary()
+                fund_metrics = {
+                    k: fr.summary()[k] for k in ("gross_leverage", "margin_to_nav", "largest_pb_share")
+                }
+        if pfe is not None or fund_metrics is not None:
+            # Re-monitor with the engine-based measures and refresh the stored limits table.
+            limit_table = (
+                monitor(
+                    limits,
+                    RiskInputs(val.table, sens, hs, stress, counterparty_pfe=pfe, fund_metrics=fund_metrics),
+                    market.as_of,
+                    base_amounts,
+                    increase_ids,
                 )
-                if len(limit_table):
-                    repo.save_run_frame(run.run_id, "limits", limit_table)
-                    run.summary["breaches"] = int((limit_table["status"] == "BREACH").sum())
-                    run.summary["warnings"] = int((limit_table["status"] == "WARNING").sum())
-                    sync2 = sync_breaches(repo, run.run_id, market.as_of, limit_table)
-                    if sync is not None:
-                        sync.raised += sync2.raised
-                        sync.auto_escalated += sync2.auto_escalated
-                        sync.back_within_limit += sync2.back_within_limit
-                        sync.events += sync2.events
+                if limits
+                else pd.DataFrame()
+            )
+            if len(limit_table):
+                repo.save_run_frame(run.run_id, "limits", limit_table)
+                run.summary["breaches"] = int((limit_table["status"] == "BREACH").sum())
+                run.summary["warnings"] = int((limit_table["status"] == "WARNING").sum())
+                sync2 = sync_breaches(repo, run.run_id, market.as_of, limit_table)
+                if sync is not None:
+                    sync.raised += sync2.raised
+                    sync.auto_escalated += sync2.auto_escalated
+                    sync.back_within_limit += sync2.back_within_limit
+                    sync.events += sync2.events
         if settings.alerts_enabled:
             with _timed(timings, "alerts"):
                 sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))

@@ -65,6 +65,7 @@ def app(db_path, monkeypatch):
     from novera.config import get_settings
 
     monkeypatch.setenv("NOVERA_DB_PATH", str(db_path))
+    monkeypatch.setenv("NOVERA_FUND_DB_PATH", str(db_path.parent / "no_fund.duckdb"))
     monkeypatch.delenv("NOVERA_API_URL", raising=False)
     get_settings.cache_clear()
     at = AppTest.from_file(str(APP), default_timeout=120)
@@ -74,17 +75,20 @@ def app(db_path, monkeypatch):
 
 
 @pytest.mark.parametrize("page", ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches",
-                                  "Counterparty", "Capital", "P&L explain", "Data quality", "Concentration & liquidity", "Compare runs",
-                                  "Challenger", "Risk pack", "Alerts & jobs", "Runs & audit"])
+                                  "Counterparty", "Capital", "P&L explain", "Data quality",
+                                  "Concentration & liquidity", "Compare runs", "Challenger", "Risk pack",
+                                  "Alerts & jobs", "Runs & audit"])
+
 def test_every_page_renders(app, page):
-    app.sidebar.radio[0].set_value(page).run()
+    radio = next(r for r in app.sidebar.radio if r.label == "View")
+    radio.set_value(page).run()
     assert not app.exception, [e.value for e in app.exception]
     assert app.title[0].value
     assert "run_" in app.caption[1].value or any("run_" in c.value for c in app.caption)
 
 
 def test_overview_shows_var_and_breaches(app):
-    assert app.sidebar.radio[0].value == "Overview"
+    assert next(r for r in app.sidebar.radio if r.label == "View").value == "Overview"
     metrics = {m.label: m.value for m in app.metric}
     assert "VaR 99% 1d" in metrics and metrics["VaR 99% 1d"].endswith("m")
     assert any("BREACH" in e.value or "—" in e.value for e in app.error) or app.success

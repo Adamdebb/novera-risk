@@ -482,6 +482,44 @@ def _compose(question: str, results: list[tuple[str, dict[str, Any], dict[str, A
                         f"- Under {s0['scenario']}, current exposure goes from {_fmt_m(s0['current'])} to "
                         f"{_fmt_m(s0['stressed'])}."
                     )
+        elif name == "fund_overview":
+            if "error" in res:
+                lines.append(f"- {res['error']}")
+            else:
+                lines.append(
+                    f"NAV {_fmt_m(res['nav_m'])}, gross leverage {res['gross_leverage']}x (net "
+                    f"{res['net_leverage']}x), VaR {res['var_pct_nav']}% of NAV, worst stress "
+                    f"{res['worst_stress_pct_nav']}% of NAV, margin {res['margin_to_nav']:.1%} of NAV with "
+                    f"the largest broker at {res['largest_pb_share']:.0%}."
+                )
+                for f in res["flags"][:4]:
+                    lines.append(f"- {f}")
+                lines.append(
+                    "- Strategies by VaR share: "
+                    + ", ".join(
+                        f"{x['strategy']} {x['share_of_var']:.0%} (gross {x['gross_pct_nav']}% NAV)"
+                        for x in res["strategies"][:5]
+                    )
+                    + "."
+                )
+                worst = (
+                    min(res["redemptions"], key=lambda z: z["coverage"] or 1e9)
+                    if res["redemptions"]
+                    else None
+                )
+                if worst:
+                    lines.append(
+                        f"- Redemption stress: worst coverage {worst['coverage']}x in {worst['scenario']} at "
+                        f"{worst['date']}, shortfall {_fmt_m(worst['shortfall_m'])}."
+                    )
+                lines.append(
+                    "- Largest factor betas: "
+                    + ", ".join(
+                        f"{x['strategy']} to {x['factor']} {x['beta_pct_nav_per_sigma']:+.2f}% NAV per sigma"
+                        for x in res["top_factor_betas"][:3]
+                    )
+                    + "."
+                )
         elif name == "capital":
             if "error" in res:
                 lines.append(f"- {res['error']}")

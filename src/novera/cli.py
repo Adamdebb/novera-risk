@@ -16,6 +16,12 @@ breach_app = typer.Typer(no_args_is_help=True, help="Breach workflow: list, ackn
 app.add_typer(breach_app, name="breach")
 
 
+def _db(fund: bool):
+    """Database for the selected firm face."""
+    s = get_settings()
+    return s.fund_db_path if fund else s.db_path
+
+
 @app.command()
 def info() -> None:
     """Show platform name, version and effective settings."""
@@ -47,26 +53,48 @@ def simulate(
     years: float = typer.Option(3.0, help="Years of daily market-data history"),
     no_market_data: bool = typer.Option(False, help="Skip market-data generation"),
     days: int = typer.Option(2, help="Business days to simulate; day 1 carries the planted problems"),
+    template: str = typer.Option(
+        "bank", help="bank (Global Macro Bank) or hedge_fund (Meridian Multi-Strategy)"
+    ),
+    db: str = typer.Option(
+        None, help="Database path; default NOVERA_DB_PATH, or NOVERA_FUND_DB_PATH for hedge_fund"
+    ),
 ) -> None:
     """Build the simulated bank, portfolio and market data, store them, and print a summary."""
     from collections import Counter
     from datetime import date as _date
 
     from novera.simulation import (
+        BANK_TEMPLATE,
+        FUND_TEMPLATE,
         TradeGeneratorConfig,
         build_counterparty_universe,
+        build_fund,
+        build_fund_counterparties,
+        build_fund_limits,
         build_global_macro_bank,
         build_limits,
+        build_multi_strategy_fund,
         evolve_portfolio,
         generate_portfolio,
     )
+    from novera.simulation.market_data import business_days_after
     from novera.storage.duckdb_repository import DuckDBRepository
 
     s = get_settings()
     bd = _date.fromisoformat(business_date)
-    org = build_global_macro_bank()
-    cp = build_counterparty_universe(org)
-    from novera.simulation.market_data import business_days_after
+    fund = None
+    if template == "hedge_fund":
+        org = build_multi_strategy_fund()
+        cp = build_fund_counterparties(org)
+        fund = build_fund()
+        tmpl = FUND_TEMPLATE
+        db_path = Path(db) if db else s.fund_db_path
+    else:
+        org = build_global_macro_bank()
+        cp = build_counterparty_universe(org)
+        tmpl = BANK_TEMPLATE
+        db_path = Path(db) if db else s.db_path
 
     dates = [bd] + business_days_after(bd, max(days - 1, 0))
     md = None
@@ -86,22 +114,26 @@ def simulate(
             )
         )
         history = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(bd, trades, seed, not no_inject, history))
+    gen = generate_portfolio(org, cp, TradeGeneratorConfig(bd, trades, seed, not no_inject, history, tmpl))
     snapshots = [gen.snapshot]
     day_changes: dict[str, list[str]] = {}
     for d in dates[1:]:
         nxt, changes = evolve_portfolio(
-            snapshots[-1], d, org, cp, gen.injections, history, seed=seed + len(snapshots)
+            snapshots[-1], d, org, cp, gen.injections, history, seed=seed + len(snapshots), template=tmpl
         )
         snapshots.append(nxt)
         day_changes[str(d)] = changes
-    s.db_path.parent.mkdir(parents=True, exist_ok=True)
-    with DuckDBRepository(s.db_path) as repo:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with DuckDBRepository(db_path) as repo:
         repo.init_schema()
         repo.save_organisation(org)
         repo.save_counterparties(cp.counterparties)
         repo.save_netting_sets(cp.netting_sets, cp.csas)
-        repo.save_limits(build_limits(org, cp, bd))
+        if fund is not None:
+            repo.save_fund(fund)
+            repo.save_limits(build_fund_limits(org, cp, fund))
+        else:
+            repo.save_limits(build_limits(org, cp, bd))
         sid = repo.save_portfolio_snapshot(gen.snapshot)
         for snap_ in snapshots[1:]:
             repo.save_portfolio_snapshot(snap_)
@@ -111,8 +143,9 @@ def simulate(
             md_ids = {d: repo.save_market_snapshot(m) for d, m in md.snapshots.items()}
     snap = gen.snapshot
     typer.echo(
-        f"{org.firm.name}: {len(org.legal_entities)} legal entities, {len(org.desks)} desks, "
+        f"{org.firm.name} ({db_path}): {len(org.legal_entities)} legal entities, {len(org.desks)} desks, "
         f"{len(org.books)} books, {len(cp.counterparties)} counterparties"
+        + (f", NAV {fund.nav / 1e6:,.0f}m, {len(fund.investors)} investors" if fund else "")
     )
     typer.echo(f"snapshot {sid} for {bd}: {len(snap)} trades")
     for ac, n in sorted(Counter(t.asset_class.value for t in snap.trades).items()):
@@ -273,6 +306,7 @@ def run_counterparty_cmd(
     run_id: str = typer.Option("latest"),
     paths: int = typer.Option(0, help="Monte Carlo paths (0 = settings)"),
     workers: int = typer.Option(0),
+    fund: bool = typer.Option(False, help="Use the hedge-fund database"),
 ) -> None:
     """Run the counterparty exposure engine on a stored run: EE, PFE, collateral, CVA, DVA, wrong-way."""
     from novera.api.service import RiskService
@@ -280,7 +314,7 @@ def run_counterparty_cmd(
     from novera.storage.duckdb_repository import DuckDBRepository
 
     s = get_settings()
-    with DuckDBRepository(s.db_path) as repo:
+    with DuckDBRepository(_db(fund)) as repo:
         rid = RiskService(repo).resolve(run_id).run_id
         cr = run_counterparty(
             repo, rid, ExposureSimConfig(paths=paths or s.exposure_paths), s, workers=workers or None
@@ -339,6 +373,7 @@ def run_regulatory_cmd(run_id: str = typer.Option("latest")) -> None:
 def run_eod_cmd(
     business_date: str = typer.Option(None, help="YYYY-MM-DD; default latest market snapshot"),
     workers: int = typer.Option(0, help="Processes for full-revaluation VaR (0 = all cores but one)"),
+    fund: bool = typer.Option(False, help="Run on the hedge-fund database (NOVERA_FUND_DB_PATH)"),
 ) -> None:
     """Run the end-of-day pipeline and store an auditable run."""
     from datetime import date as _date
@@ -346,10 +381,10 @@ def run_eod_cmd(
     from novera.storage.duckdb_repository import DuckDBRepository
     from novera.workflows.eod import EODConfig, run_eod
 
-    s = get_settings()
     bd = _date.fromisoformat(business_date) if business_date else None
-    with DuckDBRepository(s.db_path) as repo:
-        res = run_eod(repo, EODConfig(workers=workers or None), bd)
+    with DuckDBRepository(_db(fund)) as repo:
+        firm = repo.load_organisation("MSF").firm.firm_id if fund else "GMB"
+        res = run_eod(repo, EODConfig(firm_id=firm, workers=workers or None), bd)
     r, m = res.run, 1e6
     sm = r.summary
     typer.echo(f"run {r.run_id}  {r.business_date}  status {r.status}  verdict {r.verdict}")
@@ -484,11 +519,12 @@ def ask(
     question: str = typer.Argument(..., help="Question for the Risk Copilot"),
     run_id: str = typer.Option(None, help="Run to answer about (default latest)"),
     show_tools: bool = typer.Option(False, help="Print the tool calls made"),
+    fund: bool = typer.Option(False, help="Use the hedge-fund database"),
 ) -> None:
     """Ask the Risk Copilot. Answers come only from stored run results (ADR 0003)."""
     from novera.ai import Copilot
 
-    c = Copilot(get_settings().db_path)
+    c = Copilot(_db(fund))
     a = c.ask(question, run_id)
     typer.echo(a.answer)
     typer.echo(
@@ -651,12 +687,13 @@ def report(
     run_id: str = typer.Option("latest"),
     out: str = typer.Option("data/reports", help="Output directory"),
     no_pdf: bool = typer.Option(False, help="Skip the PDF (needs Playwright's Chromium)"),
+    fund: bool = typer.Option(False, help="Use the hedge-fund database"),
 ) -> None:
     """Write the daily risk pack (HTML, PDF, Excel) for a stored run."""
     from novera.reporting import build_pack
     from novera.storage.duckdb_repository import DuckDBRepository
 
-    with DuckDBRepository(get_settings().db_path, read_only=True) as repo:
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
         files = build_pack(repo, run_id, Path(out), pdf=not no_pdf)
     typer.echo(f"html {files.html}\nxlsx {files.xlsx}\npdf  {files.pdf or 'not generated'}")
 

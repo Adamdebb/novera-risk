@@ -39,6 +39,15 @@ ESCALATION_TARGET = {
 }
 
 
+def _finite(x) -> float:
+    """Utilisation as a float; NaN (limit could not be measured) becomes 0."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if v != v else v
+
+
 class WorkflowError(ValueError):
     """A transition or approval that the rules do not allow."""
 
@@ -98,7 +107,7 @@ def sync_breaches(
     open_by_limit = {b.limit_id: b for b in repo.load_breaches(open_only=True)}
     breached = limit_table[limit_table["status"] == "BREACH"]
     for _, r in breached.iterrows():
-        util = float(r["utilisation"])
+        util = _finite(r["utilisation"])
         b = open_by_limit.get(r["limit_id"])
         if b is None:
             b = Breach(
@@ -181,7 +190,7 @@ def sync_breaches(
         b.latest_run_id, b.latest_date, b.latest_utilisation = (
             run_id,
             business_date,
-            float(row["utilisation"]),
+            _finite(row["utilisation"]),
         )
         repo.save_breach(b)
         _record(

@@ -65,6 +65,9 @@ class RiskInputs:
     var: VaRResult | None = None
     stress: list[StressResult] = field(default_factory=list)
     counterparty_pfe: dict[str, float] | None = None  # peak PFE95 after collateral when the engine ran
+    fund_metrics: dict[str, float] | None = (
+        None  # gross_leverage, margin_to_nav, largest_pb_share (fund face)
+    )
 
 
 def trades_in_scope(limit: Limit, valuation: pd.DataFrame) -> pd.Index:
@@ -130,6 +133,17 @@ def current_value(limit: Limit, inputs: RiskInputs) -> tuple[float, int]:
         group = "bucket" if limit.scope.tenor_bucket else "underlying"
         denom = float(total.groupby(group)["value"].sum().abs().sum())  # sum of |net| per bucket
         return (float(abs(part["value"].sum())) / denom if denom else 0.0), int(total["trade_id"].nunique())
+    if lt in (LimitType.LEVERAGE, LimitType.MARGIN_USAGE, LimitType.PB_CONCENTRATION):
+        key = {
+            LimitType.LEVERAGE: "gross_leverage",
+            LimitType.MARGIN_USAGE: "margin_to_nav",
+            LimitType.PB_CONCENTRATION: "largest_pb_share",
+        }[lt]
+        return (
+            float(inputs.fund_metrics[key])
+            if inputs.fund_metrics and key in inputs.fund_metrics
+            else float("nan")
+        ), len(ids)
     if lt is LimitType.COUNTERPARTY_EXPOSURE and inputs.counterparty_pfe is not None:
         return float(inputs.counterparty_pfe.get(limit.scope.entity_id, 0.0)), len(ids)
     if lt is LimitType.COUNTERPARTY_EXPOSURE:
