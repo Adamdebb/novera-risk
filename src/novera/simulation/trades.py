@@ -110,7 +110,7 @@ class _Gen:
         self.rng = np.random.default_rng(cfg.seed)
         self.bd = cfg.business_date
         self.n = 0
-        self.bonds = {c: inst.government_bonds(c, self.bd) for c in ref.SWAP_CURVES}
+        self.bonds = {c: inst.government_bonds(c, self.bd) for c in ref.BOND_CURRENCIES}
         # Bank A is over-weighted on purpose (counterparty concentration).
         bilateral = self.cp.bilateral
         w = np.array([4.0 if c.counterparty_id == "BANK_A" else 1.0 for c in bilateral])

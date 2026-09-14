@@ -9,7 +9,7 @@ phase has tests, methodology records and a working screen.
 - [x] Domain model: instruments, trades, organisation hierarchy, counterparties, netting sets, CSAs, limits
 - [x] Simulated organisation "Global Macro Bank" with desks across all asset classes
 - [x] Trade generator with deliberately injected problems (see below)
-- [ ] Market-data simulator: curves, FX, equities, vol surfaces, credit, commodities, crypto
+- [x] Market-data simulator: curves, FX, equities, vol surfaces with smile, credit, commodities, crypto, two stylised crisis episodes, planted stale surface and missing node
 - [x] Repository layer on DuckDB; snapshots with content-hash IDs
 - [~] CLI: `novera simulate` done; `novera run eod`, `novera report` pending
 
