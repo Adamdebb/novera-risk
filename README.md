@@ -89,6 +89,7 @@ to make it call the API instead.
 - `docs/03-roadmap.md` — phases and instrument scope
 - `docs/04-governance.md` — methodology records, run reproducibility, AI rules
 - `docs/05-demo-script.md` — the 10-minute executive demo
+- `docs/06-decision-log.md` — every design question, the options, the choice made, and what to revisit
 - `docs/adr/` — architecture decision records
 - `docs/methodology/` — one record per metric
 
