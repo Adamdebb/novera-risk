@@ -210,6 +210,22 @@ class HttpClient:
     def copilot_provider(self):
         return self._get("/copilot/provider")
 
+    def alerts(self, limit=200, status=None, severity=None):
+        return self._get("/alerts", limit=limit, status=status, severity=severity)
+
+    def jobs(self, limit=100):
+        return self._get("/jobs", limit=limit)
+
+    def reconciliation(self, run_id=None):
+        r = self.http.get(f"/runs/{self._rid(run_id)}/reconciliation")
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+
+    def provenance(self):
+        return self._get("/market-data/provenance")
+
 
 def make_client(settings) -> RiskClient:
     import os

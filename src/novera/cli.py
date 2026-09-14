@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from novera import __version__
@@ -429,6 +431,152 @@ def ask(
     if show_tools:
         for t in a.tool_calls:
             typer.echo(f"  {t.name}({t.input}) -> {'error ' if t.is_error else ''}{t.output[:200]}")
+
+
+@app.command()
+def schedule(
+    at: str = typer.Option(None, help="HH:MM local time; default from settings (NOVERA_EOD_TIME)"),
+    advance: bool = typer.Option(True, help="Advance the simulated world by a business day before each run"),
+    once: bool = typer.Option(False, help="Run one job now and exit (no waiting)"),
+    workers: int = typer.Option(0, help="Processes for VaR (0 = all cores but one)"),
+) -> None:
+    """Run the in-process scheduler: EOD at a fixed time each business day, with retries and alerts."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.eod import EODConfig
+    from novera.workflows.scheduler import next_fire_time, run_once, serve
+
+    s = get_settings()
+    cfg = EODConfig(workers=workers or None)
+    hhmm = at or s.eod_time
+    if once:
+        with DuckDBRepository(s.db_path) as repo:
+            job = run_once(repo, advance, cfg)
+        typer.echo(
+            f"job {job.job_id} {job.status} business date {job.business_date} run {job.run_id} "
+            f"attempts {job.attempts}"
+        )
+        for n in job.notes:
+            typer.echo(f"  {n}")
+        if job.error:
+            typer.echo(f"  error: {job.error.splitlines()[0]}")
+        raise typer.Exit(0 if job.status in ("COMPLETED", "SKIPPED") else 1)
+    from datetime import datetime as _dt
+
+    typer.echo(
+        f"scheduler running: EOD at {hhmm} on business days, advance={advance}, next fire "
+        f"{next_fire_time(_dt.now().astimezone(), hhmm):%Y-%m-%d %H:%M}. Ctrl-C to stop."
+    )
+
+    def log_sleep(seconds: float) -> None:
+        import time as _t
+
+        typer.echo(f"  sleeping {seconds / 3600:.1f}h until the next run")
+        _t.sleep(seconds)
+
+    for job in serve(str(s.db_path), hhmm, advance, cfg, sleep=log_sleep):
+        typer.echo(f"  job {job.job_id} {job.status} {job.business_date} run {job.run_id}")
+
+
+@app.command("vendor-feed")
+def vendor_feed(
+    run_id: str = typer.Option("latest", help="Run to derive the official feed from"),
+    out: str = typer.Option("data/feeds", help="Output directory"),
+    no_plant: bool = typer.Option(False, help="Do not plant the four differences"),
+) -> None:
+    """Write a simulated 'official risk system' feed (CSV + JSON) with planted differences."""
+    from novera.api.service import RiskService
+    from novera.simulation.vendor_feed import VendorFeedConfig, generate_vendor_feed
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    s = get_settings()
+    with DuckDBRepository(s.db_path, read_only=True) as repo:
+        rid = RiskService(repo).resolve(run_id).run_id
+        cfg = VendorFeedConfig(plant=not no_plant)
+        csv, meta = generate_vendor_feed(repo, rid, Path(out), cfg)
+    typer.echo(f"feed written: {csv} and {meta}")
+    for x in cfg.planted:
+        typer.echo(f"  planted: {x}")
+
+
+@app.command()
+def reconcile(
+    feed: str = typer.Argument(..., help="Path to the official feed CSV (the .json next to it is read too)"),
+    run_id: str = typer.Option("latest"),
+) -> None:
+    """Reconcile an external risk feed against a run and attribute the VaR gap (MR-009)."""
+    from novera.api.service import RiskService
+    from novera.reconciliation import reconcile as _reconcile
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    s = get_settings()
+    csv = Path(feed)
+    meta = csv.with_suffix(".json")
+    with DuckDBRepository(s.db_path) as repo:
+        rid = RiskService(repo).resolve(run_id).run_id
+        rec = _reconcile(repo, rid, csv, meta)
+    m = 1e6
+    typer.echo(f"reconciliation {rec.recon_id} · run {rid} · {rec.vendor} · {rec.business_date}")
+    typer.echo(
+        f"  Novera VaR {rec.novera_var / m:,.2f}m   official VaR {rec.official_var / m:,.2f}m   "
+        f"gap {rec.gap / m:+,.2f}m ({rec.gap / rec.novera_var:+.1%})"
+    )
+    for k, v in rec.attribution.items():
+        typer.echo(f"    {k:<14} {v / m:+8.2f}m")
+    for f in rec.findings:
+        typer.echo(f"  - {f}")
+    typer.echo(
+        "  by desk (gap, m): "
+        + ", ".join(f"{r['desk_id']} {r['gap'] / m:+.2f}" for _, r in rec.by_desk.head(6).iterrows())
+    )
+
+
+@app.command()
+def fetch(
+    start: str = typer.Option("2007-01-01", help="First date YYYY-MM-DD"),
+    end: str = typer.Option(None, help="Last date; default today"),
+    sources: str = typer.Option("fred,yahoo,coinbase", help="Comma-separated adapters"),
+) -> None:
+    """Fetch real market history (FRED, Yahoo Finance, Coinbase) into the history table, replacing
+    synthetic values on the fetched dates and recording provenance. Needs network access."""
+    from datetime import date as _date
+
+    from novera.market_data.adapters import (
+        CoinbaseAdapter,
+        FredAdapter,
+        YahooAdapter,
+        apply_real_history,
+        fetch_all,
+    )
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    s = get_settings()
+    wanted = {x.strip() for x in sources.split(",")}
+    adapters = []
+    if "fred" in wanted:
+        if not s.fred_api_key:
+            typer.echo("fred skipped: set FRED_API_KEY in .env (free key)")
+        else:
+            adapters.append(FredAdapter(s.fred_api_key))
+    if "yahoo" in wanted:
+        adapters.append(YahooAdapter())
+    if "coinbase" in wanted:
+        adapters.append(CoinbaseAdapter())
+    d0, d1 = _date.fromisoformat(start), _date.fromisoformat(end) if end else _date.today()
+    results = fetch_all(adapters, d0, d1)
+    with DuckDBRepository(s.db_path) as repo:
+        repo.init_schema()
+        summary = apply_real_history(repo, results)
+    typer.echo(
+        f"fetched {summary['rows']:,} rows for {summary['factors']} factors "
+        f"from {', '.join(summary['sources'])}"
+    )
+    for r in results:
+        typer.echo(
+            f"  {r.source}: {sum(r.fetched.values()):,} rows, {len(r.fetched)} factors"
+            + (f", {len(r.errors)} errors" if r.errors else "")
+        )
+        for k, v in list(r.errors.items())[:5]:
+            typer.echo(f"    {k}: {v[:120]}")
 
 
 if __name__ == "__main__":

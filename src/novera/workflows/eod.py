@@ -48,6 +48,7 @@ from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
 from novera.risk.stress import historical_episodes_from_simulation
 from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
+from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
 
 MODEL_VERSIONS = {
@@ -89,6 +90,7 @@ class EODResult:
     dq: DataQualityReport
     pnl: Any
     events: list[AuditEvent]
+    sync: Any = None  # breach sync outcome when persisted
 
 
 def _timed(timings: dict[str, float], name: str):
@@ -276,12 +278,20 @@ def run_eod(
         )
     )
 
+    result = EODResult(run, val.table, sens, hs, tv, stress, limit_table, dq, pnl, events, sync)
     if persist:
         with _timed(timings, "persist"):
             _persist(repo, run, val.table, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir)
+        if settings.alerts_enabled:
+            with _timed(timings, "alerts"):
+                sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))
+            run.summary["alerts"] = {
+                s_: sum(1 for a in sent if a.status == s_)
+                for s_ in ("STORED", "SENT", "PARTIAL", "FAILED", "SUPPRESSED")
+            }
         run.timings = timings
         repo.save_run(run)
-    return EODResult(run, val.table, sens, hs, tv, stress, limit_table, dq, pnl, events)
+    return result
 
 
 def _persist(repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir) -> None:
