@@ -66,6 +66,9 @@ with drill-down.
 - [x] Second simulated business day (new trades, one concentration swap unwound) so the
       day-on-day story is real: three breaches auto-escalate, EM FX breaches on a new trade
 - [ ] Independent-challenger reconciliation of externally ingested risk results
+- [x] Risk Copilot (AI-001), pulled forward from Phase 7: tool-calling over the stored run with
+      a what-if engine, stored answers with tool calls and run ids, Claude Opus 5 or a scripted
+      provider without credentials; API, `novera ask` and a chat page
 - [ ] Scheduler and alerts
 - [ ] Real market-data adapters (FRED, Yahoo, crypto exchanges) so named historical
       scenarios (2008, 2011, 2015, 2016, 2020, 2022, 2023) use real history

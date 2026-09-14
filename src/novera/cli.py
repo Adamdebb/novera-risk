@@ -410,5 +410,26 @@ def breach_decide_increase(
     _breach_action(decide_increase, increase_id, approver, not reject, comment)
 
 
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="Question for the Risk Copilot"),
+    run_id: str = typer.Option(None, help="Run to answer about (default latest)"),
+    show_tools: bool = typer.Option(False, help="Print the tool calls made"),
+) -> None:
+    """Ask the Risk Copilot. Answers come only from stored run results (ADR 0003)."""
+    from novera.ai import Copilot
+
+    c = Copilot(get_settings().db_path)
+    a = c.ask(question, run_id)
+    typer.echo(a.answer)
+    typer.echo(
+        f"\n[{a.provider}/{a.model} · {a.turns} turns · {a.seconds:.1f}s · runs {', '.join(a.run_ids_cited)}"
+        f" · answer {a.answer_id}]"
+    )
+    if show_tools:
+        for t in a.tool_calls:
+            typer.echo(f"  {t.name}({t.input}) -> {'error ' if t.is_error else ''}{t.output[:200]}")
+
+
 if __name__ == "__main__":
     app()

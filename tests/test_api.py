@@ -137,3 +137,15 @@ def test_breach_endpoints_round_trip(client):
     assert r.status_code == 200 and r.json()["status"] == "CLOSED"
     rid = client.get("/runs").json()[0]["run_id"]
     assert client.get("/compare", params={"run_a": rid, "run_b": rid}).json()["headline"]["var"]["change"] == 0
+
+
+def test_copilot_endpoints(client, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert client.get("/copilot/provider").json()["provider"] == "scripted"
+    r = client.post("/copilot/ask", json={"question": "Which limits are breached?", "session_id": "t"})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["answer"] and d["tool_calls"] and d["run_ids_cited"]
+    assert client.get("/copilot/history").json()[0]["answer_id"] == d["answer_id"]
+    r = client.post("/copilot/commentary")
+    assert r.status_code == 200 and "VaR" in r.json()["answer"]

@@ -45,6 +45,7 @@ WRITE_METHODS = {
     "decide_increase",
     "cancel_increase",
 }
+COPILOT_METHODS = {"ask", "commentary", "copilot_history", "copilot_provider"}
 
 
 class LocalClient:
@@ -55,6 +56,16 @@ class LocalClient:
         self.db_path = db_path
 
     def _call(self, name: str, *a: Any, **kw: Any) -> Any:
+        if name in COPILOT_METHODS:
+            from novera.ai import Copilot, make_provider
+
+            if name == "copilot_provider":
+                p = make_provider()
+                return {"provider": p.name, "model": p.model}
+            c = Copilot(self.db_path)
+            if name == "copilot_history":
+                return c.history(*a, **kw)
+            return getattr(c, name)(*a, **kw).to_dict()
         if name in WRITE_METHODS:
             with DuckDBRepository(self.db_path) as repo:
                 return getattr(RiskWriteService(repo), name)(*a, **kw)
@@ -178,6 +189,26 @@ class HttpClient:
 
     def compare(self, run_a, run_b, by="asset_class"):
         return self._get("/compare", run_a=run_a, run_b=run_b, by=by)
+
+    def ask(self, question, run_id=None, session_id=None):
+        r = self.http.post(
+            "/copilot/ask",
+            json={"question": question, "run_id": run_id, "session_id": session_id},
+            timeout=300,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def commentary(self, run_id=None):
+        r = self.http.post("/copilot/commentary", params={"run_id": run_id} if run_id else None, timeout=300)
+        r.raise_for_status()
+        return r.json()
+
+    def copilot_history(self, limit=50):
+        return self._get("/copilot/history", limit=limit)
+
+    def copilot_provider(self):
+        return self._get("/copilot/provider")
 
 
 def make_client(settings) -> RiskClient:

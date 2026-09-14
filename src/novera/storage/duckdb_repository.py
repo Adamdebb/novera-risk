@@ -168,6 +168,17 @@ CREATE TABLE IF NOT EXISTS limit_increase (
     expires_on DATE NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS copilot_answer (
+    answer_id VARCHAR PRIMARY KEY,
+    asked_at TIMESTAMP NOT NULL,
+    run_id VARCHAR,
+    session_id VARCHAR,
+    provider VARCHAR NOT NULL,
+    model VARCHAR NOT NULL,
+    question VARCHAR NOT NULL,
+    answer VARCHAR NOT NULL,
+    payload JSON NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_value (
     snapshot_id VARCHAR NOT NULL,
     factor_id VARCHAR NOT NULL,
@@ -641,6 +652,36 @@ class DuckDBRepository:
             [on],
         ).fetchone()
         return self.load_portfolio_snapshot(row[0]) if row else None
+
+    # --- copilot ---------------------------------------------------------------------
+    def save_copilot_answer(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO copilot_answer VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                d["answer_id"],
+                d["at"],
+                d.get("run_id"),
+                d.get("session_id"),
+                d["provider"],
+                d["model"],
+                d["question"],
+                d["answer"],
+                json.dumps(d, default=str),
+            ],
+        )
+
+    def load_copilot_answers(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'copilot_answer'"
+        ).fetchone():
+            return []
+        q = (
+            "SELECT payload FROM copilot_answer"
+            + (" WHERE session_id = ?" if session_id else "")
+            + " ORDER BY asked_at DESC LIMIT ?"
+        )
+        params = ([session_id] if session_id else []) + [limit]
+        return [json.loads(r[0]) for r in self._conn.execute(q, params).fetchall()]
 
 
 def _run_from_row(row: tuple) -> RunRecord:

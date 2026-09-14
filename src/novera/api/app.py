@@ -64,6 +64,12 @@ class DecisionBody(BaseModel):
     comment: str = ""
 
 
+class AskBody(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    run_id: str | None = None
+    session_id: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "platform": settings.platform_name, "version": __version__}
@@ -243,3 +249,33 @@ def cancel_increase(increase_id: str, body: ActionBody, svc: RiskWriteService = 
 @app.get("/compare")
 def compare(run_a: str, run_b: str, by: str = "asset_class", svc: RiskService = Depends(service)):
     return _guard(svc.compare, run_a, run_b, by)
+
+
+# --- Risk Copilot --------------------------------------------------------------------------------
+@app.post("/copilot/ask")
+def copilot_ask(body: AskBody):
+    from novera.ai import Copilot
+
+    return Copilot(settings.db_path).ask(body.question, body.run_id, session_id=body.session_id).to_dict()
+
+
+@app.post("/copilot/commentary")
+def copilot_commentary(run_id: str | None = None):
+    from novera.ai import Copilot
+
+    return Copilot(settings.db_path).commentary(run_id).to_dict()
+
+
+@app.get("/copilot/history")
+def copilot_history(limit: int = 50):
+    from novera.ai import Copilot
+
+    return Copilot(settings.db_path).history(limit)
+
+
+@app.get("/copilot/provider")
+def copilot_provider():
+    from novera.ai import make_provider
+
+    p = make_provider(settings)
+    return {"provider": p.name, "model": p.model}

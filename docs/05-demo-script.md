@@ -22,7 +22,8 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    Change CSA threshold, re-run, compare the two runs side by side.
 7. **Independent challenger** (1 min). Official VaR versus Novera VaR differ by 7 percent.
    Attribution of the gap: volatility window, excluded positions, non-linear treatment.
-8. **Risk Copilot** (2 min). "Why did VaR increase today?" then "Which books are closest
+8. **Risk Copilot** (2 min). Five example buttons on the Copilot page; open the tool-call
+   expander under an answer to show the run id and the exact numbers it read. "Why did VaR increase today?" then "Which books are closest
    to their limits?" then "What if equities fall 20 percent and vol rises 15 points?"
    Each answer cites run IDs and tool calls.
 9. **Close** (30 s). "This is a prototype of the layer above today's risk stack, not a
