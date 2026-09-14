@@ -6,12 +6,12 @@ phase has tests, methodology records and a working screen.
 ## Phase 1 — Foundation (current)
 
 - [x] Repo, tooling, CI, design docs, governance rules
-- [ ] Domain model: instruments, trades, organisation hierarchy, counterparties, netting sets, CSAs, limits
-- [ ] Simulated organisation "Global Macro Bank" with desks across all asset classes
-- [ ] Trade generator with deliberately injected problems (see below)
+- [x] Domain model: instruments, trades, organisation hierarchy, counterparties, netting sets, CSAs, limits
+- [x] Simulated organisation "Global Macro Bank" with desks across all asset classes
+- [x] Trade generator with deliberately injected problems (see below)
 - [ ] Market-data simulator: curves, FX, equities, vol surfaces, credit, commodities, crypto
-- [ ] Repository layer on DuckDB; snapshots with content-hash IDs
-- [ ] CLI: `novera simulate`, `novera run eod`, `novera report`
+- [x] Repository layer on DuckDB; snapshots with content-hash IDs
+- [~] CLI: `novera simulate` done; `novera run eod`, `novera report` pending
 
 ## Phase 2 — Market risk MVP
 
