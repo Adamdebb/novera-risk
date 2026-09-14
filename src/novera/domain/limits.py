@@ -25,6 +25,9 @@ class LimitType(StrEnum):
     CONCENTRATION = "CONCENTRATION"
     COUNTERPARTY_EXPOSURE = "COUNTERPARTY_EXPOSURE"
     LIQUIDITY = "LIQUIDITY"
+    LEVERAGE = "LEVERAGE"  # fund: gross exposure over NAV
+    MARGIN_USAGE = "MARGIN_USAGE"  # fund: prime-broker margin over NAV
+    PB_CONCENTRATION = "PB_CONCENTRATION"  # fund: largest broker's share of margin
 
 
 class LimitStatus(StrEnum):

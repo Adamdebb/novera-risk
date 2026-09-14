@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     reporting_currency: str = "USD"
     data_dir: Path = Path("./data")
     db_path: Path = Path("./data/novera.duckdb")
+    fund_db_path: Path = Path("./data/fund.duckdb")
 
     # AI layer. The engine never depends on these.
     llm_model: str = "claude-opus-5"

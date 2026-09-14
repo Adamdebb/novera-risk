@@ -17,7 +17,12 @@ from novera.config import get_settings
 
 settings = get_settings()
 st.set_page_config(page_title=f"{settings.platform_name} Risk", page_icon="📊", layout="wide")
-client = make_client(settings)
+
+FIRMS = {"Global Macro Bank": settings.db_path, "Meridian Multi-Strategy Fund": settings.fund_db_path}
+_available = {k: v for k, v in FIRMS.items() if Path(v).exists()} or {"Global Macro Bank": settings.db_path}
+firm_name = st.sidebar.selectbox("Firm", list(_available), key="firm")
+is_fund = "Fund" in firm_name
+client = make_client(settings, db_path=_available[firm_name])
 
 M = 1e6
 
@@ -33,17 +38,17 @@ def df(rows: list[dict]) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def load_runs() -> list[dict]:
+def load_runs(firm: str) -> list[dict]:
     return client.runs(30)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def load(name: str, run_id: str, **kw):
+def load(name: str, run_id: str, firm: str = "", **kw):
     return getattr(client, name)(run_id=run_id, **kw)
 
 
 # --- sidebar: run selection -----------------------------------------------------------
-runs = load_runs()
+runs = load_runs(firm_name)
 if not runs:
     st.title(f"{settings.platform_name}")
     st.warning("No completed run found. Run `novera simulate` then `novera run eod`.")
@@ -51,30 +56,21 @@ if not runs:
 labels = {r["run_id"]: f"{r['business_date']}  {r['run_id']}  [{r['verdict']}]" for r in runs}
 with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
-    st.caption(settings.platform_tagline)
+    st.caption(f"{settings.platform_tagline} · {firm_name}")
     run_id = st.selectbox("Run", list(labels), format_func=labels.get)
-    page = st.radio(
-        "View",
-        [
-            "Overview",
-            "Copilot",
-            "Drill-down",
-            "VaR",
-            "Stress",
-            "Limits",
-            "Breaches",
-            "Counterparty",
-            "Capital",
-            "P&L explain",
-            "Data quality",
-            "Concentration & liquidity",
-            "Compare runs",
-            "Challenger",
-            "Risk pack",
-            "Alerts & jobs",
-            "Runs & audit",
-        ],
-    )
+    pages = ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches", "Counterparty"]
+    pages += ["Fund"] if is_fund else ["Capital"]
+    pages += [
+        "P&L explain",
+        "Data quality",
+        "Concentration & liquidity",
+        "Compare runs",
+        "Challenger",
+        "Risk pack",
+        "Alerts & jobs",
+        "Runs & audit",
+    ]
+    page = st.radio("View", pages)
     st.caption("Every figure is read from the stored run. Nothing is computed on this page.")
 
 summary = load("summary", run_id)
@@ -555,6 +551,129 @@ elif page == "Counterparty":
     if not tr.empty:
         tr["pv"] = tr["pv"] / M
         st.dataframe(tr.round(2), hide_index=True, use_container_width=True)
+
+elif page == "Fund":
+    header("Fund risk and investor view")
+    fd = client.fund(run_id)
+    if not fd.get("available"):
+        st.info("No fund run stored for this run.")
+        st.stop()
+    sm, fund = fd["summary"], fd["fund"] or {}
+    nav = sm["nav"]
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("NAV", money(nav, digits=0))
+    c2.metric("Gross leverage", f"{sm['gross_leverage']:.2f}x", f"net {sm['net_leverage']:.2f}x")
+    c3.metric("VaR 99% 1d", f"{(fd['var'] or 0) / nav:.2%} of NAV", money(fd["var"], digits=1))
+    c4.metric("Worst stress", f"{(fd['worst_stress'] or 0) / nav:.1%} of NAV", fd["worst_stress_name"])
+    c5.metric(
+        "PB margin", f"{sm['margin_to_nav']:.1%} of NAV", f"largest broker {sm['largest_pb_share']:.0%}"
+    )
+    c6.metric(
+        "Crowding", f"{sm['crowding_score']:.2f}", f"{sm['crowded_share_of_gross']:.0%} of gross crowded"
+    )
+    for f in fd["flags"]:
+        st.warning(f)
+    st.subheader("Exposure by strategy (% of NAV)")
+    es = df(fd["exposure_strategy"])
+    if not es.empty:
+        show = es[["desk_id", "long_pct_nav", "short_pct_nav", "gross_pct_nav", "net_pct_nav"]].copy()
+        for c_ in show.columns[1:]:
+            show[c_] = (show[c_] * 100).round(1)
+        st.dataframe(show.rename(columns={"desk_id": "strategy"}), use_container_width=True, hide_index=True)
+        st.bar_chart(
+            show.set_index("desk_id")[["long_pct_nav", "short_pct_nav"]].assign(
+                short_pct_nav=lambda d: -d["short_pct_nav"]
+            )
+        )
+    st.subheader("Strategy attribution")
+    at = df(fd["attribution"])
+    if not at.empty:
+        show = at.copy()
+        for c_ in ("pv", "component_var", "pnl_today", "max_drawdown"):
+            show[c_] = show[c_] / M
+        for c_ in (
+            "gross_pct_nav",
+            "net_pct_nav",
+            "share_of_var",
+            "hypothetical_ann_return_pct_nav",
+            "hypothetical_ann_vol_pct_nav",
+        ):
+            show[c_] = (show[c_] * 100).round(1)
+        st.dataframe(show.round(2), use_container_width=True, hide_index=True)
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Prime-broker margin")
+        mp = df(fd["margin_pb"])
+        if not mp.empty:
+            mp["margin"] = mp["margin"] / M
+            mp["gross_exposure"] = mp["gross_exposure"] / M
+            mp["share"] = (mp["share"] * 100).round(0)
+            st.dataframe(mp.round(1), hide_index=True, use_container_width=True)
+        st.subheader("Redemption stress")
+        rd = df(fd["redemptions"])
+        if not rd.empty:
+            for c_ in ("redemptions_due", "cumulative_due", "liquidatable_by_then", "gated", "shortfall"):
+                rd[c_] = rd[c_] / M
+            st.dataframe(
+                rd[
+                    [
+                        "scenario",
+                        "dealing_date",
+                        "business_days",
+                        "cumulative_due",
+                        "liquidatable_by_then",
+                        "coverage",
+                        "gated",
+                        "shortfall",
+                    ]
+                ].round(1),
+                hide_index=True,
+                use_container_width=True,
+            )
+    with right:
+        st.subheader("Factor betas (P&L per one-sigma factor move, % of NAV)")
+        fb = df(fd["factors"])
+        if not fb.empty:
+            piv = fb.pivot_table(index="strategy", columns="label", values="beta_pct_nav", aggfunc="sum")
+            st.dataframe((piv * 100).round(2), use_container_width=True)
+            st.caption(
+                "t-statistics above 2 in absolute value are significant; R² per strategy in the detail."
+            )
+        st.subheader("Crowding")
+        cr = df(fd["crowding"])
+        if not cr.empty:
+            cr = cr.head(15).copy()
+            cr["pct_nav"] = (cr["pct_nav"] * 100).round(1)
+            st.dataframe(
+                cr[
+                    ["underlying", "pct_nav", "score", "crowded", "days_to_liquidate", "crowded_exit_days"]
+                ].round(1),
+                hide_index=True,
+                use_container_width=True,
+            )
+    if fund:
+        st.subheader("Investor register")
+        inv = df(fund["investors"])
+        inv["share_of_nav"] = (inv["share_of_nav"] * 100).round(1)
+        st.dataframe(
+            inv[
+                [
+                    "name",
+                    "investor_type",
+                    "share_of_nav",
+                    "dealing",
+                    "notice_days",
+                    "gate_pct",
+                    "lockup_until",
+                ]
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+    st.caption(
+        "Exposures are delta-equivalent notionals (HF-001); margin schedules, crowding scores and factor "
+        "set are synthetic assumptions documented in HF-002 to HF-006."
+    )
 
 elif page == "Capital":
     header("Regulatory capital")

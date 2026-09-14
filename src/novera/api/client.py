@@ -255,6 +255,9 @@ class HttpClient:
         r.raise_for_status()
         return r.json()
 
+    def fund(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/fund")
+
     def capital(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/capital")
 
@@ -264,8 +267,8 @@ class HttpClient:
         return r.json()
 
 
-def make_client(settings) -> RiskClient:
+def make_client(settings, db_path=None) -> RiskClient:
     import os
 
     url = os.environ.get("NOVERA_API_URL")
-    return HttpClient(url) if url else LocalClient(settings.db_path)  # type: ignore[return-value]
+    return HttpClient(url) if url else LocalClient(db_path or settings.db_path)  # type: ignore[return-value]

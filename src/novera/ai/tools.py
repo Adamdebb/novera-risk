@@ -511,6 +511,63 @@ def build_tools(db_path: str) -> list[Tool]:
             ],
         }
 
+    def fund_tool(run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            f = s.fund(r.run_id)
+        if not f.get("available"):
+            return {"run_id": r.run_id, "error": "this run is not a fund run (bank face)"}
+        sm = f["summary"]
+        nav = sm["nav"]
+        return {
+            "run_id": r.run_id,
+            "nav_m": _m(nav),
+            "gross_leverage": round(sm["gross_leverage"], 2),
+            "net_leverage": round(sm["net_leverage"], 2),
+            "var_pct_nav": round((f["var"] or 0) / nav * 100, 2),
+            "worst_stress_pct_nav": round((f["worst_stress"] or 0) / nav * 100, 1),
+            "margin_to_nav": round(sm["margin_to_nav"], 3),
+            "largest_pb_share": round(sm["largest_pb_share"], 2),
+            "crowding_score": round(sm["crowding_score"], 2),
+            "flags": f["flags"],
+            "strategies": [
+                {
+                    "strategy": x["strategy"],
+                    "gross_pct_nav": round(x["gross_pct_nav"] * 100, 1),
+                    "net_pct_nav": round(x["net_pct_nav"] * 100, 1),
+                    "share_of_var": round(x["share_of_var"], 2),
+                    "pnl_today_m": _m(x["pnl_today"]),
+                }
+                for x in f["attribution"]
+            ],
+            "margin_by_pb": [
+                {"pb": x["prime_broker"], "margin_m": _m(x["margin"]), "share": round(x["share"], 2)}
+                for x in f["margin_pb"]
+            ],
+            "redemptions": [
+                {
+                    "scenario": x["scenario"],
+                    "date": x["dealing_date"],
+                    "coverage": round(x["coverage"], 1) if x["coverage"] else None,
+                    "shortfall_m": _m(x["shortfall"]),
+                }
+                for x in f["redemptions"]
+            ],
+            "top_factor_betas": sorted(
+                [
+                    {
+                        "strategy": x["strategy"],
+                        "factor": x["label"],
+                        "beta_pct_nav_per_sigma": round(x["beta_pct_nav"] * 100, 2),
+                        "t": round(x["t_stat"], 1),
+                    }
+                    for x in f["factors"]
+                ],
+                key=lambda z: -abs(z["beta_pct_nav_per_sigma"]),
+            )[:8],
+        }
+
     def what_if_tool(shocks: list[dict], run_id: str | None = None, by: str = "asset_class") -> dict:
         repo, s = svc()
         with repo:
@@ -665,6 +722,13 @@ def build_tools(db_path: str) -> list[Tool]:
             "P&L attribution zones), SA-CCR EAD and RWA by counterparty, SIMM-lite initial margin, BA-CVA.",
             _obj({"run_id": RUN}),
             capital_tool,
+        ),
+        Tool(
+            "fund_overview",
+            "Hedge-fund view: NAV, leverage, VaR and stress as % of NAV, prime-broker margin, "
+            "strategy exposures and attribution, factor betas, redemption stress, crowding flags.",
+            _obj({"run_id": RUN}),
+            fund_tool,
         ),
         Tool(
             "what_if",

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from novera.domain.enums import HierarchyLevel
 
@@ -62,6 +62,11 @@ class Breach(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("first_utilisation", "latest_utilisation", "peak_utilisation", mode="before")
+    @classmethod
+    def _none_to_zero(cls, v):
+        return 0.0 if v is None else v
+
     breach_id: str
     limit_id: str
     limit_type: str
@@ -74,9 +79,9 @@ class Breach(BaseModel):
     first_date: date
     latest_date: date
     consecutive_days: int = 1
-    first_utilisation: float
-    latest_utilisation: float
-    peak_utilisation: float
+    first_utilisation: float = 0.0
+    latest_utilisation: float = 0.0
+    peak_utilisation: float = 0.0
     escalated_to: str | None = None
     acknowledged_by: str | None = None
     closed_by: str | None = None

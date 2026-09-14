@@ -94,14 +94,22 @@ measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
 - [x] Counterparty page, API, Copilot tool, `novera run counterparty`, EOD integration
 - [ ] Initial margin (SIMM-lite) and CCP exposure: Phase 5
 
-## Phase 5 — Segment modules
+## Phase 5 — Segment modules (delivered)
 
-- **IB**: FRTB SA and IMA (ES, P&L attribution test, NMRF), SA-CCR, RWA and capital
-  attribution, regulatory evidence, ICAAP and ILAAP inputs, IPV (independent price
-  verification), funding cash ladder.
-- **HF**: prime-broker margin replication, gross/net and leverage, factor exposures,
-  liquidity and days-to-liquidate, redemption stress, crowding, strategy attribution,
-  investor reporting.
+- **Bank (IB)**: FRTB standardised approach with delta, vega, curvature, DRC and crypto
+  (REG-001); FRTB internal models with liquidity horizons, NMRF, the backtesting
+  multiplier and the P&L attribution test (REG-002); SA-CCR EAD and RWA (REG-003);
+  SIMM-lite initial margin feeding the exposure engine (REG-004); BA-CVA capital
+  (REG-005); funding cash ladder (REG-006); capital attributed to desks; Capital page,
+  API, Copilot tool, `novera run regulatory`.
+- **Hedge fund (HF)**: a second simulated organisation, Meridian Multi-Strategy Fund, with
+  strategies, prime brokers, a NAV and an investor register (`novera simulate --template
+  hedge_fund`, separate database, firm selector in the dashboard); exposures and leverage
+  (HF-001), prime-broker margin replication (HF-002), factor betas (HF-003), redemption
+  stress (HF-004), strategy attribution (HF-005), crowding (HF-006); fund limits on
+  leverage, margin usage and broker concentration; Fund page, API, Copilot tool.
+- Not done: IPV as a separate module (covered by the challenger), ICAAP and ILAAP
+  document generation, CCP exposure.
 
 ## Phase 6 — Instrument breadth
 

@@ -599,6 +599,34 @@ class RiskService:
             "cash_ladder": _records(self.repo.load_run_frame(r.run_id, "reg_cash_ladder")),
         }
 
+    # --- fund face -----------------------------------------------------------------------------------
+    def fund(self, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        summ = self.repo.load_run_frame(r.run_id, "fund_summary")
+        if summ.empty:
+            return {"run_id": r.run_id, "available": False}
+        org = self.repo.load_organisation(r.config.get("firm_id", "MSF"))
+        fund = self.repo.load_fund(org.firm.firm_id)
+        return {
+            "run_id": r.run_id,
+            "available": True,
+            "summary": summ.iloc[0].to_dict(),
+            "fund": fund.model_dump(mode="json") if fund else None,
+            "var": r.summary.get("var"),
+            "es": r.summary.get("es"),
+            "worst_stress": r.summary.get("worst_stress"),
+            "worst_stress_name": r.summary.get("worst_stress_name"),
+            "exposure_strategy": _records(self.repo.load_run_frame(r.run_id, "fund_exposure_strategy")),
+            "exposure_asset_class": _records(self.repo.load_run_frame(r.run_id, "fund_exposure_asset_class")),
+            "margin_pb": _records(self.repo.load_run_frame(r.run_id, "fund_margin_pb")),
+            "margin_detail": _records(self.repo.load_run_frame(r.run_id, "fund_margin_detail")),
+            "factors": _records(self.repo.load_run_frame(r.run_id, "fund_factors")),
+            "redemptions": _records(self.repo.load_run_frame(r.run_id, "fund_redemptions")),
+            "attribution": _records(self.repo.load_run_frame(r.run_id, "fund_attribution")),
+            "crowding": _records(self.repo.load_run_frame(r.run_id, "fund_crowding")),
+            "flags": [x["message"] for x in _records(self.repo.load_run_frame(r.run_id, "fund_flags"))],
+        }
+
 
 class RiskWriteService:
     """Write side: breach actions and temporary increases. Opened on a writable connection."""

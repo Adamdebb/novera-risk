@@ -210,6 +210,10 @@ CREATE TABLE IF NOT EXISTS market_provenance (
     row_count INTEGER NOT NULL,
     PRIMARY KEY (factor_id, source)
 );
+CREATE TABLE IF NOT EXISTS fund (
+    firm_id VARCHAR PRIMARY KEY,
+    payload JSON NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_value (
     snapshot_id VARCHAR NOT NULL,
     factor_id VARCHAR NOT NULL,
@@ -795,6 +799,24 @@ class DuckDBRepository:
         return self._conn.execute(
             "SELECT * FROM market_provenance ORDER BY source, factor_id"
         ).df()  # duckdb-only
+
+    # --- fund metadata ----------------------------------------------------------------
+    def save_fund(self, fund: Any) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO fund VALUES (?, ?)", [fund.firm_id, fund.model_dump_json()]
+        )
+
+    def load_fund(self, firm_id: str) -> Any | None:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'fund'"
+        ).fetchone():
+            return None
+        row = self._conn.execute("SELECT payload FROM fund WHERE firm_id = ?", [firm_id]).fetchone()
+        if row is None:
+            return None
+        from novera.simulation.fund import Fund
+
+        return Fund.model_validate_json(row[0])
 
 
 def _run_from_row(row: tuple) -> RunRecord:

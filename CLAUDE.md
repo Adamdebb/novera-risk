@@ -38,7 +38,9 @@ src/novera/
   market_data/         Snapshots, curves, surfaces, risk-factor universe
   pricing/             One pricer per product; returns PV and cashflows, nothing else
   risk/                sensitivities, var, stress, pnl_attribution, concentration, liquidity
-  counterparty_risk/   netting, collateral, exposure (EE/PFE), cva (later)
+  counterparty_risk/   netting, collateral, exposure (EE/PFE), cva, wrong-way risk
+  regulatory/          FRTB SA and IMA, SA-CCR, SIMM-lite, BA-CVA, cash ladder (bank face)
+  fund/                exposures, PB margin, factor betas, redemption stress, attribution, crowding (fund face)
   limits/              Limit definitions, utilisation, breach lifecycle, escalation
   data_quality/        Checks that answer "can I trust today's run?"
   workflows/           End-of-day pipeline, run registry, audit events
@@ -76,6 +78,8 @@ uv run novera schedule --once # advance a simulated day and run EOD; `schedule` 
 uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
 uv run novera fetch           # real market data into the history (network, optional FRED key)
 uv run novera run counterparty # exposure engine on a stored run (EOD does this too unless NOVERA_EXPOSURE_ENABLED=false)
+uv run novera run regulatory  # FRTB SA/IMA, SA-CCR, SIMM, BA-CVA, cash ladder (bank face; EOD runs it too)
+uv run novera simulate --template hedge_fund   # fund face into NOVERA_FUND_DB_PATH; `run eod --fund`
 uv run novera report          # daily risk pack (HTML, PDF via Playwright Chromium, Excel)
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py

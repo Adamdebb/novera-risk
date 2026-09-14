@@ -57,9 +57,14 @@ class TradeGeneratorConfig:
     seed: int = 42
     inject_problems: bool = True
     market_history: MarketHistory | None = None
+    template: Template = None  # type: ignore[assignment]  # defaults to BANK_TEMPLATE in __post_init__
     """When given, every trade is struck at fair market on its trade date (plus execution
     noise), so inception P&L is small and later P&L is genuine. Without it, prices come
     from static reference levels."""
+
+    def __post_init__(self) -> None:
+        if self.template is None:
+            object.__setattr__(self, "template", BANK_TEMPLATE)
 
 
 # Desk -> product recipe weights. Keys are recipe names implemented in _Recipes.
@@ -144,8 +149,49 @@ _EXCHANGE_CPTY = {
 }
 
 
+@dataclass(frozen=True)
+class Template:
+    """Everything the generator needs to know about an organisation's desks and books."""
+
+    name: str
+    desk_mix: dict[str, dict[str, float]]
+    desk_weight: dict[str, float]
+    desk_currency: dict[str, list[str]]
+    desk_fx_pairs: dict[str, list[str]]
+    book_indices: dict[str, list[str]]
+    book_equities: dict[str, list[str]]
+    book_cds: dict[str, str]
+    book_commodities: dict[str, list[str]]
+    default_index_book: str
+    index_option_book: str
+    default_equity_book: str
+    equity_option_book: str
+    size_scale: float = 1.0
+    injector: str = "bank"
+    preferred_counterparty: str | None = "BANK_A"  # over-weighted in bilateral allocation
+    nav: float | None = None  # fund templates: sizes planted problems relative to NAV
+
+
+BANK_TEMPLATE = Template(
+    "bank",
+    _DESK_MIX,
+    _DESK_WEIGHT,
+    _DESK_CURRENCY,
+    _DESK_FX_PAIRS,
+    _DESK_INDICES,
+    _BOOK_EQUITIES,
+    _BOOK_CDS,
+    _BOOK_COMMODITIES,
+    "US_INDEX",
+    "INDEX_VOL",
+    "US_CASH_EQ",
+    "SN_OPTIONS",
+)
+
+
 class _Gen:
     def __init__(self, org: Organisation, cp: CounterpartyUniverse, cfg: TradeGeneratorConfig):
+        self.t = cfg.template
         self.org, self.cp, self.cfg = org, cp, cfg
         self.rng = np.random.default_rng(cfg.seed)
         self.bd = cfg.business_date
@@ -153,7 +199,7 @@ class _Gen:
         self.bonds = {c: inst.government_bonds(c, self.bd) for c in ref.BOND_CURRENCIES}
         # Bank A is over-weighted on purpose (counterparty concentration).
         bilateral = self.cp.bilateral
-        w = np.array([4.0 if c.counterparty_id == "BANK_A" else 1.0 for c in bilateral])
+        w = np.array([4.0 if c.counterparty_id == self.t.preferred_counterparty else 1.0 for c in bilateral])
         self._bilateral_ids = [c.counterparty_id for c in bilateral]
         self._bilateral_w = w / w.sum()
 
@@ -169,7 +215,7 @@ class _Gen:
         return d
 
     def _lognormal(self, low: float, high: float) -> float:
-        return float(np.exp(self.rng.uniform(np.log(low), np.log(high))))
+        return float(np.exp(self.rng.uniform(np.log(low), np.log(high)))) * self.t.size_scale
 
     def _round(self, x: float, step: float) -> float:
         return float(max(step, round(x / step) * step))
@@ -284,7 +330,7 @@ class _Gen:
 
     # --- recipes ---------------------------------------------------------------------
     def govt_bond(self, desk_id: str) -> Trade:
-        ccy = str(self.rng.choice(_DESK_CURRENCY[desk_id]))
+        ccy = str(self.rng.choice(self.t.desk_currency[desk_id]))
         bond = self.bonds[ccy][int(self.rng.integers(4))]
         book, trader = self._book_and_trader(desk_id)
         td = self._trade_date()
@@ -311,7 +357,7 @@ class _Gen:
         prefer_cpty: str | None = None,
         max_days_back: int = 500,
     ) -> Trade:
-        ccy = str(self.rng.choice(_DESK_CURRENCY[desk_id]))
+        ccy = str(self.rng.choice(self.t.desk_currency[desk_id]))
         tenor = tenor or str(self.rng.choice(inst.SWAP_TENORS, p=[0.3, 0.3, 0.3, 0.1]))
         td = self._trade_date(max_days_back)
         eff = td + relativedelta(days=2)
@@ -339,7 +385,7 @@ class _Gen:
         )
 
     def fx_spot(self, desk_id: str) -> Trade:
-        pair = str(self.rng.choice(_DESK_FX_PAIRS[desk_id]))
+        pair = str(self.rng.choice(self.t.desk_fx_pairs[desk_id]))
         spot, _ = ref.FX_SPOT[pair]
         book, trader = self._book_and_trader(desk_id)
         td = self._trade_date(3)
@@ -365,7 +411,7 @@ class _Gen:
         prefer_cpty: str | None = None,
         direction: BuySell | None = None,
     ) -> Trade:
-        pair = pair or str(self.rng.choice(_DESK_FX_PAIRS[desk_id]))
+        pair = pair or str(self.rng.choice(self.t.desk_fx_pairs[desk_id]))
         spot, _ = ref.FX_SPOT[pair]
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
@@ -396,7 +442,7 @@ class _Gen:
         )
 
     def fx_option(self, desk_id: str) -> Trade:
-        pair = str(self.rng.choice(_DESK_FX_PAIRS[desk_id]))
+        pair = str(self.rng.choice(self.t.desk_fx_pairs[desk_id]))
         spot, vol = ref.FX_SPOT[pair]
         book, trader = self._book_and_trader(desk_id)
         td = self._trade_date(200)
@@ -420,9 +466,9 @@ class _Gen:
 
     def index_future(self, desk_id: str) -> Trade:
         book, trader = self._book_and_trader(desk_id)
-        if book not in _DESK_INDICES:
-            book = "US_INDEX"
-        index = str(self.rng.choice(_DESK_INDICES[book]))
+        if book not in self.t.book_indices:
+            book = self.t.default_index_book
+        index = str(self.rng.choice(self.t.book_indices[book]))
         exch, _, level, _, _ = ref.EQUITY_INDICES[index]
         fut = inst.index_futures(index, self.bd)[int(self.rng.choice([0, 0, 1, 2]))]
         td = self._trade_date(60)
@@ -441,8 +487,8 @@ class _Gen:
 
     def index_option(self, desk_id: str) -> Trade:
         book, trader = self._book_and_trader(desk_id)
-        book = "INDEX_VOL"
-        index = str(self.rng.choice(_DESK_INDICES[book]))
+        book = self.t.index_option_book
+        index = str(self.rng.choice(self.t.book_indices[book]))
         exch, ccy, level, vol, mult = ref.EQUITY_INDICES[index]
         td = self._trade_date(120)
         months = int(self.rng.choice([1, 2, 3, 6, 12]))
@@ -465,9 +511,9 @@ class _Gen:
 
     def cash_equity(self, desk_id: str) -> Trade:
         book, trader = self._book_and_trader(desk_id)
-        if book not in _BOOK_EQUITIES or book == "SN_OPTIONS":
-            book = "US_CASH_EQ"
-        ticker = str(self.rng.choice(_BOOK_EQUITIES[book]))
+        if book not in self.t.book_equities or book == self.t.equity_option_book:
+            book = self.t.default_equity_book
+        ticker = str(self.rng.choice(self.t.book_equities[book]))
         exch, _, _, _, price, _ = ref.EQUITIES[ticker]
         td = self._trade_date(400)
         return Trade(
@@ -485,8 +531,8 @@ class _Gen:
 
     def equity_option(self, desk_id: str) -> Trade:
         _, trader = self._book_and_trader(desk_id)
-        book = "SN_OPTIONS"
-        ticker = str(self.rng.choice(_BOOK_EQUITIES[book]))
+        book = self.t.equity_option_book
+        ticker = str(self.rng.choice(self.t.book_equities[book]))
         exch, ccy, _, _, price, vol = ref.EQUITIES[ticker]
         td = self._trade_date(120)
         months = int(self.rng.choice([1, 2, 3, 6, 12]))
@@ -517,7 +563,7 @@ class _Gen:
     ) -> Trade:
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
-        family = _BOOK_CDS[book]
+        family = self.t.book_cds[book]
         _, _, _, spread_bp, _ = ref.CDS_INDICES[family]
         td = self._trade_date(300)
         if prefer_cpty:
@@ -550,7 +596,7 @@ class _Gen:
     ) -> Trade:
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
-        code = code or str(self.rng.choice(_BOOK_COMMODITIES[book]))
+        code = code or str(self.rng.choice(self.t.book_commodities[book]))
         exch, _, price, _, _, _ = ref.COMMODITIES[code]
         futs = inst.commodity_futures(code, self.bd)
         fut = futs[contract_index if contract_index is not None else int(self.rng.choice([0, 0, 1, 1, 2, 3]))]
@@ -735,22 +781,121 @@ class _Gen:
         )
         return trades, inj
 
+    def inject_fund(self) -> tuple[list[Trade], list[Injection]]:
+        """Planted problems for the fund template."""
+        trades: list[Trade] = []
+        inj: list[Injection] = []
+        # 1. Crowded single-name long: NVDA at about 15% of NAV, sized off the live price.
+        nav = self.t.nav or 2.0e9
+        spot = ref.EQUITIES["NVDA"][4]
+        if self.cfg.market_history is not None:
+            try:
+                spot = self.cfg.market_history.snapshot_at(self.bd).equity_spot("NVDA")
+            except KeyError:
+                pass
+        shares = (
+            self._round(0.15 * nav / spot / 4, 1000) / self.t.size_scale
+        )  # _round is unscaled; undo scale
+        shares = float(round(0.15 * nav / spot / 4 / 1000) * 1000)
+        t = []
+        for _ in range(4):
+            x = self.cash_equity("EQ_LS_US")
+            x = x.model_copy(
+                update={
+                    "instrument": inst.cash_equity("NVDA"),
+                    "book_id": "US_TECH_LS",
+                    "direction": BuySell.BUY,
+                    "quantity": shares,
+                    "counterparty_id": "EXCH_NYSE",
+                    "clearing": ClearingType.EXCHANGE,
+                }
+            )
+            t.append(x)
+        trades += t
+        inj.append(
+            Injection(
+                name="crowded_single_name",
+                description=f"{4 * shares / 1e6:.1f}m NVDA shares long in US Tech L/S: about 15% of NAV in "
+                "the most crowded name.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Single-name concentration limit; crowding flag; crowded exit horizon.",
+            )
+        )
+        # 2. Prime-broker concentration: FX forwards all facing PB_GS.
+        t = [
+            self.fx_forward(
+                "FX_CARRY",
+                pair="USD/JPY",
+                notional=60e6,
+                book_id="G10_CARRY",
+                prefer_cpty="PB_GS",
+                direction=BuySell.BUY,
+            )
+            for _ in range(5)
+        ]
+        trades += t
+        inj.append(
+            Injection(
+                name="pb_concentration",
+                description="Five 60m USD/JPY forwards all facing PB_GS on top of the existing book there.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Prime-broker exposure and margin concentrated in one broker.",
+            )
+        )
+        # 3. Illiquid position against monthly liquidity: far-dated natural gas.
+        t = [
+            self.commodity_future(
+                "COMMODITY_TREND",
+                code="NATGAS",
+                contracts=2500,
+                contract_index=5,
+                book_id="ENERGY_TREND",
+                direction=BuySell.BUY,
+            )
+        ]
+        trades += t
+        inj.append(
+            Injection(
+                name="illiquid_vs_redemptions",
+                description="2,500 lots of the furthest natural gas contract in one book.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Days to liquidate beyond the monthly dealing window in the redemption "
+                "stress.",
+            )
+        )
+        # 4. Large short-vol book: sold index puts.
+        t = []
+        for _ in range(6):
+            x = self.index_option("INDEX_VOL_ARB")
+            t.append(x.model_copy(update={"direction": BuySell.SELL, "quantity": 400.0}))
+        trades += t
+        inj.append(
+            Injection(
+                name="short_vol",
+                description="Six sold index options of 400 contracts each in Index Vol Arb.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Negative gamma and vega concentration; stress loss on the equity crash "
+                "scenario.",
+            )
+        )
+        return trades, inj
+
     # --- driver ----------------------------------------------------------------------
     def run(self) -> GeneratedPortfolio:
-        desks = list(_DESK_WEIGHT)
-        w = np.array([_DESK_WEIGHT[d] for d in desks])
+        desks = list(self.t.desk_weight)
+        w = np.array([self.t.desk_weight[d] for d in desks])
         w = w / w.sum()
         trades: list[Trade] = []
         counts = self.rng.multinomial(self.cfg.n_trades, w)
         for desk_id, k in zip(desks, counts, strict=True):
-            mix = _DESK_MIX[desk_id]
+            mix = self.t.desk_mix[desk_id]
             recipes = list(mix)
             p = np.array([mix[r] for r in recipes])
             for r in self.rng.choice(recipes, size=int(k), p=p / p.sum()):
                 trades.append(self._fair(getattr(self, str(r))(desk_id)))
         injections: list[Injection] = []
         if self.cfg.inject_problems:
-            extra, injections = self.inject()
+            extra, injections = self.inject() if self.t.injector == "bank" else self.inject_fund()
             conc = {tid for i in injections if i.name == "usd_10y_concentration" for tid in i.trade_ids}
             trades += [t if t.trade_id in conc else self._fair(t) for t in extra]
         snap = PortfolioSnapshot(business_date=self.bd, trades=tuple(trades), source="SIM")
@@ -773,11 +918,12 @@ def evolve_portfolio(
     market_history: MarketHistory | None = None,
     seed: int = 43,
     new_trade_share: float = 0.03,
+    template: Template | None = None,
 ) -> tuple[PortfolioSnapshot, list[str]]:
     """Next-day portfolio: yesterday's trades plus a day of new business, with one of the USD
     10Y concentration swaps unwound (removed) so the concentration breach improves but persists.
     Returns the snapshot and a list of what changed, for the demo narrative."""
-    gen = _Gen(org, cp, TradeGeneratorConfig(new_date, 0, seed, False, market_history))
+    gen = _Gen(org, cp, TradeGeneratorConfig(new_date, 0, seed, False, market_history, template))
     gen.n = max((int(t.trade_id.split("_")[-1]) for t in previous.trades), default=0)
     gen._trade_date = lambda *_a, **_k: new_date  # type: ignore[method-assign]  # all new business dated today
     changes: list[str] = []
@@ -787,13 +933,13 @@ def evolve_portfolio(
         unwound = conc.trade_ids[0]
         trades = [t for t in trades if t.trade_id != unwound]
         changes.append(f"unwound {unwound} (one of the six 10Y Bank A swaps)")
-    desks = list(_DESK_WEIGHT)
-    w = np.array([_DESK_WEIGHT[d] for d in desks])
+    desks = list(gen.t.desk_weight)
+    w = np.array([gen.t.desk_weight[d] for d in desks])
     n_new = max(int(len(previous) * new_trade_share), 1)
     counts = gen.rng.multinomial(n_new, w / w.sum())
     new: list[Trade] = []
     for desk_id, k in zip(desks, counts, strict=True):
-        mix = _DESK_MIX[desk_id]
+        mix = gen.t.desk_mix[desk_id]
         recipes = list(mix)
         p = np.array([mix[r] for r in recipes])
         for r in gen.rng.choice(recipes, size=int(k), p=p / p.sum()):
