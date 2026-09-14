@@ -6,9 +6,11 @@ same numbers have the same id and a stale factor changes the id.
 from __future__ import annotations
 
 from datetime import date
+from functools import cached_property
+from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field
 
 from novera.domain.snapshots import content_hash
 from novera.market_data.curves import CommodityCurve, ZeroCurve
@@ -23,6 +25,18 @@ class MarketSnapshot(BaseModel):
     values: dict[str, float]
     observed_at: dict[str, date] = Field(default_factory=dict, description="Per factor; missing means as_of")
     source: str = "SIM"
+    _cache: dict[str, Any] = PrivateAttr(default_factory=dict)
+
+    @cached_property
+    def _groups(self) -> dict[str, list[str]]:
+        """Factor ids grouped by 'TYPE:' and by 'TYPE:UNDERLYING:' so family lookups are O(1)."""
+        groups: dict[str, list[str]] = {}
+        for k in sorted(self.values):
+            parts = k.split(":")
+            groups.setdefault(parts[0] + ":", []).append(k)
+            if len(parts) >= 3:
+                groups.setdefault(parts[0] + ":" + parts[1] + ":", []).append(k)
+        return groups
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -50,9 +64,15 @@ class MarketSnapshot(BaseModel):
         return sorted(k for k, d in self.observed_at.items() if d < self.as_of)
 
     def factors_with_prefix(self, prefix: str) -> list[str]:
+        hit = self._groups.get(prefix)
+        if hit is not None:
+            return hit
         return sorted(k for k in self.values if k.startswith(prefix))
 
     def zero_curve(self, currency: str) -> ZeroCurve:
+        key = f"zc:{currency}"
+        if key in self._cache:
+            return self._cache[key]
         nodes = []
         for k in self.factors_with_prefix(f"IR:{currency}:"):
             tenor = k.split(":")[2]
@@ -60,7 +80,9 @@ class MarketSnapshot(BaseModel):
         if not nodes:
             raise KeyError(f"no zero curve for {currency} in snapshot {self.as_of}")
         nodes.sort()
-        return ZeroCurve(currency, np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes]))
+        curve = ZeroCurve(currency, np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes]))
+        self._cache[key] = curve
+        return curve
 
     def fx_spot(self, pair: str) -> float:
         """Spot for BASE/QUOTE, deriving crosses and inverses from USD pairs when needed."""
@@ -81,11 +103,16 @@ class MarketSnapshot(BaseModel):
         return self.value(f"EQIDX:{index}")
 
     def commodity_curve(self, code: str) -> CommodityCurve:
+        key = f"cc:{code}"
+        if key in self._cache:
+            return self._cache[key]
         nodes = sorted((TENOR_YEARS[k.split(":")[2]], self.values[k])
                        for k in self.factors_with_prefix(f"CMD:{code}:"))
         if not nodes:
             raise KeyError(f"no commodity curve for {code}")
-        return CommodityCurve(code, np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes]))
+        curve = CommodityCurve(code, np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes]))
+        self._cache[key] = curve
+        return curve
 
     def cds_spread_bp(self, family: str) -> float:
         return self.value(f"CDS:{family}")
@@ -95,6 +122,9 @@ class MarketSnapshot(BaseModel):
 
     def vol_surface(self, underlying: str) -> VolSurface:
         key = underlying.replace("/", "")
+        ck = f"vs:{key}"
+        if ck in self._cache:
+            return self._cache[ck]
         grid: dict[tuple[float, float], float] = {}
         for k in self.factors_with_prefix(f"VOL:{key}:"):
             _, _, expiry, m = k.split(":")
@@ -104,8 +134,12 @@ class MarketSnapshot(BaseModel):
         expiries = np.array(sorted({e for e, _ in grid}))
         moneyness = np.array(sorted({m for _, m in grid}))
         vols = np.array([[grid[(e, m)] for m in moneyness] for e in expiries])
-        return VolSurface(key, expiries, moneyness, vols)
+        surface = VolSurface(key, expiries, moneyness, vols)
+        self._cache[ck] = surface
+        return surface
 
     def with_values(self, updates: dict[str, float]) -> MarketSnapshot:
-        """Return a copy with some factor values replaced (used by stress and bumping)."""
-        return self.model_copy(update={"values": {**self.values, **updates}})
+        """Return a new snapshot with some factor values replaced (used by stress and bumping).
+        Built fresh rather than copied so cached curves and surfaces are not inherited."""
+        return MarketSnapshot(as_of=self.as_of, values={**self.values, **updates},
+                              observed_at=self.observed_at, source=self.source)
