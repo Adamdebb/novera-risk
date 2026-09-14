@@ -11,7 +11,7 @@ phase has tests, methodology records and a working screen.
 - [x] Trade generator with deliberately injected problems (see below)
 - [x] Market-data simulator: curves, FX, equities, vol surfaces with smile, credit, commodities, crypto, two stylised crisis episodes, planted stale surface and missing node
 - [x] Repository layer on DuckDB; snapshots with content-hash IDs
-- [~] CLI: `novera simulate` done; `novera run eod`, `novera report` pending
+- [x] CLI: `novera simulate`, `novera value`; `novera run eod` and `novera report` arrive with Phase 3
 
 ## Phase 2 — Market risk MVP
 
@@ -29,6 +29,10 @@ Instruments (one per asset class, ten products):
 | Commodities    | Commodity future       | Listed     | Curve mark                 |
 | Credit         | CDS index              | OTC        | ISDA standard model (simplified) |
 | Digital assets | BTC / ETH spot         | Listed     | Mark to market             |
+
+Status: all ten pricers implemented and benchmarked against QuantLib or closed form
+(methodology records PR-001 to PR-009). Trades are struck at fair market on their trade
+date from the simulated history, so P&L is genuine.
 
 Risk: PV, clean and dirty P&L, DV01, CS01, FX delta, equity delta, commodity delta,
 vega, gamma, theta, curve ladders, historical-simulation VaR and expected shortfall,

@@ -56,7 +56,16 @@ def simulate(
     bd = _date.fromisoformat(business_date)
     org = build_global_macro_bank()
     cp = build_counterparty_universe(org)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(bd, trades, seed, not no_inject))
+    md = None
+    history = None
+    if not no_market_data:
+        from novera.market_data.history import MarketHistory
+        from novera.simulation.market_data import MarketSimConfig, generate_market_data
+
+        md = generate_market_data(MarketSimConfig(end_date=bd, years=years, seed=seed,
+                                                  plant_data_quality_problems=not no_inject))
+        history = MarketHistory.from_long(md.history)
+    gen = generate_portfolio(org, cp, TradeGeneratorConfig(bd, trades, seed, not no_inject, history))
     s.db_path.parent.mkdir(parents=True, exist_ok=True)
     with DuckDBRepository(s.db_path) as repo:
         repo.init_schema()
@@ -64,12 +73,7 @@ def simulate(
         repo.save_counterparties(cp.counterparties)
         repo.save_netting_sets(cp.netting_sets, cp.csas)
         sid = repo.save_portfolio_snapshot(gen.snapshot)
-        md = None
-        if not no_market_data:
-            from novera.simulation.market_data import MarketSimConfig, generate_market_data
-
-            md = generate_market_data(MarketSimConfig(end_date=bd, years=years, seed=seed,
-                                                      plant_data_quality_problems=not no_inject))
+        if md is not None:
             repo.save_risk_factors(md.universe)
             n_rows = repo.save_market_history(md.history)
             prev_id = repo.save_market_snapshot(md.previous_snapshot)
@@ -92,6 +96,40 @@ def simulate(
         if md is not None:
             for p in md.planted:
                 typer.echo(f"  - {p}")
+
+
+@app.command()
+def value(
+    by: str = typer.Option("asset_class", help="Group by: asset_class, desk_id, book_id, product_type"),
+) -> None:
+    """Value the latest stored portfolio on the latest market snapshot and print PV by group."""
+    from novera.pricing.valuation import value_portfolio
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    s = get_settings()
+    with DuckDBRepository(s.db_path) as repo:
+        psnaps = repo.list_portfolio_snapshots()
+        msnaps = repo.list_market_snapshots()
+        if not psnaps or not msnaps:
+            raise typer.Exit("run `novera simulate` first")
+        snap = repo.load_portfolio_snapshot(psnaps[-1][0])
+        market = repo.load_market_snapshot(msnaps[-1][0])
+        org = repo.load_organisation("GMB")
+    out = value_portfolio(snap, market, org, s.reporting_currency)
+    t = out.table
+    typer.echo(f"portfolio {snap.snapshot_id} on market {market.snapshot_id} ({market.as_of}), "
+               f"reporting {s.reporting_currency}")
+    grouped = t.groupby(by, dropna=False)["pv"].agg(["sum", "count"]).sort_values("sum")
+    for name, row in grouped.iterrows():
+        typer.echo(f"  {str(name):<22} {row['sum'] / 1e6:>12,.2f}m  ({int(row['count'])} trades)")
+    typer.echo(f"  {'TOTAL':<22} {out.total_pv / 1e6:>12,.2f}m")
+    if out.errors:
+        typer.echo(f"{len(out.errors)} trades failed to price:")
+        for tid, err in list(out.errors.items())[:10]:
+            typer.echo(f"  - {tid}: {err}")
+    notes = t[t["note"].fillna("") != ""]["note"].value_counts()
+    for note, n in notes.items():
+        typer.echo(f"  note '{note}': {n} trades")
 
 
 if __name__ == "__main__":
