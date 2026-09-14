@@ -6,6 +6,8 @@ HTTP API) and carries the run id it was computed in (ADR 0004).
 
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import streamlit as st
 
@@ -54,6 +56,7 @@ with st.sidebar:
         "View",
         [
             "Overview",
+            "Copilot",
             "Drill-down",
             "VaR",
             "Stress",
@@ -139,6 +142,68 @@ if page == "Overview":
             for _, r in dq.iterrows():
                 fn = st.error if r["severity"] in ("CRITICAL", "MAJOR") else st.info
                 fn(f"**{r['code']}** {r['message']} ({r['affected_trades']} trades) · owner {r['owner']}")
+
+elif page == "Copilot":
+    header("Risk Copilot")
+    prov = client.copilot_provider()
+    if prov["provider"] == "scripted":
+        st.info(
+            "Running the scripted provider: answers are templated from stored numbers. Set "
+            "ANTHROPIC_API_KEY in .env to switch to Claude."
+        )
+    else:
+        st.caption(
+            f"Provider {prov['provider']} · model {prov['model']} · answers cite run ids and are stored "
+            "with their tool calls."
+        )
+    if "copilot_chat" not in st.session_state:
+        st.session_state.copilot_chat = []
+        st.session_state.copilot_session = f"ui_{run_id}"
+    examples = [
+        "Why did VaR change since yesterday?",
+        "Which books are closest to their limits?",
+        "What happens if equities fall 20%, vol rises 15 points, oil drops 30% and BTC falls 40%?",
+        "Can I trust today's run?",
+        "Draft the morning commentary",
+    ]
+    cols = st.columns(len(examples))
+    picked = None
+    for col, ex in zip(cols, examples, strict=True):
+        if col.button(ex, key=f"ex_{ex[:20]}"):
+            picked = ex
+    for turn in st.session_state.copilot_chat:
+        with st.chat_message(turn["role"]):
+            st.markdown(turn["content"])
+            if turn.get("tool_calls"):
+                with st.expander(
+                    f"{len(turn['tool_calls'])} tool calls · {turn['seconds']}s · runs "
+                    f"{', '.join(turn['run_ids'])}"
+                ):
+                    for tc in turn["tool_calls"]:
+                        st.code(
+                            f"{tc['name']}({json.dumps(tc['input'])})\n{tc['output'][:1500]}", language="json"
+                        )
+    question = st.chat_input("Ask about this run") or picked
+    if question:
+        st.session_state.copilot_chat.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
+        with st.chat_message("assistant"), st.spinner("Reading the run…"):
+            if question.lower().startswith("draft the morning commentary"):
+                ans = client.commentary(run_id)
+            else:
+                ans = client.ask(question, run_id=run_id, session_id=st.session_state.copilot_session)
+            st.markdown(ans["answer"])
+        st.session_state.copilot_chat.append(
+            {
+                "role": "assistant",
+                "content": ans["answer"],
+                "tool_calls": ans["tool_calls"],
+                "seconds": ans["seconds"],
+                "run_ids": ans["run_ids_cited"],
+            }
+        )
+        st.rerun()
 
 elif page == "Drill-down":
     header("Risk by hierarchy")

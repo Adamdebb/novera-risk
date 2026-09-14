@@ -37,6 +37,9 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
   audit events. A FastAPI API and a Streamlit morning dashboard over the stored run.
 - Breach workflow with auto-escalation and an approval matrix for temporary limit
   increases, and run-to-run comparison. Two simulated business days out of the box.
+- Risk Copilot: ask questions in plain language, get answers built only from stored run
+  results and engine what-ifs, every answer recorded with its tool calls. Works without
+  an API key through a scripted provider; set `ANTHROPIC_API_KEY` for Claude.
 
 ## Morning dashboard
 
@@ -51,6 +54,7 @@ uv run novera simulate             # build the bank, portfolio and market data (
 uv run novera run eod --business-date 2026-09-11   # day 1: breaches raised (~2 minutes)
 uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breaches auto-escalate
 uv run novera breach list
+uv run novera ask "Why did VaR change since yesterday?"
 uv run streamlit run src/novera/ui/app.py           # morning dashboard
 uv run uvicorn novera.api.app:app --reload          # read API, docs at /docs
 ```

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     db_path: Path = Path("./data/novera.duckdb")
 
     # AI layer. The engine never depends on these.
-    llm_model: str = "claude-fable-5-1"
+    llm_model: str = "claude-opus-5"
     anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
 
 
