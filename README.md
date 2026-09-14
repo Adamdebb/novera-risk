@@ -36,6 +36,10 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 - A governed end-of-day run stored with its run id, snapshot ids, model versions and
   audit events. A FastAPI read API and a Streamlit morning dashboard over the stored run.
 
+## Morning dashboard
+
+![Global market risk overview](docs/screenshots/overview.png)
+
 ## Quick start
 
 ```bash
