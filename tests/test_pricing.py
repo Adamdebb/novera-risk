@@ -294,8 +294,11 @@ def test_generator_strikes_trades_at_fair_value() -> None:
     gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=200, seed=9,
                                                            market_history=hist))
     checked = 0
+    off_market = {tid for i in gen.injections if i.name == "usd_10y_concentration" for tid in i.trade_ids}
     for t in gen.snapshot.live_trades:
         if t.product_type.value not in ("INTEREST_RATE_SWAP", "FX_FORWARD", "GOVERNMENT_BOND"):
+            continue
+        if t.trade_id in off_market:
             continue
         snap = hist.snapshot_at(t.trade_date)
         r = PRICERS[t.product_type](t, snap, snap.as_of)

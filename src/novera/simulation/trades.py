@@ -225,10 +225,10 @@ class _Gen:
 
     def swap(self, desk_id: str, tenor: str | None = None, notional: float | None = None,
              side: SwapSide | None = None, book_id: str | None = None,
-             prefer_cpty: str | None = None) -> Trade:
+             prefer_cpty: str | None = None, max_days_back: int = 500) -> Trade:
         ccy = str(self.rng.choice(_DESK_CURRENCY[desk_id]))
         tenor = tenor or str(self.rng.choice(inst.SWAP_TENORS, p=[0.3, 0.3, 0.3, 0.1]))
-        td = self._trade_date()
+        td = self._trade_date(max_days_back)
         eff = td + relativedelta(days=2)
         rate = round(ref.SWAP_CURVES[ccy][tenor] + float(self.rng.normal(0, 0.003)), 4)
         s = inst.swap(ccy, tenor, eff, rate)
@@ -431,33 +431,40 @@ class _Gen:
         inj: list[Injection] = []
 
         # 1. USD 10Y DV01 concentration, all bilateral with Bank A (also cpty concentration).
-        t = [self.swap("USD_RATES", tenor="10Y", notional=400e6, side=SwapSide.RECEIVE_FIXED,
-                       book_id="USD_MACRO_RV", prefer_cpty="BANK_A") for _ in range(6)]
+        #    Struck 60bp above par: legacy off-market swaps novated in, so they carry positive
+        #    PV and real counterparty exposure as well as DV01.
+        t = []
+        for _ in range(6):
+            s = self._fair(self.swap("USD_RATES", tenor="10Y", notional=400e6, side=SwapSide.RECEIVE_FIXED,
+                                     book_id="USD_MACRO_RV", prefer_cpty="BANK_A", max_days_back=10))
+            ins = s.instrument.model_copy(update={"fixed_rate": round(s.instrument.fixed_rate + 0.006, 5)})
+            t.append(s.model_copy(update={"instrument": ins, "trade_price": ins.fixed_rate}))
         trades += t
         inj.append(Injection(
             name="usd_10y_concentration",
-            description="Six receive-fixed 10Y USD swaps of 400m each in USD Macro RV, all facing Bank A.",
+            description="Six receive-fixed 10Y USD swaps of 400m each in USD Macro RV, all facing Bank A, "
+                        "struck 60bp above par (legacy novations).",
             trade_ids=tuple(x.trade_id for x in t),
-            expected_detection="USD Rates 10Y DV01 limit breach; Bank A exposure concentration.",
+            expected_detection="USD Rates 10Y DV01 limit breach; Bank A the largest counterparty exposure.",
         ))
 
         # 2. Illiquid far-dated Brent.
-        t = [self.commodity_future("ENERGY", code="BRENT", contracts=4000, contract_index=5,
+        t = [self.commodity_future("ENERGY", code="BRENT", contracts=10_000, contract_index=5,
                                    book_id="CRUDE", direction=BuySell.BUY)]
         trades += t
         inj.append(Injection(
             name="illiquid_brent",
-            description="4,000 lots of the furthest Brent contract in one book.",
+            description="10,000 lots of the furthest Brent contract in one book.",
             trade_ids=tuple(x.trade_id for x in t),
             expected_detection="Brent concentration limit; days-to-liquidate warning.",
         ))
 
         # 3. Outsized BTC exposure.
-        t = [self.crypto_spot("DIGITAL", symbol="BTC", units=1500, direction=BuySell.BUY)]
+        t = [self.crypto_spot("DIGITAL", symbol="BTC", units=2500, direction=BuySell.BUY)]
         trades += t
         inj.append(Injection(
             name="btc_exposure",
-            description="1,500 BTC long in Crypto Spot.",
+            description="2,500 BTC long in Crypto Spot.",
             trade_ids=tuple(x.trade_id for x in t),
             expected_detection="Digital assets stress-loss limit breach under BTC -50%.",
         ))
@@ -521,7 +528,8 @@ class _Gen:
         injections: list[Injection] = []
         if self.cfg.inject_problems:
             extra, injections = self.inject()
-            trades += [self._fair(t) for t in extra]
+            conc = {tid for i in injections if i.name == "usd_10y_concentration" for tid in i.trade_ids}
+            trades += [t if t.trade_id in conc else self._fair(t) for t in extra]
         snap = PortfolioSnapshot(business_date=self.bd, trades=tuple(trades), source="SIM")
         return GeneratedPortfolio(snapshot=snap, injections=injections)
 

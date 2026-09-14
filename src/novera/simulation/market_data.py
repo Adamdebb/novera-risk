@@ -198,12 +198,12 @@ class _Sim:
 
     def _lognormal_path(
         self, s0: float, ann_vol: float, beta: float, extra_drift: np.ndarray,
-        common: np.ndarray | None = None, common_w: float = 0.0,
+        common: np.ndarray | None = None, common_w: float = 0.0, annual_drift: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         eps = self._noise()
         z = beta * self.g + common_w * (common if common is not None else 0.0)
         z = z + np.sqrt(max(1 - beta**2 - common_w**2, 0.05)) * eps
-        r = ann_vol * self.sq * self.vol_mult * z - 0.5 * ann_vol**2 * self.dt + extra_drift
+        r = ann_vol * self.sq * self.vol_mult * z + annual_drift * self.dt + extra_drift
         path = s0 * np.exp(np.concatenate([[0.0], np.cumsum(r[1:])]))
         return path, r
 
@@ -249,7 +249,7 @@ class _Sim:
             eps = self._noise()
             z = sign * w * usd_z + np.sqrt(1 - w**2) * eps
             drift = sign * self.drift["usd"] * (1.5 if em else 1.0)
-            r = vol * self.sq * self.vol_mult * z - 0.5 * vol**2 * self.dt + drift
+            r = vol * self.sq * self.vol_mult * z + drift
             path = spot * np.exp(np.concatenate([[0.0], np.cumsum(r[1:])]))
             self.series[fx_id(pair)] = path
             self.fx_returns[pair] = r
@@ -261,12 +261,12 @@ class _Sim:
         region = {"US": self._noise(), "EU": self._noise()}
         for index, (_, _, level, vol, _) in ref.EQUITY_INDICES.items():
             reg = "US" if index in ("SPX", "NDX") else "EU"
-            path, r = self._lognormal_path(level, vol, 0.80, self.drift["equity"], region[reg], 0.4)
+            path, r = self._lognormal_path(level, vol, 0.80, self.drift["equity"], region[reg], 0.4, 0.08)
             self.series[eqidx_id(index)] = path
             self.eq_returns[index] = r
         for ticker, (_, _, _, country, price, vol) in ref.EQUITIES.items():
             reg = "US" if country == "US" else "EU"
-            path, r = self._lognormal_path(price, vol, 0.55, self.drift["equity"], region[reg], 0.35)
+            path, r = self._lognormal_path(price, vol, 0.55, self.drift["equity"], region[reg], 0.35, 0.08)
             self.series[eq_id(ticker)] = path
             self.eq_returns[ticker] = r
 
@@ -304,7 +304,8 @@ class _Sim:
     def crypto(self) -> None:
         cf = self._noise()
         for symbol, (_, price, vol) in ref.CRYPTO.items():
-            path, _ = self._lognormal_path(price, vol, 0.35, self.drift["crypto"], cf, 0.75)
+            # Positive drift offsets the two crash episodes so BTC ends near its reference level.
+            path, _ = self._lognormal_path(price, vol, 0.35, self.drift["crypto"], cf, 0.75, 0.25)
             self.series[crypto_id(symbol)] = path
 
     def vols(self) -> None:

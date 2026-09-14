@@ -41,9 +41,14 @@ library of twelve hypothetical scenarios plus the two stylised historical episod
 (MR-001 to MR-005). Full-revaluation VaR runs in about 40 seconds on the 1,515-trade
 bank using a forked process pool.
 
-Still to do in this phase: limit framework with breach workflow, P&L attribution,
-concentration and liquidity measures, Monte Carlo VaR, VaR backtesting (Kupiec,
-Christoffersen), daily risk pack, morning dashboard with drill-down.
+Limits: 79 seeded limits across firm, business, desk and counterparty levels (VaR, ES,
+stress loss, DV01 ladders and buckets, CS01, deltas, vega, concentration shares,
+counterparty exposure) with utilisation and status (MR-006). On the demo date four
+breach and fifteen warn, matching the planted problems.
+
+Still to do in this phase: P&L attribution, concentration and liquidity measures, Monte
+Carlo VaR, VaR backtesting (Kupiec, Christoffersen), daily risk pack, morning dashboard
+with drill-down.
 
 ## Phase 3 — Production workflow and trust
 
