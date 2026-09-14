@@ -27,15 +27,28 @@ components that serve those capabilities.
 
 ## Status
 
-Phase 1 (foundation) in progress. See `docs/03-roadmap.md`.
+Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
+
+- Simulated bank: 3 legal entities, 14 desks, 29 books, 30 counterparties, ~1,500 trades
+  across ten products, 1,190 risk factors with three years of correlated daily history.
+- Pricing benchmarked against QuantLib; sensitivities, historical VaR with a challenger,
+  stress library, 79 seeded limits, P&L explain, data-quality verdict.
+- A governed end-of-day run stored with its run id, snapshot ids, model versions and
+  audit events. A FastAPI read API and a Streamlit morning dashboard over the stored run.
 
 ## Quick start
 
 ```bash
 uv sync --all-extras
-uv run pytest
-uv run novera --help
+uv run pytest                      # ~2 minutes
+uv run novera simulate             # build the bank, portfolio and market data (~10s)
+uv run novera run eod              # governed end-of-day run (~2 minutes)
+uv run streamlit run src/novera/ui/app.py           # morning dashboard
+uv run uvicorn novera.api.app:app --reload          # read API, docs at /docs
 ```
+
+The dashboard reads the stored run in-process by default. Set `NOVERA_API_URL=http://127.0.0.1:8000`
+to make it call the API instead.
 
 ## Documentation
 

@@ -5,6 +5,7 @@ JSON ``payload`` holding the full pydantic document. That keeps the schema stabl
 the domain evolves, and the payload round-trips through pydantic validation on load.
 SQL is ANSI except where marked ``# duckdb-only``.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,6 +32,7 @@ from novera.domain.snapshots import PortfolioSnapshot
 from novera.domain.trades import Trade
 from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
+from novera.workflows.runs import AuditEvent, RunRecord
 
 _TRADE = TypeAdapter(Trade)
 
@@ -116,6 +118,32 @@ CREATE TABLE IF NOT EXISTS market_snapshot (
     factor_count INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS risk_run (
+    run_id VARCHAR PRIMARY KEY,
+    run_type VARCHAR NOT NULL,
+    business_date DATE NOT NULL,
+    portfolio_snapshot_id VARCHAR NOT NULL,
+    market_snapshot_id VARCHAR NOT NULL,
+    previous_market_snapshot_id VARCHAR,
+    reporting_currency VARCHAR NOT NULL,
+    model_versions JSON NOT NULL,
+    config JSON NOT NULL,
+    config_hash VARCHAR NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP,
+    status VARCHAR NOT NULL,
+    verdict VARCHAR NOT NULL,
+    summary JSON NOT NULL,
+    timings JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_event (
+    event_id VARCHAR PRIMARY KEY,
+    occurred_at TIMESTAMP NOT NULL,
+    actor VARCHAR NOT NULL,
+    event_type VARCHAR NOT NULL,
+    subject VARCHAR NOT NULL,
+    payload JSON NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_value (
     snapshot_id VARCHAR NOT NULL,
     factor_id VARCHAR NOT NULL,
@@ -127,8 +155,8 @@ CREATE TABLE IF NOT EXISTS market_value (
 
 
 class DuckDBRepository:
-    def __init__(self, path: Path | str = ":memory:") -> None:
-        self._conn = duckdb.connect(str(path))
+    def __init__(self, path: Path | str = ":memory:", read_only: bool = False) -> None:
+        self._conn = duckdb.connect(str(path), read_only=read_only and str(path) != ":memory:")
 
     # --- lifecycle -----------------------------------------------------------------
     def close(self) -> None:
@@ -159,8 +187,7 @@ class DuckDBRepository:
         ]
         for kind, items, key in groups:
             rows.extend(
-                (org.firm.firm_id, kind, getattr(i, key), n, i.model_dump_json())
-                for n, i in enumerate(items)
+                (org.firm.firm_id, kind, getattr(i, key), n, i.model_dump_json()) for n, i in enumerate(items)
             )
         self._conn.execute("DELETE FROM organisation_entity WHERE firm_id = ?", [org.firm.firm_id])
         self._conn.executemany("INSERT INTO organisation_entity VALUES (?, ?, ?, ?, ?)", rows)
@@ -190,16 +217,20 @@ class DuckDBRepository:
         self._conn.executemany(
             "INSERT OR REPLACE INTO counterparty VALUES (?, ?, ?, ?, ?, ?)",
             [
-                (c.counterparty_id, c.name, c.counterparty_type.value, c.country, c.rating,
-                 c.model_dump_json())
+                (
+                    c.counterparty_id,
+                    c.name,
+                    c.counterparty_type.value,
+                    c.country,
+                    c.rating,
+                    c.model_dump_json(),
+                )
                 for c in items
             ],
         )
 
     def load_counterparties(self) -> list[Counterparty]:
-        rows = self._conn.execute(
-            "SELECT payload FROM counterparty ORDER BY counterparty_id"
-        ).fetchall()
+        rows = self._conn.execute("SELECT payload FROM counterparty ORDER BY counterparty_id").fetchall()
         return [Counterparty(**json.loads(p)) for (p,) in rows]
 
     def save_netting_sets(self, items: list[NettingSet], csas: list[CSA]) -> None:
@@ -210,16 +241,13 @@ class DuckDBRepository:
         self._conn.executemany(
             "INSERT OR REPLACE INTO netting_set VALUES (?, ?, ?, ?, ?)",
             [
-                (n.netting_set_id, n.counterparty_id, n.legal_entity_id, n.csa_id,
-                 n.model_dump_json())
+                (n.netting_set_id, n.counterparty_id, n.legal_entity_id, n.csa_id, n.model_dump_json())
                 for n in items
             ],
         )
 
     def load_netting_sets(self) -> tuple[list[NettingSet], list[CSA]]:
-        ns = self._conn.execute(
-            "SELECT payload FROM netting_set ORDER BY netting_set_id"
-        ).fetchall()
+        ns = self._conn.execute("SELECT payload FROM netting_set ORDER BY netting_set_id").fetchall()
         cs = self._conn.execute("SELECT payload FROM csa ORDER BY csa_id").fetchall()
         return (
             [NettingSet(**json.loads(p)) for (p,) in ns],
@@ -232,8 +260,14 @@ class DuckDBRepository:
             "INSERT OR REPLACE INTO risk_limit VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
-                    lim.limit_id, lim.limit_type.value, lim.scope.level.value, lim.scope.entity_id,
-                    lim.status.value, lim.effective_from, lim.effective_to, lim.model_dump_json(),
+                    lim.limit_id,
+                    lim.limit_type.value,
+                    lim.scope.level.value,
+                    lim.scope.entity_id,
+                    lim.status.value,
+                    lim.effective_from,
+                    lim.effective_to,
+                    lim.model_dump_json(),
                 )
                 for lim in items
             ],
@@ -267,9 +301,19 @@ class DuckDBRepository:
             "INSERT INTO trade VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
-                    sid, t.trade_id, t.version, t.product_type.value, t.asset_class.value,
-                    t.currency, t.book_id, t.trader_id, t.counterparty_id, t.netting_set_id,
-                    t.status.value, t.trade_date, t.model_dump_json(),
+                    sid,
+                    t.trade_id,
+                    t.version,
+                    t.product_type.value,
+                    t.asset_class.value,
+                    t.currency,
+                    t.book_id,
+                    t.trader_id,
+                    t.counterparty_id,
+                    t.netting_set_id,
+                    t.status.value,
+                    t.trade_date,
+                    t.model_dump_json(),
                 )
                 for t in snapshot.trades
             ],
@@ -304,8 +348,17 @@ class DuckDBRepository:
     def save_risk_factors(self, items: list[RiskFactor]) -> None:
         self._conn.executemany(
             "INSERT OR REPLACE INTO risk_factor VALUES (?, ?, ?, ?, ?, ?)",
-            [(f.factor_id, f.factor_type.value, f.asset_class, f.currency, f.underlying, f.model_dump_json())
-             for f in items],
+            [
+                (
+                    f.factor_id,
+                    f.factor_type.value,
+                    f.asset_class,
+                    f.currency,
+                    f.underlying,
+                    f.model_dump_json(),
+                )
+                for f in items
+            ],
         )
 
     def load_risk_factors(self) -> list[RiskFactor]:
@@ -323,8 +376,9 @@ class DuckDBRepository:
         self._conn.unregister("_history_df")
         return len(df)
 
-    def load_market_history(self, factor_ids: list[str] | None = None, start: date | None = None,
-                            end: date | None = None) -> pd.DataFrame:
+    def load_market_history(
+        self, factor_ids: list[str] | None = None, start: date | None = None, end: date | None = None
+    ) -> pd.DataFrame:
         clauses, params = [], []
         if factor_ids:
             clauses.append(f"factor_id IN ({', '.join('?' for _ in factor_ids)})")
@@ -375,3 +429,130 @@ class DuckDBRepository:
             "SELECT snapshot_id, as_of, factor_count FROM market_snapshot ORDER BY as_of, created_at"
         ).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
+
+    # --- runs and results ------------------------------------------------------------
+    def save_run(self, run: RunRecord) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO risk_run VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                run.run_id,
+                run.run_type,
+                run.business_date,
+                run.portfolio_snapshot_id,
+                run.market_snapshot_id,
+                run.previous_market_snapshot_id,
+                run.reporting_currency,
+                json.dumps(run.model_versions),
+                json.dumps(run.config, default=str),
+                run.config_hash,
+                run.started_at,
+                run.finished_at,
+                run.status,
+                run.verdict,
+                json.dumps(run.summary, default=str),
+                json.dumps(run.timings),
+            ],
+        )
+
+    def load_run(self, run_id: str) -> RunRecord:
+        row = self._conn.execute("SELECT * FROM risk_run WHERE run_id = ?", [run_id]).fetchone()
+        if row is None:
+            raise KeyError(f"run {run_id!r} not found")
+        return _run_from_row(row)
+
+    def list_runs(self, run_type: str | None = None, limit: int = 50) -> list[RunRecord]:
+        q = (
+            "SELECT * FROM risk_run"
+            + (" WHERE run_type = ?" if run_type else "")
+            + " ORDER BY started_at DESC LIMIT ?"
+        )
+        params = ([run_type] if run_type else []) + [limit]
+        return [_run_from_row(r) for r in self._conn.execute(q, params).fetchall()]
+
+    def latest_run(self, run_type: str = "EOD", status: str = "COMPLETED") -> RunRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM risk_run WHERE run_type = ? AND status = ? "
+            "ORDER BY business_date DESC, started_at DESC LIMIT 1",
+            [run_type, status],
+        ).fetchone()
+        return _run_from_row(row) if row else None
+
+    def save_run_frame(self, run_id: str, name: str, frame: pd.DataFrame) -> int:
+        """Store a result table under the run id. Table ``run_<name>`` is created from the
+        frame's schema on first use (duckdb-only: DataFrame scan)."""
+        table = f"run_{name}"
+        df = frame.copy()
+        df.insert(0, "run_id", run_id)
+        self._conn.register("_frame_df", df)
+        self._conn.execute(f"CREATE TABLE IF NOT EXISTS {table} AS SELECT * FROM _frame_df WHERE 1 = 0")
+        self._conn.execute(f"DELETE FROM {table} WHERE run_id = ?", [run_id])
+        self._conn.execute(f"INSERT INTO {table} SELECT * FROM _frame_df")
+        self._conn.unregister("_frame_df")
+        return len(df)
+
+    def load_run_frame(self, run_id: str, name: str) -> pd.DataFrame:
+        table = f"run_{name}"
+        exists = self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [table]
+        ).fetchone()
+        if not exists:
+            return pd.DataFrame()
+        df = self._conn.execute(f"SELECT * FROM {table} WHERE run_id = ?", [run_id]).df()  # duckdb-only
+        return df.drop(columns=["run_id"])
+
+    def save_audit_events(self, events: list[AuditEvent]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO audit_event VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (e.event_id, e.at, e.actor, e.event_type, e.subject, json.dumps(e.payload, default=str))
+                for e in events
+            ],
+        )
+
+    def load_audit_events(self, subject: str | None = None, limit: int = 200) -> pd.DataFrame:
+        q = "SELECT event_id, occurred_at AS at, actor, event_type, subject, payload FROM audit_event"
+        params: list = []
+        if subject:
+            q += " WHERE subject = ?"
+            params.append(subject)
+        q += " ORDER BY occurred_at DESC LIMIT ?"
+        params.append(limit)
+        return self._conn.execute(q, params).df()  # duckdb-only
+
+
+def _run_from_row(row: tuple) -> RunRecord:
+    (
+        run_id,
+        run_type,
+        business_date,
+        psid,
+        msid,
+        prev_msid,
+        ccy,
+        models,
+        config,
+        _hash,
+        started,
+        finished,
+        status,
+        verdict,
+        summary,
+        timings,
+    ) = row
+    return RunRecord(
+        run_id=run_id,
+        run_type=run_type,
+        business_date=business_date,
+        portfolio_snapshot_id=psid,
+        market_snapshot_id=msid,
+        previous_market_snapshot_id=prev_msid,
+        reporting_currency=ccy,
+        model_versions=json.loads(models),
+        config=json.loads(config),
+        started_at=started,
+        finished_at=finished,
+        status=status,
+        verdict=verdict,
+        summary=json.loads(summary),
+        timings=json.loads(timings),
+    )
