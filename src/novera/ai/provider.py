@@ -208,6 +208,11 @@ def _plan(q: str) -> list[tuple[str, dict[str, Any]]]:
     if any(k in ql for k in ("closest", "near", "breach", "limit", "utilis")):
         return [("limits", {"status": "BREACH"}), ("limits", {"status": "WARNING"}), ("breaches", {})]
     if any(
+        k in ql
+        for k in ("nav", "leverag", "prime broker", "redemption", "investor", "crowd", "strateg", "fund")
+    ):
+        return [("fund_overview", {})]
+    if any(
         k in ql for k in ("capital", "frtb", "rwa", "sa-ccr", "saccr", "simm", "initial margin", "regulat")
     ):
         return [("capital", {})]
