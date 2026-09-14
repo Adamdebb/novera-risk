@@ -18,8 +18,10 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    driven by one 230m USD/ZAR forward booked that day, one Bank A swap unwound.
 5. **Stress** (2 min). Run "Global risk-off". Losses by desk and asset class, top
    contributors, new breaches raised, escalation routed.
-6. **Counterparty** (2 min). Same portfolio, exposure by counterparty. Bank A near limit.
-   Change CSA threshold, re-run, compare the two runs side by side.
+6. **Counterparty** (2 min). Counterparty page: Bank A largest PFE, the uncollateralised
+   sovereign and the corporate flagged wrong-way. Pick Bank A, show gross versus
+   collateralised profile and CVA, then raise the CSA threshold in the what-if and watch
+   PFE95 move on the same paths. Current exposure under the stress library alongside.
 7. **Independent challenger** (1 min). Challenger page: the official system's VaR versus
    Novera's, the gap attributed to scope (a book missing from the feed), market data (FX
    valued on the previous day), pricing model (options without a smile) and methodology

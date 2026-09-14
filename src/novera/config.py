@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     alert_email_from: str | None = None
     alert_email_to: str | None = Field(default=None, description="Comma-separated recipients")
 
+    # Counterparty risk.
+    own_credit_spread_bp: float = Field(default=80.0, description="Firm's own CDS spread for DVA")
+    lgd: float = Field(default=0.6, description="Loss given default for CVA and DVA")
+    exposure_paths: int = 1000
+    exposure_enabled: bool = True
+
     # Scheduler.
     eod_time: str = Field(
         default="18:30", description="Local wall-clock time HH:MM for the scheduled EOD run"

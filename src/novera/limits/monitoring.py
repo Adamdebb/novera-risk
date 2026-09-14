@@ -9,7 +9,8 @@ measure of the trades in scope:
                               tenor_bucket, risk_factor = underlying)
     CONCENTRATION             share of the scope's net sensitivity carried by one risk_factor
                               or tenor_bucket: |net part| / Σ_groups |net group| (fraction of 1)
-    COUNTERPARTY_EXPOSURE     positive net PV facing the counterparty (pre-collateral)
+    COUNTERPARTY_EXPOSURE     peak PFE95 after collateral from the exposure engine when it ran;
+                              otherwise positive net PV facing the counterparty (pre-collateral)
 
 Status: BREACH at utilisation >= 100%, WARNING at >= warning_threshold, else OK.
 """
@@ -63,6 +64,7 @@ class RiskInputs:
     sensitivities: pd.DataFrame  # long table from compute_sensitivities
     var: VaRResult | None = None
     stress: list[StressResult] = field(default_factory=list)
+    counterparty_pfe: dict[str, float] | None = None  # peak PFE95 after collateral when the engine ran
 
 
 def trades_in_scope(limit: Limit, valuation: pd.DataFrame) -> pd.Index:
@@ -128,6 +130,8 @@ def current_value(limit: Limit, inputs: RiskInputs) -> tuple[float, int]:
         group = "bucket" if limit.scope.tenor_bucket else "underlying"
         denom = float(total.groupby(group)["value"].sum().abs().sum())  # sum of |net| per bucket
         return (float(abs(part["value"].sum())) / denom if denom else 0.0), int(total["trade_id"].nunique())
+    if lt is LimitType.COUNTERPARTY_EXPOSURE and inputs.counterparty_pfe is not None:
+        return float(inputs.counterparty_pfe.get(limit.scope.entity_id, 0.0)), len(ids)
     if lt is LimitType.COUNTERPARTY_EXPOSURE:
         v = inputs.valuation
         rows = (

@@ -19,6 +19,7 @@ from typing import Any
 import pandas as pd
 
 from novera.config import get_settings
+from novera.counterparty_risk import ExposureSimConfig, run_counterparty
 from novera.data_quality import (
     DataQualityReport,
     check_market_data,
@@ -81,6 +82,8 @@ class EODConfig:
     include_historical_stress: bool = True
     pnl_abs_tolerance: float = 50_000.0
     actor: str = "eod-scheduler"
+    counterparty: bool | None = None  # None: follow settings.exposure_enabled
+    exposure_paths: int | None = None  # None: settings.exposure_paths
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +91,8 @@ class EODConfig:
             "var": self.var.__dict__,
             "include_historical_stress": self.include_historical_stress,
             "pnl_abs_tolerance": self.pnl_abs_tolerance,
+            "counterparty": self.counterparty,
+            "exposure_paths": self.exposure_paths,
         }
 
 
@@ -332,6 +337,55 @@ def run_eod(
                 runs_dir,
                 extras={"mc": mc, "bt_static": bt_static, "bt_live": bt_live, "conc": conc, "liq": liq},
             )
+        do_cp = settings.exposure_enabled if cfg.counterparty is None else cfg.counterparty
+        if do_cp:
+            with _timed(timings, "counterparty"):
+                cp_run = run_counterparty(
+                    repo,
+                    run.run_id,
+                    ExposureSimConfig(paths=cfg.exposure_paths or settings.exposure_paths),
+                    settings,
+                    runs_dir=runs_dir,
+                    workers=cfg.workers,
+                )
+                cps = cp_run.counterparty_summary
+                run.summary["counterparty"] = {
+                    "counterparties": int(len(cps)),
+                    "total_epe": float(cps["epe"].sum()),
+                    "total_cva": float(cps["cva"].sum()),
+                    "total_dva": float(cps["dva"].sum()),
+                    "largest_pfe95": {
+                        "counterparty_id": str(cps.iloc[0]["counterparty_id"]),
+                        "peak_pfe95": float(cps.iloc[0]["peak_pfe95"]),
+                    }
+                    if len(cps)
+                    else None,
+                    "wrong_way_flags": int(cps["wrong_way"].fillna(False).sum()) if "wrong_way" in cps else 0,
+                    "paths": cfg.exposure_paths or settings.exposure_paths,
+                }
+                # Re-monitor with PFE-based counterparty exposure and refresh the stored limits table.
+                pfe = {str(r["counterparty_id"]): float(r["peak_pfe95"]) for _, r in cps.iterrows()}
+                limit_table = (
+                    monitor(
+                        limits,
+                        RiskInputs(val.table, sens, hs, stress, counterparty_pfe=pfe),
+                        market.as_of,
+                        base_amounts,
+                        increase_ids,
+                    )
+                    if limits
+                    else pd.DataFrame()
+                )
+                if len(limit_table):
+                    repo.save_run_frame(run.run_id, "limits", limit_table)
+                    run.summary["breaches"] = int((limit_table["status"] == "BREACH").sum())
+                    run.summary["warnings"] = int((limit_table["status"] == "WARNING").sum())
+                    sync2 = sync_breaches(repo, run.run_id, market.as_of, limit_table)
+                    if sync is not None:
+                        sync.raised += sync2.raised
+                        sync.auto_escalated += sync2.auto_escalated
+                        sync.back_within_limit += sync2.back_within_limit
+                        sync.events += sync2.events
         if settings.alerts_enabled:
             with _timed(timings, "alerts"):
                 sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))

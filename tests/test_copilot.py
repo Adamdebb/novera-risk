@@ -48,8 +48,8 @@ def db_path(tmp_path_factory):
         for m in md.snapshots.values():
             repo.save_market_snapshot(m)
         runs_dir = tmp_path_factory.mktemp("runs")
-        run_eod(repo, EODConfig(var=VaRConfig(window_days=120), workers=1), D1, runs_dir=runs_dir)
-        run_eod(repo, EODConfig(var=VaRConfig(window_days=120), workers=1), D2, runs_dir=runs_dir)
+        run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=120), workers=1), D1, runs_dir=runs_dir)
+        run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=120), workers=1), D2, runs_dir=runs_dir)
     return str(path)
 
 

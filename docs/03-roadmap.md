@@ -80,12 +80,19 @@ delta-gamma-vega expansion (MR-010), static and live VaR backtesting with Kupiec
 Christoffersen and the Basel zone (MR-011), concentration (MR-012) and liquidity (MR-013)
 measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
 
-## Phase 4 — Counterparty risk (next)
+## Phase 4 — Counterparty risk (delivered, initial margin deferred to Phase 5)
 
-Counterparty hierarchy, legal entities, agreements, netting sets, CSAs with thresholds,
-MTAs and haircuts, current exposure, EE/EPE/PFE by Monte Carlo, collateral and margin
-(VM, IM with SIMM-lite), counterparty limits, watchlist, wrong-way-risk indicators,
-CVA/DVA. Start with FX forwards, swaps and repos.
+- [x] Netting sets and CSAs in the reference data since Phase 1; counterparty hierarchy
+- [x] Exposure engine (CR-001): 1,000 paths, 12 dates, full revaluation of every bilateral
+      trade with ageing; EE, EPE, EEPE, PFE95/99 per netting set and counterparty
+- [x] Collateral (CR-002): threshold, MTA, independent amount, rounding, haircut, 10-day
+      margin period; gross and collateralised profiles; instant CSA what-if on stored paths
+- [x] CVA and DVA (CR-003) from internal PD and own spread; bilateral CVA
+- [x] Wrong-way risk indicator (CR-004) with the planted sovereign and corporate cases
+- [x] Counterparty limits now on peak PFE95 after collateral; watchlist flag; current
+      exposure under every stress scenario
+- [x] Counterparty page, API, Copilot tool, `novera run counterparty`, EOD integration
+- [ ] Initial margin (SIMM-lite) and CCP exposure: Phase 5
 
 ## Phase 5 — Segment modules
 

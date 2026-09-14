@@ -438,6 +438,144 @@ class RiskService:
             "pdf": str(files.pdf) if files.pdf else None,
         }
 
+    # --- counterparty risk ---------------------------------------------------------------------
+    def counterparties(self, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        summ = self.repo.load_run_frame(r.run_id, "cp_counterparty_summary")
+        notes = self.repo.load_run_frame(r.run_id, "cp_notes")
+        return {
+            "run_id": r.run_id,
+            "summary": _records(summ),
+            "notes": notes.iloc[0].to_dict() if len(notes) else {},
+            "stressed": _records(self.repo.load_run_frame(r.run_id, "cp_stressed").head(30)),
+        }
+
+    def counterparty(self, counterparty_id: str, run_id: str | None = None) -> dict[str, Any]:
+        r = self.resolve(run_id)
+        prof = self.repo.load_run_frame(r.run_id, "cp_profiles")
+        prof = prof[prof["counterparty_id"] == counterparty_id]
+        if prof.empty:
+            raise KeyError(f"no exposure stored for {counterparty_id}")
+        agg = (
+            prof.groupby(["step", "years"], as_index=False)
+            .agg(
+                ee=("ee", "sum"),
+                ee_gross=("ee_gross", "sum"),
+                pfe95=("pfe95", "sum"),
+                pfe99=("pfe99", "sum"),
+                pfe95_gross=("pfe95_gross", "sum"),
+                ene=("ene", "sum"),
+                mean_collateral=("mean_collateral", "sum"),
+            )
+            .sort_values("years")
+        )
+        ns_summ = self.repo.load_run_frame(r.run_id, "cp_netting_summary")
+        ns_ids = sorted(prof["netting_set_id"].unique())
+        netting_sets, csas = self.repo.load_netting_sets()
+        csa_map = {c.csa_id: c for c in csas}
+        sets = []
+        for n in netting_sets:
+            if n.netting_set_id in ns_ids:
+                d = n.model_dump(mode="json")
+                d["csa"] = (
+                    csa_map[n.csa_id].model_dump(mode="json") if n.csa_id and n.csa_id in csa_map else None
+                )
+                sets.append(d)
+        cva = self.repo.load_run_frame(r.run_id, "cp_cva")
+        wwr = self.repo.load_run_frame(r.run_id, "cp_wwr")
+        stressed = self.repo.load_run_frame(r.run_id, "cp_stressed")
+        val = self.valuation(r.run_id, counterparty_id=counterparty_id)
+        cp = next((c for c in self.repo.load_counterparties() if c.counterparty_id == counterparty_id), None)
+        return {
+            "run_id": r.run_id,
+            "counterparty": cp.model_dump(mode="json") if cp else None,
+            "profile": _records(agg),
+            "netting_sets": sets,
+            "netting_summary": _records(ns_summ[ns_summ["netting_set_id"].isin(ns_ids)])
+            if len(ns_summ)
+            else [],
+            "cva": _records(cva[cva["counterparty_id"] == counterparty_id]) if len(cva) else [],
+            "wwr": _records(wwr[wwr["counterparty_id"] == counterparty_id]) if len(wwr) else [],
+            "stressed": _records(stressed[stressed["counterparty_id"] == counterparty_id])
+            if len(stressed)
+            else [],
+            "trades": _records(
+                val[
+                    [
+                        "trade_id",
+                        "book_id",
+                        "desk_id",
+                        "product_type",
+                        "currency",
+                        "quantity",
+                        "pv",
+                        "netting_set_id",
+                    ]
+                ]
+                if "netting_set_id" in val
+                else val
+            ),
+        }
+
+    def csa_what_if(
+        self,
+        netting_set_id: str,
+        run_id: str | None = None,
+        threshold_they_post: float | None = None,
+        threshold_we_post: float | None = None,
+        minimum_transfer_amount: float | None = None,
+        independent_amount: float | None = None,
+        uncollateralised: bool = False,
+        margin_period_days: int = 10,
+    ) -> dict[str, Any]:
+        """Re-collateralise one netting set's stored paths under alternative CSA terms."""
+        from novera.counterparty_risk import csa_what_if, load_exposure_result
+        from novera.domain.counterparties import CSA
+
+        r = self.resolve(run_id)
+        res = load_exposure_result(self.repo, r.run_id)
+        if res is None or netting_set_id not in res.netting_values:
+            raise KeyError(f"no stored exposure paths for {netting_set_id}")
+        ns = res.netting_sets[netting_set_id]
+        base_csa = res.csas.get(ns.csa_id) if ns.csa_id else None
+        if uncollateralised:
+            new_csa = None
+        else:
+            proto = base_csa or CSA(
+                csa_id="WHATIF",
+                collateral_currency=r.reporting_currency,
+                threshold_we_post=0.0,
+                threshold_they_post=0.0,
+                minimum_transfer_amount=0.0,
+            )
+            new_csa = proto.model_copy(
+                update={
+                    k: v
+                    for k, v in {
+                        "csa_id": "WHATIF",
+                        "threshold_they_post": threshold_they_post,
+                        "threshold_we_post": threshold_we_post,
+                        "minimum_transfer_amount": minimum_transfer_amount,
+                        "independent_amount": independent_amount,
+                    }.items()
+                    if v is not None
+                }
+            )
+        before = csa_what_if(res, netting_set_id, base_csa, margin_period_days)
+        after = csa_what_if(res, netting_set_id, new_csa, margin_period_days)
+        return {
+            "run_id": r.run_id,
+            "netting_set_id": netting_set_id,
+            "base_csa": base_csa.model_dump(mode="json") if base_csa else None,
+            "what_if_csa": new_csa.model_dump(mode="json") if new_csa else None,
+            "before": _records(before[["step", "years", "ee", "pfe95", "pfe99", "mean_collateral"]]),
+            "after": _records(after[["step", "years", "ee", "pfe95", "pfe99", "mean_collateral"]]),
+            "peak_pfe95_before": float(before["pfe95"].max()),
+            "peak_pfe95_after": float(after["pfe95"].max()),
+            "epe_before": float(before[before["years"] <= 1]["ee"].mean()),
+            "epe_after": float(after[after["years"] <= 1]["ee"].mean()),
+        }
+
 
 class RiskWriteService:
     """Write side: breach actions and temporary increases. Opened on a writable connection."""

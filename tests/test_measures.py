@@ -137,7 +137,7 @@ def test_risk_pack_builds(world, tmp_path):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(var=VaRConfig(window_days=300), workers=1), runs_dir=tmp_path / "runs")
+        res = run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=300), workers=1), runs_dir=tmp_path / "runs")
         files = build_pack(repo, res.run.run_id, tmp_path / "reports", pdf=False)
     assert files.html.exists() and files.xlsx.exists() and files.pdf is None
     html = files.html.read_text()

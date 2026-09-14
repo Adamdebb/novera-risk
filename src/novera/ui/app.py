@@ -63,6 +63,7 @@ with st.sidebar:
             "Stress",
             "Limits",
             "Breaches",
+            "Counterparty",
             "P&L explain",
             "Data quality",
             "Concentration & liquidity",
@@ -408,6 +409,152 @@ elif page == "Limits":
             hide_index=True,
         )
 
+elif page == "Counterparty":
+    header("Counterparty risk")
+    cps = client.counterparties(run_id)
+    if not cps["summary"]:
+        st.info("No counterparty exposure stored for this run. Run `uv run novera run counterparty`.")
+        st.stop()
+    notes = cps["notes"]
+    st.caption(
+        f"{notes.get('paths')} Monte Carlo paths · grid {notes.get('grid')} · margin period "
+        f"{notes.get('margin_period_days')} days · own spread {notes.get('own_spread_bp')}bp · LGD "
+        f"{notes.get('lgd')} (CR-001 to CR-004)"
+    )
+    summ = df(cps["summary"])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total EPE", money(summ["epe"].sum()))
+    c2.metric("Total CVA", money(summ["cva"].sum(), digits=2), f"DVA {money(summ['dva'].sum(), digits=2)}")
+    top = summ.iloc[0]
+    c3.metric("Largest PFE 95", money(top["peak_pfe95"]), top["counterparty_id"])
+    c4.metric("Wrong-way flags", int(summ["wrong_way"].fillna(False).sum()))
+    show = summ[
+        [
+            "counterparty_id",
+            "name",
+            "counterparty_type",
+            "rating",
+            "collateralised",
+            "current_exposure",
+            "epe",
+            "eepe",
+            "peak_pfe95",
+            "peak_pfe95_step",
+            "peak_pfe95_gross",
+            "cva",
+            "dva",
+            "bcva",
+            "wwr_correlation",
+            "wrong_way",
+            "on_watchlist",
+            "trades",
+        ]
+    ].copy()
+    for c_ in ("current_exposure", "epe", "eepe", "peak_pfe95", "peak_pfe95_gross", "cva", "dva", "bcva"):
+        show[c_] = show[c_] / M
+    st.dataframe(show.round(2), use_container_width=True, hide_index=True)
+    st.caption(
+        "Amounts in millions. PFE after collateral; gross is before. Counterparty limits use peak PFE 95."
+    )
+
+    pick = st.selectbox("Counterparty", list(summ["counterparty_id"]))
+    d = client.counterparty(pick, run_id=run_id)
+    cp = d["counterparty"] or {}
+    st.subheader(
+        f"{cp.get('name', pick)} · {cp.get('counterparty_type')} · {cp.get('rating')} · {cp.get('country')}"
+        + (" · WATCHLIST" if cp.get("on_watchlist") else "")
+    )
+    prof = df(d["profile"])
+    if not prof.empty:
+        chart = prof.set_index("step")[["ee_gross", "pfe95_gross", "ee", "pfe95", "mean_collateral"]] / M
+        st.line_chart(
+            chart.rename(
+                columns={
+                    "ee_gross": "EE gross",
+                    "pfe95_gross": "PFE95 gross",
+                    "ee": "EE",
+                    "pfe95": "PFE95",
+                    "mean_collateral": "collateral held",
+                }
+            )
+        )
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Netting sets and CSA terms**")
+        for ns in d["netting_sets"]:
+            csa = ns.get("csa")
+            terms = (
+                f"threshold they post {csa['threshold_they_post'] / M:.1f}m, we post "
+                f"{csa['threshold_we_post'] / M:.1f}m, MTA {csa['minimum_transfer_amount'] / M:.2f}m, IA "
+                f"{csa['independent_amount'] / M:.1f}m, MPoR {csa['margin_period_of_risk_days']}d"
+                if csa
+                else "no CSA (uncollateralised)"
+            )
+            st.markdown(
+                f"- `{ns['netting_set_id']}` · {ns['legal_entity_id']} · {ns['agreement_type']} · {terms}"
+            )
+        wwr = df(d["wwr"])
+        if not wwr.empty:
+            st.markdown("**Wrong-way risk**")
+            st.dataframe(
+                wwr[["netting_set_id", "proxy", "correlation", "at_step", "wrong_way"]].round(2),
+                hide_index=True,
+                use_container_width=True,
+            )
+    with right:
+        st.markdown("**Current exposure under stress (pre-collateral)**")
+        stx = df(d["stressed"])
+        if not stx.empty:
+            stx = stx[["scenario_id", "current_exposure", "stressed_exposure", "increase"]].copy()
+            for c_ in ("current_exposure", "stressed_exposure", "increase"):
+                stx[c_] = stx[c_] / M
+            st.dataframe(
+                stx.sort_values("increase", ascending=False).round(1),
+                hide_index=True,
+                use_container_width=True,
+            )
+    st.subheader("What if the CSA terms change?")
+    ns_ids = [ns["netting_set_id"] for ns in d["netting_sets"]]
+    if ns_ids:
+        with st.form("csa_whatif"):
+            w1, w2, w3, w4, w5 = st.columns(5)
+            ns_pick = w1.selectbox("Netting set", ns_ids)
+            thr = w2.number_input("Threshold they post (m)", value=0.0, min_value=0.0)
+            mta = w3.number_input("MTA (m)", value=0.5, min_value=0.0)
+            ia = w4.number_input("Independent amount (m)", value=0.0, min_value=0.0)
+            uncoll = w5.checkbox("Uncollateralised")
+            if st.form_submit_button("Re-collateralise"):
+                res = client.csa_what_if(
+                    ns_pick,
+                    run_id=run_id,
+                    threshold_they_post=thr * M,
+                    minimum_transfer_amount=mta * M,
+                    independent_amount=ia * M,
+                    uncollateralised=uncoll,
+                )
+                st.session_state["csa_res"] = res
+        res = st.session_state.get("csa_res")
+        if res and res["netting_set_id"] in ns_ids:
+            a, b = st.columns(2)
+            a.metric("Peak PFE 95 before", money(res["peak_pfe95_before"]))
+            b.metric(
+                "Peak PFE 95 after",
+                money(res["peak_pfe95_after"]),
+                money(res["peak_pfe95_after"] - res["peak_pfe95_before"]),
+            )
+            before = df(res["before"]).set_index("step")["pfe95"] / M
+            after = df(res["after"]).set_index("step")["pfe95"] / M
+            st.line_chart(pd.DataFrame({"PFE95 before": before, "PFE95 after": after}))
+            st.caption(
+                f"Same simulated paths, re-collateralised from the stored values (run {res['run_id']}). "
+                "The engine is not rerun; nothing else changes."
+            )
+    st.subheader("Trades facing this counterparty")
+    tr = df(d["trades"])
+    if not tr.empty:
+        tr["pv"] = tr["pv"] / M
+        st.dataframe(tr.round(2), hide_index=True, use_container_width=True)
+
 elif page == "P&L explain":
     header("Daily P&L explain")
     by = st.selectbox("Attribution by", ["asset_class", "business_id", "desk_id", "book_id"])
@@ -673,7 +820,6 @@ elif page == "Risk pack":
         st.session_state["pack_files"] = files
     files = st.session_state.get("pack_files")
     if files:
-
         cols = st.columns(3)
         for col, key, mime in zip(
             cols,

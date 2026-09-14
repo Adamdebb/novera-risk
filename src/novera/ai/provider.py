@@ -221,8 +221,14 @@ def _plan(q: str) -> list[tuple[str, dict[str, Any]]]:
         return [("pnl", {"by": "desk_id"})]
     if any(k in ql for k in ("dv01", "duration", "rates risk", "curve")):
         return [("sensitivities", {"measure": "DV01", "by": "desk_id"})]
-    if any(k in ql for k in ("counterpart", "bank a", "exposure")):
-        return [("limits", {"level": "COUNTERPARTY"})]
+    if any(
+        k in ql for k in ("counterpart", "bank a", "exposure", "cva", "pfe", "collateral", "netting", "wrong")
+    ):
+        m2 = re.search(
+            r"\b(BANK_[A-Z]|HF_[A-Z]+|CORP_[A-Z]+|SOV_[A-Z]+|DEALER_[A-Z]|AM_[A-Z]+|INS_[A-Z]+|PENSION_[A-Z]+)\b",
+            q.upper(),
+        )
+        return [("counterparty_exposure", {"counterparty_id": m2.group(1)} if m2 else {})]
     if "var" in ql or "risk" in ql:
         return [("run_summary", {}), ("var_by", {"by": "desk_id"})]
     return [("run_summary", {})]
@@ -429,6 +435,49 @@ def _compose(question: str, results: list[tuple[str, dict[str, Any], dict[str, A
                     f"{x['expected_exceptions']:.1f}), Kupiec p {x['kupiec_pvalue']:.2f}, Christoffersen p "
                     f"{x['christoffersen_pvalue']:.2f}, zone {x['zone']}."
                 )
+        elif name == "counterparty_exposure":
+            if "counterparties" in res:
+                for x in res["counterparties"][:8]:
+                    lines.append(
+                        f"- {x['counterparty_id']} ({x['rating']}{'' if x['collateralised'] else ', no CSA'}): "
+                        f"EPE {_fmt_m(x['epe_m'])}, peak PFE95 {_fmt_m(x['peak_pfe95_m'])} (gross "
+                        f"{_fmt_m(x['peak_pfe95_gross_m'])}), CVA {_fmt_m(x['cva_m'])}"
+                        + (", wrong-way risk" if x["wrong_way"] else "")
+                        + "."
+                    )
+            else:
+                cp = res.get("counterparty") or {}
+                lines.append(
+                    f"{cp.get('name', '')} ({cp.get('counterparty_type')}, {cp.get('rating')}): "
+                    + ", ".join(
+                        f"{p['step']} EE {_fmt_m(p['ee'])} / PFE95 {_fmt_m(p['pfe95'])}"
+                        for p in res["profile_m"][:6]
+                    )
+                    + "."
+                )
+                for n in res["netting_sets"]:
+                    csa = n["csa"]
+                    lines.append(
+                        f"- {n['netting_set_id']}: "
+                        + (
+                            f"threshold they post {csa['threshold_they_post'] / 1e6:.1f}m, "
+                            f"MTA {csa['minimum_transfer_amount'] / 1e6:.2f}m"
+                            if csa
+                            else "no CSA"
+                        )
+                        + "."
+                    )
+                for w in res["wrong_way"]:
+                    if w.get("wrong_way"):
+                        lines.append(
+                            f"- Wrong-way risk: correlation {w['correlation']:.2f} with {w['proxy']} at {w['at_step']}."
+                        )
+                if res["stressed_exposure_m"]:
+                    s0 = res["stressed_exposure_m"][0]
+                    lines.append(
+                        f"- Under {s0['scenario']}, current exposure goes from {_fmt_m(s0['current'])} to "
+                        f"{_fmt_m(s0['stressed'])}."
+                    )
         elif name == "positions":
             lines.append(
                 "PV by "
