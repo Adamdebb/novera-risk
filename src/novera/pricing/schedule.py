@@ -7,6 +7,7 @@ is approximated as ACT/365.25 and documented as such in the methodology records.
 from __future__ import annotations
 
 from datetime import date
+from functools import lru_cache
 
 from dateutil.relativedelta import relativedelta
 
@@ -33,9 +34,11 @@ def year_fraction(start: date, end: date, day_count: DayCount) -> float:
     return ((end.year - start.year) * 360 + (end.month - start.month) * 30 + (d2 - d1)) / 360.0
 
 
+@lru_cache(maxsize=65536)
 def schedule(effective: date, maturity: date, frequency: Frequency) -> list[date]:
     """Period boundaries [effective, ..., maturity], generated backwards from maturity.
-    A short first stub absorbs any remainder."""
+    A short first stub absorbs any remainder. Cached: schedules are pure and reused across
+    every reprice of the same instrument."""
     step = MONTHS[frequency]
     dates = [maturity]
     k = 1

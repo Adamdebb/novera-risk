@@ -34,11 +34,16 @@ Status: all ten pricers implemented and benchmarked against QuantLib or closed f
 (methodology records PR-001 to PR-009). Trades are struck at fair market on their trade
 date from the simulated history, so P&L is genuine.
 
-Risk: PV, clean and dirty P&L, DV01, CS01, FX delta, equity delta, commodity delta,
-vega, gamma, theta, curve ladders, historical-simulation VaR and expected shortfall,
-Monte Carlo VaR, historical and hypothetical stress, concentration, P&L attribution,
-limit framework with breach workflow, daily risk pack, VaR backtesting (Kupiec,
-Christoffersen). Morning dashboard with drill-down.
+Risk engine status: bump-and-reprice sensitivities (DV01 ladders, CS01, FX/equity/
+commodity/crypto deltas, vega, gamma, theta), 99% 1-day historical VaR by full
+revaluation over 500 days with 97.5% ES and a delta-gamma-vega challenger, a stress
+library of twelve hypothetical scenarios plus the two stylised historical episodes
+(MR-001 to MR-005). Full-revaluation VaR runs in about 40 seconds on the 1,515-trade
+bank using a forked process pool.
+
+Still to do in this phase: limit framework with breach workflow, P&L attribution,
+concentration and liquidity measures, Monte Carlo VaR, VaR backtesting (Kupiec,
+Christoffersen), daily risk pack, morning dashboard with drill-down.
 
 ## Phase 3 — Production workflow and trust
 
