@@ -19,10 +19,13 @@ from novera.domain import (
     OptionType,
     Organisation,
     PortfolioSnapshot,
+    ProductType,
     SwapSide,
     Trade,
     TradeStatus,
 )
+from novera.market_data.history import MarketHistory
+from novera.pricing import PRICERS
 from novera.simulation import instruments as inst
 from novera.simulation import reference_levels as ref
 from novera.simulation.organisation import CounterpartyUniverse
@@ -51,6 +54,10 @@ class TradeGeneratorConfig:
     n_trades: int = 1500
     seed: int = 42
     inject_problems: bool = True
+    market_history: MarketHistory | None = None
+    """When given, every trade is struck at fair market on its trade date (plus execution
+    noise), so inception P&L is small and later P&L is genuine. Without it, prices come
+    from static reference levels."""
 
 
 # Desk -> product recipe weights. Keys are recipe names implemented in _Recipes.
@@ -161,6 +168,47 @@ class _Gen:
         return {"counterparty_id": _EXCHANGE_CPTY[exchange], "clearing": ClearingType.EXCHANGE,
                 "netting_set_id": None}
 
+    def _fair(self, trade: Trade, noise_bp: float = 5.0) -> Trade:
+        """Re-strike the trade at fair market on its trade date, if history is available.
+
+        The fair level is what makes inception PV zero: dirty price for bonds, par rate
+        for swaps, CIP forward for FX forwards, unit premium for options, forward for
+        futures, spot for cash products, market spread for CDS. A small execution noise
+        (basis points of the level) is added so books do not start at exactly zero P&L.
+        """
+        hist = self.cfg.market_history
+        if hist is None:
+            return trade
+        try:
+            snap = hist.snapshot_at(trade.trade_date)
+            r = PRICERS[trade.product_type](trade, snap, snap.as_of)
+        except (KeyError, ValueError):
+            return trade
+        d = r.details
+        pt = trade.product_type
+        if pt is ProductType.GOVERNMENT_BOND:
+            fair = d["dirty_price"]
+        elif pt is ProductType.INTEREST_RATE_SWAP:
+            fair = d["par_rate"]
+            trade = trade.model_copy(update={"instrument": trade.instrument.model_copy(
+                update={"fixed_rate": round(fair, 5)})})
+        elif pt is ProductType.FX_FORWARD:
+            fair = d["forward"]
+            trade = trade.model_copy(update={"instrument": trade.instrument.model_copy(
+                update={"forward_rate": round(fair, 5)})})
+        elif pt is ProductType.FX_SPOT:
+            fair = d["spot"]
+        elif pt in (ProductType.FX_OPTION, ProductType.EQUITY_OPTION):
+            fair = d["unit_price"]
+        elif pt in (ProductType.EQUITY_INDEX_FUTURE, ProductType.COMMODITY_FUTURE):
+            fair = d["forward"]
+        elif pt is ProductType.CDS_INDEX:
+            fair = d["spread_bp"] / 1e4
+        else:  # cash equity, crypto
+            fair = d["spot"]
+        noise = 1.0 + float(self.rng.normal(0, noise_bp / 1e4))
+        return trade.model_copy(update={"trade_price": float(fair * noise)})
+
     # --- recipes ---------------------------------------------------------------------
     def govt_bond(self, desk_id: str) -> Trade:
         ccy = str(self.rng.choice(_DESK_CURRENCY[desk_id]))
@@ -218,8 +266,8 @@ class _Gen:
         spot, _ = ref.FX_SPOT[pair]
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
-        td = self._trade_date(250)
         months = int(self.rng.choice([1, 3, 6, 12, 24], p=[0.25, 0.3, 0.25, 0.15, 0.05]))
+        td = self._trade_date(max(int(months * 30 * 0.85), 5))
         settle = td + relativedelta(months=months)
         base, quote = pair[:3], pair[4:]
         rb = ref.SWAP_CURVES.get(base, ref.SWAP_CURVES["USD"])["1Y"]
@@ -469,11 +517,11 @@ class _Gen:
             recipes = list(mix)
             p = np.array([mix[r] for r in recipes])
             for r in self.rng.choice(recipes, size=int(k), p=p / p.sum()):
-                trades.append(getattr(self, str(r))(desk_id))
+                trades.append(self._fair(getattr(self, str(r))(desk_id)))
         injections: list[Injection] = []
         if self.cfg.inject_problems:
             extra, injections = self.inject()
-            trades += extra
+            trades += [self._fair(t) for t in extra]
         snap = PortfolioSnapshot(business_date=self.bd, trades=tuple(trades), source="SIM")
         return GeneratedPortfolio(snapshot=snap, injections=injections)
 
