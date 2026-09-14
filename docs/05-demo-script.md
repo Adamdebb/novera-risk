@@ -30,5 +30,7 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    expander under an answer to show the run id and the exact numbers it read. "Why did VaR increase today?" then "Which books are closest
    to their limits?" then "What if equities fall 20 percent and vol rises 15 points?"
    Each answer cites run IDs and tool calls.
+8b. **Risk pack** (30 s). Build the pack from the Risk pack page and open the PDF: the same
+   numbers, stamped with the run id, ready for the risk committee.
 9. **Close** (30 s). "This is a prototype of the layer above today's risk stack, not a
    replacement for it."

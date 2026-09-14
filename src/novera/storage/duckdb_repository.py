@@ -540,7 +540,7 @@ class DuckDBRepository:
         q = (
             "SELECT * FROM risk_run"
             + (" WHERE run_type = ?" if run_type else "")
-            + " ORDER BY started_at DESC LIMIT ?"
+            + " ORDER BY business_date DESC, started_at DESC LIMIT ?"
         )
         params = ([run_type] if run_type else []) + [limit]
         return [_run_from_row(r) for r in self._conn.execute(q, params).fetchall()]

@@ -308,3 +308,24 @@ def reconciliation(run_id: str, svc: RiskService = Depends(service)):
 @app.get("/market-data/provenance")
 def provenance(svc: RiskService = Depends(service)):
     return svc.provenance()
+
+
+# --- concentration, liquidity, backtest, risk pack -------------------------------------------------
+@app.get("/runs/{run_id}/concentration")
+def concentration(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.concentration, run_id)
+
+
+@app.get("/runs/{run_id}/liquidity")
+def liquidity(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.liquidity, run_id)
+
+
+@app.get("/runs/{run_id}/backtest")
+def backtest(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.backtest, run_id)
+
+
+@app.post("/runs/{run_id}/risk-pack")
+def risk_pack(run_id: str, pdf: bool = True, svc: RiskService = Depends(service)):
+    return _guard(svc.risk_pack, run_id, str(settings.data_dir / "reports"), pdf)

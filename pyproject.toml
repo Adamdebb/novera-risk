@@ -21,6 +21,7 @@ dependencies = [
     "QuantLib>=1.34",
     "anthropic>=0.30",
     "httpx>=0.28.1",
+    "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,7 @@ select = ["E", "F", "I", "B", "UP", "N", "W"]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "N813"]
 "src/novera/api/app.py" = ["B008"]
+"src/novera/reporting/pack.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -150,3 +150,14 @@ def test_large_increase_needs_cro_and_firm_level_needs_cro(repo):
         request_increase(repo, "L1", 110.0, D1 + timedelta(days=90), "x", "too long", effective_from=D1)
     with pytest.raises(WorkflowError, match="exceed"):
         request_increase(repo, "L1", 90.0, D1 + timedelta(days=9), "x", "not an increase", effective_from=D1)
+
+
+def test_backfill_run_does_not_rewind_breaches(repo):
+    sync_breaches(repo, "run1", D1, _table([_row("L1", 1.2)]))
+    sync_breaches(repo, "run2", D2, _table([_row("L1", 1.3)]))
+    b = repo.load_breaches(open_only=True)[0]
+    assert b.latest_date == D2 and b.consecutive_days == 2
+    out = sync_breaches(repo, "run1b", D1, _table([_row("L1", 0.5)]))  # rerun of day 1, now within limit
+    assert out.updated == [] and out.back_within_limit == []
+    b = repo.load_breach(b.breach_id)
+    assert b.latest_date == D2 and b.latest_run_id == "run2" and not b.within_limit_on_latest_run

@@ -57,7 +57,10 @@ def test_run_record_and_verdict(result):
             "TRADE_UNKNOWN_COUNTERPARTY"} <= codes
     missing = next(f for f in result.dq.findings if f.code == "MD_MISSING_FACTOR")
     assert missing.subject == "IR:USD:7Y" and missing.affected_trade_ids
-    assert set(r.model_versions) == {"valuation", "sensitivities", "var", "stress", "pnl_attribution"}
+    assert {"valuation", "sensitivities", "var", "stress", "pnl_attribution", "monte_carlo", "backtest",
+            "concentration", "liquidity"} <= set(r.model_versions)
+    assert r.summary["monte_carlo_var"] > 0 and r.summary["backtest_zone"] in ("GREEN", "AMBER", "RED")
+    assert r.summary["liquidity_adjusted_var"] >= r.summary["var"]
     assert r.summary["var"] > 0 and r.summary["breaches"] >= 1
     assert "var" in r.timings and "persist" in r.timings
 
@@ -88,7 +91,11 @@ def test_results_persisted_and_reloadable(result, db_path):
         assert len(val) == len(result.valuation)
         assert len(repo.load_run_frame(rid, "sensitivities")) == len(result.sensitivities)
         summary = repo.load_run_frame(rid, "var_summary")
-        assert set(summary["method"]) == {"historical_full_revaluation", "delta_gamma_vega"}
+        assert set(summary["method"]) == {"historical_full_revaluation", "delta_gamma_vega",
+                                          "monte_carlo_delta_gamma_vega"}
+        assert len(repo.load_run_frame(rid, "backtest_summary")) == 2
+        assert not repo.load_run_frame(rid, "concentration").empty
+        assert not repo.load_run_frame(rid, "liquidity_buckets").empty
         assert len(repo.load_run_frame(rid, "stress_summary")) == len(result.stress)
         assert (repo.load_run_frame(rid, "limits")["status"] == "BREACH").sum() == result.run.summary["breaches"]
         assert len(repo.load_run_frame(rid, "dq_findings")) == len(result.dq.findings)

@@ -579,5 +579,20 @@ def fetch(
             typer.echo(f"    {k}: {v[:120]}")
 
 
+@app.command()
+def report(
+    run_id: str = typer.Option("latest"),
+    out: str = typer.Option("data/reports", help="Output directory"),
+    no_pdf: bool = typer.Option(False, help="Skip the PDF (needs Playwright's Chromium)"),
+) -> None:
+    """Write the daily risk pack (HTML, PDF, Excel) for a stored run."""
+    from novera.reporting import build_pack
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(get_settings().db_path, read_only=True) as repo:
+        files = build_pack(repo, run_id, Path(out), pdf=not no_pdf)
+    typer.echo(f"html {files.html}\nxlsx {files.xlsx}\npdf  {files.pdf or 'not generated'}")
+
+
 if __name__ == "__main__":
     app()

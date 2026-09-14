@@ -7,6 +7,7 @@ HTTP API) and carries the run id it was computed in (ADR 0004).
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -64,8 +65,10 @@ with st.sidebar:
             "Breaches",
             "P&L explain",
             "Data quality",
+            "Concentration & liquidity",
             "Compare runs",
             "Challenger",
+            "Risk pack",
             "Alerts & jobs",
             "Runs & audit",
         ],
@@ -317,6 +320,40 @@ elif page == "VaR":
             hide_index=True,
         )
 
+    bt = client.backtest(run_id)
+    if bt["summary"]:
+        st.subheader("Backtest")
+        bs = df(bt["summary"])
+        st.dataframe(
+            bs[
+                [
+                    "kind",
+                    "days",
+                    "exceptions",
+                    "expected_exceptions",
+                    "kupiec_pvalue",
+                    "christoffersen_pvalue",
+                    "conditional_pvalue",
+                    "zone",
+                ]
+            ].round(3),
+            use_container_width=True,
+            hide_index=True,
+        )
+        ser = df(bt["series"])
+        if not ser.empty:
+            ser["date"] = pd.to_datetime(ser["date"])
+            chart = ser.set_index("date")[["pnl", "var"]] / M
+            chart["-var"] = -chart["var"]
+            st.line_chart(chart[["pnl", "-var"]])
+            exc = ser[ser["exception"]]
+            if not exc.empty:
+                st.caption("Exceptions on: " + ", ".join(exc["date"].dt.strftime("%Y-%m-%d")))
+        st.caption(
+            "Static-portfolio hypothetical backtest: today's book against the last 250 daily moves, VaR "
+            "from the preceding 250 (MR-011). The live series grows one point per stored run."
+        )
+
 elif page == "Stress":
     header("Stress testing")
     by = st.selectbox("Loss by", ["asset_class", "business_id", "desk_id", "book_id"])
@@ -521,6 +558,142 @@ elif page == "Breaches":
         "limits need the CRO; increases above 25% always need the CRO; requesters cannot approve "
         "their own request (MR-008)."
     )
+
+elif page == "Concentration & liquidity":
+    header("Concentration and liquidity")
+    conc = client.concentration(run_id)
+    liq = client.liquidity(run_id)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("VaR", money(liq["var"], digits=2))
+    c2.metric(
+        "Liquidity-adjusted VaR",
+        money(liq["liquidity_adjusted_var"], digits=2),
+        money((liq["liquidity_adjusted_var"] or 0) - (liq["var"] or 0), digits=2),
+    )
+    c3.metric("Weighted liquidation horizon", f"{liq['horizon_days'] or 0:.1f} days")
+    c4.metric("Flags", len(conc["flags"]) + len(liq["flags"]))
+    for f in conc["flags"] + liq["flags"]:
+        st.warning(f)
+    st.subheader("Concentration by dimension")
+    bd = df(conc["by_dimension"])
+    if not bd.empty:
+        show = bd[
+            [
+                "dimension",
+                "basis",
+                "groups",
+                "hhi",
+                "effective_number",
+                "top1_share",
+                "top5_share",
+                "top10_share",
+                "largest",
+            ]
+        ].copy()
+        for c_ in ("top1_share", "top5_share", "top10_share"):
+            show[c_] = (show[c_] * 100).round(0)
+        st.dataframe(
+            show.round(3).rename(
+                columns={"top1_share": "top 1 %", "top5_share": "top 5 %", "top10_share": "top 10 %"}
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.subheader("Largest VaR contributors")
+    tp = df(conc["top_positions"])
+    if not tp.empty:
+        tp["pv"] = tp["pv"] / M
+        tp["var_contribution"] = tp["var_contribution"] / M
+        tp["share_of_var"] = (tp["share_of_var"] * 100).round(1)
+        st.dataframe(
+            tp.round(2).rename(
+                columns={"pv": "pv (m)", "var_contribution": "component VaR (m)", "share_of_var": "share %"}
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.subheader("Curve concentration (share of |DV01| by node)")
+    tn = df(conc["tenor"])
+    if not tn.empty:
+        order = ["1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"]
+        piv = tn.pivot_table(
+            index="currency", columns="bucket", values="share_of_abs_dv01", aggfunc="sum", fill_value=0.0
+        )
+        piv = piv.reindex(columns=[b for b in order if b in piv.columns])
+        st.dataframe((piv * 100).round(0), use_container_width=True)
+    st.subheader("Liquidation horizon")
+    lb = df(liq["by_bucket"])
+    if not lb.empty:
+        lb["abs_pv"] = lb["abs_pv"] / M
+        lb["share_of_abs_pv"] = (lb["share_of_abs_pv"] * 100).round(1)
+        st.dataframe(
+            lb.round(1).rename(columns={"abs_pv": "|PV| (m)", "share_of_abs_pv": "share %"}),
+            use_container_width=True,
+            hide_index=True,
+        )
+    ld = df(liq["by_desk"])
+    if not ld.empty:
+        ld["bidask_cost"] = ld["bidask_cost"] / M
+        st.dataframe(
+            ld.round(2).rename(columns={"bidask_cost": "bid-ask cost (m)"}),
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.subheader("Slowest positions to liquidate")
+    sl = df(liq["slowest"])
+    if not sl.empty:
+        sl["pv"] = sl["pv"] / M
+        st.dataframe(
+            sl[
+                [
+                    "trade_id",
+                    "desk_id",
+                    "product_type",
+                    "position",
+                    "adv",
+                    "days_to_liquidate",
+                    "horizon_bucket",
+                    "pv",
+                ]
+            ].round(1),
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.caption(
+        "Volume and bid-ask assumptions are synthetic (MR-013). Concentration uses component VaR "
+        "where available (MR-012)."
+    )
+
+elif page == "Risk pack":
+    header("Daily risk pack")
+    st.markdown("Generates the HTML, PDF and Excel pack for the selected run from its stored results.")
+    if st.button("Build the pack"):
+        with st.spinner("Rendering…"):
+            files = client.risk_pack(run_id)
+        st.session_state["pack_files"] = files
+    files = st.session_state.get("pack_files")
+    if files:
+
+        cols = st.columns(3)
+        for col, key, mime in zip(
+            cols,
+            ("html", "pdf", "xlsx"),
+            (
+                "text/html",
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            strict=True,
+        ):
+            path = files.get(key)
+            if path and Path(path).exists():
+                col.download_button(
+                    f"Download {key.upper()}", Path(path).read_bytes(), file_name=Path(path).name, mime=mime
+                )
+            else:
+                col.caption(f"{key.upper()} not generated")
+        if files.get("html"):
+            st.components.v1.html(Path(files["html"]).read_text(encoding="utf-8"), height=900, scrolling=True)
 
 elif page == "Compare runs":
     header("Compare two runs")

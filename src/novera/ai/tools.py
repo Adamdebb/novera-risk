@@ -322,6 +322,76 @@ def build_tools(db_path: str) -> list[Tool]:
             ],
         }
 
+    def concentration_tool(run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            c = s.concentration(r.run_id)
+        return {
+            "run_id": r.run_id,
+            "flags": c["flags"],
+            "by_dimension": [
+                {k: (round(v, 3) if isinstance(v, float) else v) for k, v in x.items()}
+                for x in c["by_dimension"]
+            ],
+            "top_positions_m": [
+                {
+                    "trade_id": x["trade_id"],
+                    "desk_id": x["desk_id"],
+                    "product": x["product_type"],
+                    "pv_m": _m(x["pv"]),
+                    "component_var_m": _m(x["var_contribution"]),
+                    "share_of_var": round(x["share_of_var"], 3),
+                }
+                for x in c["top_positions"][:10]
+            ],
+        }
+
+    def liquidity_tool(run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            q = s.liquidity(r.run_id)
+        return {
+            "run_id": r.run_id,
+            "var_m": _m(q["var"]),
+            "liquidity_adjusted_var_m": _m(q["liquidity_adjusted_var"]),
+            "weighted_horizon_days": round(q["horizon_days"] or 0, 2),
+            "flags": q["flags"],
+            "by_bucket": [
+                {
+                    "bucket": x["horizon_bucket"],
+                    "trades": x["trades"],
+                    "abs_pv_m": _m(x["abs_pv"]),
+                    "share": round(x["share_of_abs_pv"], 3),
+                }
+                for x in q["by_bucket"]
+            ],
+            "slowest": [
+                {
+                    "trade_id": x["trade_id"],
+                    "desk_id": x["desk_id"],
+                    "product": x["product_type"],
+                    "days_to_liquidate": round(x["days_to_liquidate"], 1),
+                }
+                for x in q["slowest"][:8]
+            ],
+        }
+
+    def backtest_tool(run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            b = s.backtest(r.run_id)
+        exc = [x["date"] for x in b["series"] if x.get("exception")]
+        return {
+            "run_id": r.run_id,
+            "summary": [
+                {k: (round(v, 4) if isinstance(v, float) else v) for k, v in x.items()} for x in b["summary"]
+            ],
+            "exception_dates": exc[-10:],
+        }
+
     def what_if_tool(shocks: list[dict], run_id: str | None = None, by: str = "asset_class") -> dict:
         repo, s = svc()
         with repo:
@@ -440,6 +510,27 @@ def build_tools(db_path: str) -> list[Tool]:
             "group, limits that moved, trades that moved. Use for 'what changed' and 'why did VaR change'.",
             _obj({"run_a": {"type": "string"}, "run_b": {"type": "string"}, "by": BY}),
             compare_runs,
+        ),
+        Tool(
+            "concentration",
+            "Concentration: HHI and top shares by trade, desk, book, counterparty, currency, "
+            "asset class and risk factor; largest VaR contributors; flags.",
+            _obj({"run_id": RUN}),
+            concentration_tool,
+        ),
+        Tool(
+            "liquidity",
+            "Liquidity: days to liquidate, liquidation horizon buckets, liquidity-adjusted VaR, "
+            "slowest positions, flags.",
+            _obj({"run_id": RUN}),
+            liquidity_tool,
+        ),
+        Tool(
+            "backtest",
+            "VaR backtest: exceptions, Kupiec and Christoffersen p-values, Basel zone, for the "
+            "static-portfolio test and the live series.",
+            _obj({"run_id": RUN}),
+            backtest_tool,
         ),
         Tool(
             "what_if",
