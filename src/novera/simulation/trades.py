@@ -26,6 +26,7 @@ from novera.domain import (
     TradeStatus,
 )
 from novera.market_data.history import MarketHistory
+from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing import PRICERS
 from novera.simulation import instruments as inst
 from novera.simulation import reference_levels as ref
@@ -205,6 +206,38 @@ class _Gen:
             "netting_set_id": None,
         }
 
+    @staticmethod
+    def _restrike(trade: Trade, snap: MarketSnapshot) -> Trade:
+        """Option strikes were drawn around reference levels; move them to the same relative
+        moneyness against the market on the trade date so the book is not all deep ITM/OTM."""
+        ins = trade.instrument
+        pt = trade.product_type
+        if pt is ProductType.FX_OPTION:
+            ref_spot = ref.FX_SPOT[ins.pair][0]
+            spot = snap.fx_spot(ins.pair)
+            strike = round(ins.strike * spot / ref_spot, 4)
+        elif pt is ProductType.EQUITY_OPTION:
+            u = ins.underlying
+            if u in ref.EQUITY_INDICES:
+                ref_spot, spot = ref.EQUITY_INDICES[u][2], snap.index_level(u)
+                step = 25 if spot > 1000 else 5
+            else:
+                ref_spot, spot = ref.EQUITIES[u][4], snap.equity_spot(u)
+                step = 5 if spot > 50 else 1
+            strike = max(step, round(ins.strike * spot / ref_spot / step) * step)
+        else:
+            return trade
+        new_ins = ins.model_copy(update={"strike": strike})
+        new_ins = new_ins.model_copy(
+            update={
+                "instrument_id": ins.instrument_id.replace(
+                    f"{ins.strike:.4f}" if pt is ProductType.FX_OPTION else f"{ins.strike:.0f}",
+                    f"{strike:.4f}" if pt is ProductType.FX_OPTION else f"{strike:.0f}",
+                )
+            }
+        )
+        return trade.model_copy(update={"instrument": new_ins})
+
     def _fair(self, trade: Trade, noise_bp: float = 5.0) -> Trade:
         """Re-strike the trade at fair market on its trade date, if history is available.
 
@@ -218,6 +251,7 @@ class _Gen:
             return trade
         try:
             snap = hist.snapshot_at(trade.trade_date)
+            trade = self._restrike(trade, snap)
             r = PRICERS[trade.product_type](trade, snap, snap.as_of)
         except (KeyError, ValueError):
             return trade
@@ -367,7 +401,7 @@ class _Gen:
         book, trader = self._book_and_trader(desk_id)
         td = self._trade_date(200)
         months = int(self.rng.choice([1, 3, 6, 12]))
-        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=7))
+        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=30))
         kind = OptionType.CALL if self.rng.random() < 0.5 else OptionType.PUT
         strike = round(spot * float(np.exp(self.rng.normal(0, vol * 0.5))), 4)
         premium = round(spot * vol * np.sqrt(months / 12) * 0.4, 5)
@@ -412,7 +446,7 @@ class _Gen:
         exch, ccy, level, vol, mult = ref.EQUITY_INDICES[index]
         td = self._trade_date(120)
         months = int(self.rng.choice([1, 2, 3, 6, 12]))
-        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=7))
+        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=30))
         kind = OptionType.CALL if self.rng.random() < 0.4 else OptionType.PUT
         strike = self._round(level * float(np.exp(self.rng.normal(0, vol * 0.4))), 25 if level > 1000 else 5)
         opt = inst.equity_option(index, expiry, strike, kind, ccy, exch, mult)
@@ -420,7 +454,7 @@ class _Gen:
             trade_id=self._id("EIO"),
             instrument=opt,
             direction=self._direction(),
-            quantity=self._round(self._lognormal(100, 5000), 10),
+            quantity=self._round(self._lognormal(20, 600), 10),
             trade_price=round(level * vol * np.sqrt(months / 12) * 0.4, 2),
             trade_date=td,
             settlement_date=td + relativedelta(days=1),
@@ -456,7 +490,7 @@ class _Gen:
         exch, ccy, _, _, price, vol = ref.EQUITIES[ticker]
         td = self._trade_date(120)
         months = int(self.rng.choice([1, 2, 3, 6, 12]))
-        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=7))
+        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=30))
         kind = OptionType.CALL if self.rng.random() < 0.5 else OptionType.PUT
         strike = self._round(price * float(np.exp(self.rng.normal(0, vol * 0.4))), 5 if price > 50 else 1)
         opt = inst.equity_option(ticker, expiry, strike, kind, ccy, exch)
@@ -464,7 +498,7 @@ class _Gen:
             trade_id=self._id("EQO"),
             instrument=opt,
             direction=self._direction(),
-            quantity=self._round(self._lognormal(100, 8000), 10),
+            quantity=self._round(self._lognormal(50, 2500), 10),
             trade_price=round(price * vol * np.sqrt(months / 12) * 0.4, 2),
             trade_date=td,
             settlement_date=td + relativedelta(days=1),

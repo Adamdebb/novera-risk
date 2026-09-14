@@ -46,8 +46,8 @@ _DESK_VAR: dict[str, float] = {
     "JPY_RATES": 5e6,
     "EM_RATES": 5e6,
     "G10_FX": 15e6,
-    "EM_FX": 12e6,
-    "INDEX_EQ": 45e6,
+    "EM_FX": 15e6,
+    "INDEX_EQ": 55e6,
     "SINGLE_NAME_EQ": 25e6,
     "IG_CREDIT": 8e6,
     "HY_CREDIT": 8e6,
@@ -62,8 +62,8 @@ _DESK_STRESS: dict[str, float] = {
     "JPY_RATES": 20e6,
     "EM_RATES": 15e6,
     "G10_FX": 40e6,
-    "EM_FX": 50e6,
-    "INDEX_EQ": 180e6,
+    "EM_FX": 65e6,
+    "INDEX_EQ": 260e6,
     "SINGLE_NAME_EQ": 120e6,
     "IG_CREDIT": 30e6,
     "HY_CREDIT": 30e6,
@@ -176,7 +176,7 @@ def build_limits(
     # Equity, FX, vega.
     out.append(
         _lim(
-            "INDEX_EQ_DELTA", LimitType.EQUITY_DELTA, HierarchyLevel.DESK, "INDEX_EQ", 6e6, heads["INDEX_EQ"]
+            "INDEX_EQ_DELTA", LimitType.EQUITY_DELTA, HierarchyLevel.DESK, "INDEX_EQ", 14e6, heads["INDEX_EQ"]
         )
     )
     out.append(
@@ -191,10 +191,10 @@ def build_limits(
     )
     out.append(_lim("G10_FX_DELTA", LimitType.FX_DELTA, HierarchyLevel.DESK, "G10_FX", 6e6, heads["G10_FX"]))
     out.append(_lim("EM_FX_DELTA", LimitType.FX_DELTA, HierarchyLevel.DESK, "EM_FX", 5e6, heads["EM_FX"]))
-    out.append(_lim("G10_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "G10_FX", 150e3, heads["G10_FX"]))
-    out.append(_lim("EM_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "EM_FX", 50e3, heads["EM_FX"]))
+    out.append(_lim("G10_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "G10_FX", 400e3, heads["G10_FX"]))
+    out.append(_lim("EM_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "EM_FX", 900e3, heads["EM_FX"]))
     out.append(
-        _lim("INDEX_EQ_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "INDEX_EQ", 100e3, heads["INDEX_EQ"])
+        _lim("INDEX_EQ_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "INDEX_EQ", 500e3, heads["INDEX_EQ"])
     )
     out.append(
         _lim(
@@ -202,7 +202,7 @@ def build_limits(
             LimitType.VEGA,
             HierarchyLevel.DESK,
             "SINGLE_NAME_EQ",
-            100e3,
+            150e3,
             heads["SINGLE_NAME_EQ"],
         )
     )

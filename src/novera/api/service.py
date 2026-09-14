@@ -3,6 +3,7 @@ no screen ever computes a number itself (ADR 0004). Every answer carries the run
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -350,6 +351,44 @@ class RiskService:
                 if x["first_run_id"] in (a.run_id, b.run_id) or x["latest_run_id"] in (a.run_id, b.run_id)
             ],
         }
+
+    # --- alerts, jobs, reconciliation, provenance ----------------------------------------------
+    def alerts(self, limit: int = 200, status: str | None = None, severity: str | None = None) -> list[dict]:
+        return [
+            {k: v for k, v in a.items() if k != "dedupe_key"}
+            for a in self.repo.load_alerts(limit, status, severity)
+        ]
+
+    def jobs(self, limit: int = 100) -> list[dict]:
+        return self.repo.load_jobs(limit)
+
+    def reconciliation(self, run_id: str | None = None) -> dict[str, Any] | None:
+        r = self.resolve(run_id)
+        summ = self.repo.load_run_frame(r.run_id, "recon_summary")
+        if summ.empty:
+            return None
+        row = summ.iloc[-1].to_dict()
+        row["run_id"] = r.run_id
+        for k in ("attribution", "findings", "meta"):
+            if isinstance(row.get(k), str):
+                try:
+                    row[k] = json.loads(row[k])
+                except json.JSONDecodeError:
+                    pass
+        row["by_desk"] = _records(self.repo.load_run_frame(r.run_id, "recon_by_desk"))
+        detail = self.repo.load_run_frame(r.run_id, "recon_detail")
+        row["cause_counts"] = (
+            detail["cause"].replace("", "MATCH").value_counts().to_dict() if len(detail) else {}
+        )
+        row["largest_differences"] = (
+            _records(detail.reindex(detail["var_diff"].abs().sort_values(ascending=False).index).head(15))
+            if len(detail)
+            else []
+        )
+        return row
+
+    def provenance(self) -> list[dict]:
+        return _records(self.repo.load_market_provenance())
 
 
 class RiskWriteService:

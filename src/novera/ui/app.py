@@ -65,6 +65,8 @@ with st.sidebar:
             "P&L explain",
             "Data quality",
             "Compare runs",
+            "Challenger",
+            "Alerts & jobs",
             "Runs & audit",
         ],
     )
@@ -586,6 +588,102 @@ elif page == "Data quality":
         st.write(
             f"{row['message']} — {len(ids)} affected trades" + (": " + ", ".join(ids[:25]) if ids else "")
         )
+
+elif page == "Challenger":
+    header("Independent challenger")
+    rec = client.reconciliation(run_id)
+    if rec is None:
+        st.info("No reconciliation stored for this run. Generate a feed and reconcile it:")
+        st.code("uv run novera vendor-feed\nuv run novera reconcile data/feeds/official_risk_<date>.csv")
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Novera VaR", money(rec["novera_var"], digits=2))
+        c2.metric(f"{rec['vendor']} VaR", money(rec["official_var"], digits=2))
+        c3.metric(
+            "Gap", money(rec["gap"], digits=2), f"{rec['gap_pct']:+.1%}" if rec.get("gap_pct") else None
+        )
+        c4.metric("Trades compared", rec["trades_compared"])
+        st.caption(f"reconciliation {rec['recon_id']} · run {rec['run_id']} · {rec['business_date']}")
+        st.subheader("Where the gap comes from")
+        att = pd.Series(rec["attribution"], name="m") / M
+        st.bar_chart(att)
+        for f in rec["findings"]:
+            st.markdown(f"- {f}")
+        planted = (rec.get("meta") or {}).get("planted_differences")
+        if planted:
+            with st.expander("Planted differences in the simulated feed (demo only)"):
+                for x in planted:
+                    st.markdown(f"- {x}")
+        st.subheader("By desk")
+        bd = df(rec["by_desk"])
+        if not bd.empty:
+            for col_ in ("novera_var", "official_var", "gap"):
+                bd[col_] = bd[col_] / M
+            st.dataframe(bd.round(2), use_container_width=True, hide_index=True)
+        st.subheader("Largest trade-level differences")
+        ld = df(rec["largest_differences"])
+        if not ld.empty:
+            for col_ in (
+                "pv",
+                "official_pv",
+                "pv_diff",
+                "var_contribution",
+                "official_var_contribution",
+                "var_diff",
+            ):
+                if col_ in ld:
+                    ld[col_] = ld[col_] / M
+            st.dataframe(
+                ld[
+                    [
+                        "trade_id",
+                        "desk_id",
+                        "product_type",
+                        "presence",
+                        "cause",
+                        "pv",
+                        "official_pv",
+                        "var_contribution",
+                        "official_var_contribution",
+                        "var_diff",
+                    ]
+                ].round(3),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+elif page == "Alerts & jobs":
+    header("Alerts and scheduled jobs")
+    st.subheader("Alerts")
+    sev = st.multiselect("Severity", ["CRITICAL", "WARNING", "INFO"], default=["CRITICAL", "WARNING"])
+    al = df(client.alerts(limit=300))
+    if al.empty:
+        st.caption("No alerts stored yet.")
+    else:
+        al = al[al["severity"].isin(sev)]
+        for _, a in al.head(40).iterrows():
+            fn = {"CRITICAL": st.error, "WARNING": st.warning, "INFO": st.info}[a["severity"]]
+            fn(
+                f"**{a['title']}** · {a['business_date']} · {a['status']} · "
+                f"to {', '.join(a['recipients'])}\n\n"
+                f"{a['body']}"
+            )
+    st.subheader("Scheduled jobs")
+    jb = df(client.jobs())
+    if jb.empty:
+        st.caption("No scheduled jobs yet. Run `uv run novera schedule --once` or `uv run novera schedule`.")
+    else:
+        st.dataframe(
+            jb[["started_at", "action", "business_date", "status", "attempts", "run_id", "notes"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.subheader("Market-data provenance")
+    pv = df(client.provenance())
+    if pv.empty:
+        st.caption("All history is synthetic. Run `uv run novera fetch` to load real series.")
+    else:
+        st.dataframe(pv, use_container_width=True, hide_index=True)
 
 elif page == "Runs & audit":
     header("Runs and audit trail")

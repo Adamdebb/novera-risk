@@ -179,6 +179,37 @@ CREATE TABLE IF NOT EXISTS copilot_answer (
     answer VARCHAR NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS alert (
+    alert_id VARCHAR PRIMARY KEY,
+    raised_at TIMESTAMP NOT NULL,
+    business_date DATE NOT NULL,
+    severity VARCHAR NOT NULL,
+    kind VARCHAR NOT NULL,
+    subject VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    dedupe_key VARCHAR NOT NULL,
+    run_id VARCHAR,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS scheduled_job (
+    job_id VARCHAR PRIMARY KEY,
+    started_at TIMESTAMP NOT NULL,
+    action VARCHAR NOT NULL,
+    business_date DATE,
+    run_id VARCHAR,
+    status VARCHAR NOT NULL,
+    attempts INTEGER NOT NULL,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS market_provenance (
+    factor_id VARCHAR NOT NULL,
+    source VARCHAR NOT NULL,
+    fetched_at TIMESTAMP NOT NULL,
+    first_date DATE NOT NULL,
+    last_date DATE NOT NULL,
+    row_count INTEGER NOT NULL,
+    PRIMARY KEY (factor_id, source)
+);
 CREATE TABLE IF NOT EXISTS market_value (
     snapshot_id VARCHAR NOT NULL,
     factor_id VARCHAR NOT NULL,
@@ -526,7 +557,7 @@ class DuckDBRepository:
         """Store a result table under the run id. Table ``run_<name>`` is created from the
         frame's schema on first use (duckdb-only: DataFrame scan)."""
         table = f"run_{name}"
-        df = frame.copy()
+        df = frame.drop(columns=["run_id"], errors="ignore").copy()
         df.insert(0, "run_id", run_id)
         self._conn.register("_frame_df", df)
         self._conn.execute(f"CREATE TABLE IF NOT EXISTS {table} AS SELECT * FROM _frame_df WHERE 1 = 0")
@@ -682,6 +713,88 @@ class DuckDBRepository:
         )
         params = ([session_id] if session_id else []) + [limit]
         return [json.loads(r[0]) for r in self._conn.execute(q, params).fetchall()]
+
+    # --- alerts ---------------------------------------------------------------------
+    def save_alert(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO alert VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                d["alert_id"],
+                d["at"],
+                d["business_date"],
+                d["severity"],
+                d["kind"],
+                d["subject"],
+                d["status"],
+                d["dedupe_key"],
+                d.get("run_id"),
+                json.dumps(d, default=str),
+            ],
+        )
+
+    def load_alerts(
+        self, limit: int = 200, status: str | None = None, severity: str | None = None
+    ) -> list[dict]:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'alert'"
+        ).fetchone():
+            return []
+        clauses, params = [], []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if severity:
+            clauses.append("severity = ?")
+            params.append(severity)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"SELECT payload, dedupe_key FROM alert {where} ORDER BY raised_at DESC LIMIT ?", [*params, limit]
+        ).fetchall()
+        return [{**json.loads(r[0]), "dedupe_key": r[1]} for r in rows]
+
+    # --- scheduler jobs ---------------------------------------------------------------
+    def save_job(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO scheduled_job VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                d["job_id"],
+                d["started_at"],
+                d["action"],
+                d.get("business_date"),
+                d.get("run_id"),
+                d["status"],
+                d["attempts"],
+                json.dumps(d, default=str),
+            ],
+        )
+
+    def load_jobs(self, limit: int = 100) -> list[dict]:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'scheduled_job'"
+        ).fetchone():
+            return []
+        rows = self._conn.execute(
+            "SELECT payload FROM scheduled_job ORDER BY started_at DESC LIMIT ?", [limit]
+        ).fetchall()
+        return [json.loads(r[0]) for r in rows]
+
+    # --- market data provenance ---------------------------------------------------------
+    def save_market_provenance(self, rows: list[dict]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO market_provenance VALUES (?, ?, ?, ?, ?, ?)",
+            [(r["factor_id"], r["source"], r["fetched_at"], r["first"], r["last"], r["rows"]) for r in rows],
+        )
+
+    def load_market_provenance(self) -> pd.DataFrame:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'market_provenance'"
+        ).fetchone():
+            return pd.DataFrame(
+                columns=["factor_id", "source", "fetched_at", "first_date", "last_date", "row_count"]
+            )
+        return self._conn.execute(
+            "SELECT * FROM market_provenance ORDER BY source, factor_id"
+        ).df()  # duckdb-only
 
 
 def _run_from_row(row: tuple) -> RunRecord:

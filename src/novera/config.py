@@ -27,6 +27,24 @@ class Settings(BaseSettings):
     llm_model: str = "claude-opus-5"
     anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
 
+    # Alerts. Stored always; delivered only through channels that are configured.
+    alerts_enabled: bool = True
+    slack_webhook_url: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    alert_email_from: str | None = None
+    alert_email_to: str | None = Field(default=None, description="Comma-separated recipients")
+
+    # Scheduler.
+    eod_time: str = Field(
+        default="18:30", description="Local wall-clock time HH:MM for the scheduled EOD run"
+    )
+
+    # Real market data adapters (optional).
+    fred_api_key: str | None = Field(default=None, validation_alias="FRED_API_KEY")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

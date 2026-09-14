@@ -20,8 +20,12 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    contributors, new breaches raised, escalation routed.
 6. **Counterparty** (2 min). Same portfolio, exposure by counterparty. Bank A near limit.
    Change CSA threshold, re-run, compare the two runs side by side.
-7. **Independent challenger** (1 min). Official VaR versus Novera VaR differ by 7 percent.
-   Attribution of the gap: volatility window, excluded positions, non-linear treatment.
+7. **Independent challenger** (1 min). Challenger page: the official system's VaR versus
+   Novera's, the gap attributed to scope (a book missing from the feed), market data (FX
+   valued on the previous day), pricing model (options without a smile) and methodology
+   (window), with the rerun that verifies the window effect.
+7b. **Operations** (30 s). Alerts & jobs page: the scheduled job that advanced the world
+   and ran EOD, the alerts it raised, and where real market data has replaced synthetic.
 8. **Risk Copilot** (2 min). Five example buttons on the Copilot page; open the tool-call
    expander under an answer to show the run id and the exact numbers it read. "Why did VaR increase today?" then "Which books are closest
    to their limits?" then "What if equities fall 20 percent and vol rises 15 points?"

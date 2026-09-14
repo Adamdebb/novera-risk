@@ -43,8 +43,14 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        run_eod(repo, EODConfig(var=VaRConfig(window_days=120), workers=1),
-                runs_dir=tmp_path_factory.mktemp("runs"))
+        res = run_eod(repo, EODConfig(var=VaRConfig(window_days=120), workers=1),
+                      runs_dir=tmp_path_factory.mktemp("runs"))
+        from novera.reconciliation import reconcile
+        from novera.simulation.vendor_feed import VendorFeedConfig, generate_vendor_feed
+
+        csv, meta = generate_vendor_feed(repo, res.run.run_id, tmp_path_factory.mktemp("feed"),
+                                         VendorFeedConfig(var_window_days=100))
+        reconcile(repo, res.run.run_id, csv, meta)
     return path
 
 
@@ -62,7 +68,8 @@ def app(db_path, monkeypatch):
 
 
 @pytest.mark.parametrize("page", ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches",
-                                  "P&L explain", "Data quality", "Compare runs", "Runs & audit"])
+                                  "P&L explain", "Data quality", "Compare runs", "Challenger", "Alerts & jobs",
+                                  "Runs & audit"])
 def test_every_page_renders(app, page):
     app.sidebar.radio[0].set_value(page).run()
     assert not app.exception, [e.value for e in app.exception]

@@ -72,6 +72,9 @@ uv run novera simulate        # simulated bank, portfolio, market data, limits
 uv run novera run eod         # governed EOD run, stores results and audit events (--business-date)
 uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
 uv run novera ask "..."       # Risk Copilot; scripted provider unless ANTHROPIC_API_KEY is set
+uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
+uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
+uv run novera fetch           # real market data into the history (network, optional FRED key)
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload

@@ -279,3 +279,32 @@ def copilot_provider():
 
     p = make_provider(settings)
     return {"provider": p.name, "model": p.model}
+
+
+# --- alerts, jobs, reconciliation ------------------------------------------------------------
+@app.get("/alerts")
+def alerts(
+    limit: int = 200,
+    status: str | None = None,
+    severity: str | None = None,
+    svc: RiskService = Depends(service),
+):
+    return svc.alerts(limit, status, severity)
+
+
+@app.get("/jobs")
+def jobs(limit: int = 100, svc: RiskService = Depends(service)):
+    return svc.jobs(limit)
+
+
+@app.get("/runs/{run_id}/reconciliation")
+def reconciliation(run_id: str, svc: RiskService = Depends(service)):
+    out = _guard(svc.reconciliation, run_id)
+    if out is None:
+        raise HTTPException(404, "no reconciliation stored for this run")
+    return out
+
+
+@app.get("/market-data/provenance")
+def provenance(svc: RiskService = Depends(service)):
+    return svc.provenance()

@@ -50,7 +50,7 @@ Still to do in this phase: P&L attribution, concentration and liquidity measures
 Carlo VaR, VaR backtesting (Kupiec, Christoffersen), daily risk pack, morning dashboard
 with drill-down.
 
-## Phase 3 — Production workflow and trust (current)
+## Phase 3 — Production workflow and trust (complete)
 
 - [x] Governed EOD run: run id, snapshot ids, model versions, config hash, timings,
       immutable result tables and Parquet scenario matrices, audit events
@@ -65,15 +65,20 @@ with drill-down.
       write endpoints on the API and actions in the dashboard; `novera breach` CLI
 - [x] Second simulated business day (new trades, one concentration swap unwound) so the
       day-on-day story is real: three breaches auto-escalate, EM FX breaches on a new trade
-- [ ] Independent-challenger reconciliation of externally ingested risk results
 - [x] Risk Copilot (AI-001), pulled forward from Phase 7: tool-calling over the stored run with
       a what-if engine, stored answers with tool calls and run ids, Claude Opus 5 or a scripted
       provider without credentials; API, `novera ask` and a chat page
-- [ ] Scheduler and alerts
-- [ ] Real market-data adapters (FRED, Yahoo, crypto exchanges) so named historical
-      scenarios (2008, 2011, 2015, 2016, 2020, 2022, 2023) use real history
+- [x] Scheduler and alerts (OPS-001): `novera schedule` with retries, job log, day advance
+      by historical bootstrap; alerts stored always, delivered by Slack webhook or email
+- [x] Independent-challenger reconciliation (MR-009): simulated official feed with four
+      planted differences, gap attributed to scope, market data, pricing model, methodology
+- [x] Real market-data adapters (MD-001): FRED, Yahoo Finance, Coinbase via `novera fetch`,
+      provenance recorded, named crisis windows become stress scenarios when covered
 
-## Phase 4 — Counterparty risk
+Phase 3 is complete. Deferred from Phase 2 and still open: Monte Carlo VaR, VaR
+backtesting (Kupiec, Christoffersen), concentration and liquidity measures, risk pack export.
+
+## Phase 4 — Counterparty risk (next)
 
 Counterparty hierarchy, legal entities, agreements, netting sets, CSAs with thresholds,
 MTAs and haircuts, current exposure, EE/EPE/PFE by Monte Carlo, collateral and margin

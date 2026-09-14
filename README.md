@@ -40,6 +40,9 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 - Risk Copilot: ask questions in plain language, get answers built only from stored run
   results and engine what-ifs, every answer recorded with its tool calls. Works without
   an API key through a scripted provider; set `ANTHROPIC_API_KEY` for Claude.
+- Operations: a scheduler that advances the simulated world and runs EOD with retries,
+  alerts to Slack or email, an independent-challenger reconciliation that attributes the
+  gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).
 
 ## Morning dashboard
 
@@ -51,10 +54,13 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 uv sync --all-extras
 uv run pytest                      # ~2 minutes
 uv run novera simulate             # build the bank, portfolio and market data (~10s)
-uv run novera run eod --business-date 2026-09-11   # day 1: breaches raised (~2 minutes)
+uv run novera run eod --business-date 2026-09-11   # day 1: the four planted breaches (~2 minutes)
 uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breaches auto-escalate
 uv run novera breach list
 uv run novera ask "Why did VaR change since yesterday?"
+uv run novera schedule --once      # advance one business day and run EOD, with alerts
+uv run novera vendor-feed && uv run novera reconcile data/feeds/official_risk_2026-09-15.csv
+uv run novera fetch --sources yahoo,coinbase --start 2019-01-01   # optional, needs network
 uv run streamlit run src/novera/ui/app.py           # morning dashboard
 uv run uvicorn novera.api.app:app --reload          # read API, docs at /docs
 ```

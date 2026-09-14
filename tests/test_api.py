@@ -149,3 +149,10 @@ def test_copilot_endpoints(client, monkeypatch):
     assert client.get("/copilot/history").json()[0]["answer_id"] == d["answer_id"]
     r = client.post("/copilot/commentary")
     assert r.status_code == 200 and "VaR" in r.json()["answer"]
+
+
+def test_ops_endpoints(client):
+    assert client.get("/alerts").status_code == 200
+    assert client.get("/jobs").status_code == 200
+    assert client.get("/market-data/provenance").status_code == 200
+    assert client.get("/runs/latest/reconciliation").status_code == 404
