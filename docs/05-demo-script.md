@@ -10,6 +10,12 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    USD 10Y DV01 concentration and the curve ladder.
 4. **Can I trust it** (1 min). Data-quality verdict for today's run: one stale EUR vol
    surface, four trades unpriced, all flagged with owners.
+4b. **Breach workflow** (1 min). Day 2: three breaches auto-escalated to Head of Market
+   Risk because nobody acknowledged them; the Brent breach was acknowledged and stays with
+   its owner. Request a temporary increase, show the approval matrix reject the desk head
+   and accept Head of Market Risk, close the breach against it.
+4c. **Compare runs** (1 min). Day 1 versus day 2: VaR down 2m, three new EM FX breaches
+   driven by one 230m USD/ZAR forward booked that day, one Bank A swap unwound.
 5. **Stress** (2 min). Run "Global risk-off". Losses by desk and asset class, top
    contributors, new breaches raised, escalation routed.
 6. **Counterparty** (2 min). Same portfolio, exposure by counterparty. Bank A near limit.

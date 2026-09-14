@@ -35,7 +35,7 @@ FACTOR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("DIGITAL_ASSET", ("CRYPTO:",)),
     ("VOLATILITY", ("VOL:",)),
 )
-STEP_ORDER = ["CARRY", *[g for g, _ in FACTOR_GROUPS], "DATA", "NEW_TRADES", "DEAD_TRADES"]
+STEP_ORDER = ["CARRY", *[g for g, _ in FACTOR_GROUPS], "DATA", "NEW_TRADES", "DEAD_TRADES", "UNWOUND"]
 
 
 def inception_cash(trade: Trade) -> float:
@@ -160,12 +160,15 @@ def explain_pnl(
     # their remaining PV, a documented approximation.
     for tid in sorted(dead_ids):
         rows.append((tid, "DEAD_TRADES", cash_prev.get(tid, 0.0) - pv_prev.get(tid, 0.0)))
-    # Trades that vanished from the feed entirely (cancelled or dropped) are reported as notes.
-    vanished = sorted(prev_ids - today_ids)
-    notes = {
-        "vanished_trades_pv": float(sum(pv_prev.get(t, 0.0) for t in vanished)),
-        "vanished_trades": len(vanished),
-    }
+    # Trades that left the feed (unwound or cancelled): assumed unwound at today's close, so
+    # their P&L is today's value on today's market less yesterday's PV.
+    vanished = [t for t in prev_live if t.trade_id not in today_ids and t.trade_id in pv_prev]
+    pv_unwound = _pv_map(vanished, pf_today.base, today, reporting)
+    for t in vanished:
+        rows.append(
+            (t.trade_id, "UNWOUND", pv_unwound.get(t.trade_id, pv_prev[t.trade_id]) - pv_prev[t.trade_id])
+        )
+    notes = {"unwound_trades": len(vanished)}
 
     by_trade = pd.DataFrame(rows, columns=["trade_id", "step", "pnl"])
     steps = by_trade.groupby("step")["pnl"].sum().reindex(STEP_ORDER, fill_value=0.0).reset_index()

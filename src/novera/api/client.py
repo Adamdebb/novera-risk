@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from novera.api.service import RiskService
+from novera.api.service import RiskService, RiskWriteService
 from novera.storage.duckdb_repository import DuckDBRepository
 
 
@@ -36,13 +36,28 @@ class RiskClient(Protocol):
     def organisation(self) -> dict[str, Any]: ...
 
 
+WRITE_METHODS = {
+    "acknowledge",
+    "escalate",
+    "comment",
+    "close",
+    "request_increase",
+    "decide_increase",
+    "cancel_increase",
+}
+
+
 class LocalClient:
-    """Opens a read-only connection per call so it coexists with a writer (the EOD run)."""
+    """Opens a short-lived connection per call: read-only for reads so it coexists with a
+    writer (the EOD run), writable only for workflow actions."""
 
     def __init__(self, db_path) -> None:
         self.db_path = db_path
 
     def _call(self, name: str, *a: Any, **kw: Any) -> Any:
+        if name in WRITE_METHODS:
+            with DuckDBRepository(self.db_path) as repo:
+                return getattr(RiskWriteService(repo), name)(*a, **kw)
         with DuckDBRepository(self.db_path, read_only=True) as repo:
             return getattr(RiskService(repo), name)(*a, **kw)
 
@@ -108,6 +123,61 @@ class HttpClient:
 
     def organisation(self):
         return self._get("/organisation")
+
+    def _post(self, path: str, **body: Any) -> Any:
+        r = self.http.post(path, json=body)
+        if r.status_code == 409:
+            from novera.limits import WorkflowError
+
+            raise WorkflowError(r.json().get("detail", r.text))
+        r.raise_for_status()
+        return r.json()
+
+    def breaches(self, open_only=True, limit_id=None):
+        return self._get("/breaches", open_only=open_only, limit_id=limit_id)
+
+    def breach(self, breach_id):
+        return self._get(f"/breaches/{breach_id}")
+
+    def acknowledge(self, breach_id, actor, comment=""):
+        return self._post(f"/breaches/{breach_id}/acknowledge", actor=actor, comment=comment)
+
+    def escalate(self, breach_id, actor, to=None, comment=""):
+        return self._post(f"/breaches/{breach_id}/escalate", actor=actor, to=to, comment=comment)
+
+    def comment(self, breach_id, actor, text):
+        return self._post(f"/breaches/{breach_id}/comment", actor=actor, comment=text)
+
+    def close(self, breach_id, actor, reason, comment=""):
+        return self._post(f"/breaches/{breach_id}/close", actor=actor, reason=reason, comment=comment)
+
+    def increases(self, status=None, limit_id=None):
+        return self._get("/increases", status=status, limit_id=limit_id)
+
+    def request_increase(
+        self, limit_id, new_amount, expires_on, requested_by, rationale, effective_from=None, breach_id=None
+    ):
+        return self._post(
+            "/increases",
+            limit_id=limit_id,
+            new_amount=new_amount,
+            expires_on=expires_on,
+            requested_by=requested_by,
+            rationale=rationale,
+            effective_from=effective_from,
+            breach_id=breach_id,
+        )
+
+    def decide_increase(self, increase_id, approver, approve, comment=""):
+        return self._post(
+            f"/increases/{increase_id}/decide", approver=approver, approve=approve, comment=comment
+        )
+
+    def cancel_increase(self, increase_id, actor):
+        return self._post(f"/increases/{increase_id}/cancel", actor=actor)
+
+    def compare(self, run_a, run_b, by="asset_class"):
+        return self._get("/compare", run_a=run_a, run_b=run_b, by=by)
 
 
 def make_client(settings) -> RiskClient:

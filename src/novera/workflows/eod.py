@@ -26,7 +26,7 @@ from novera.data_quality import (
     check_trades,
     check_valuation,
 )
-from novera.limits import RiskInputs, monitor
+from novera.limits import RiskInputs, effective_limits, expire_increases, monitor, sync_breaches
 from novera.market_data.history import MarketHistory
 from novera.pricing import valuation as valuation_mod
 from novera.pricing.valuation import value_portfolio
@@ -135,6 +135,10 @@ def run_eod(
         universe = {f.factor_id: f for f in universe_list}
         history = MarketHistory.from_long(repo.load_market_history())
         limits = repo.load_limits(on=market.as_of)
+        events += expire_increases(repo, market.as_of)
+        limits, increase_ids = effective_limits(limits, repo.load_increases(status="APPROVED"), market.as_of)
+        base_amounts = {lim.limit_id: lim.amount for lim in repo.load_limits(on=market.as_of)}
+        prev_snapshot = repo.load_portfolio_snapshot_before(market.as_of)
         counterparties = {c.counterparty_id for c in repo.load_counterparties()}
         netting_sets = {n.netting_set_id for n in repo.load_netting_sets()[0]}
 
@@ -181,14 +185,18 @@ def run_eod(
         stress = run_stress(pf, scenarios, history)
     with _timed(timings, "limits"):
         limit_table = (
-            monitor(limits, RiskInputs(val.table, sens, hs, stress), market.as_of)
+            monitor(limits, RiskInputs(val.table, sens, hs, stress), market.as_of, base_amounts, increase_ids)
             if limits
             else pd.DataFrame()
         )
     with _timed(timings, "pnl"):
         pnl = None
         if prev_market is not None:
-            prev_trades = [t for t in snapshot.trades if t.trade_date < market.as_of]
+            prev_trades = (
+                list(prev_snapshot.trades)
+                if prev_snapshot is not None
+                else [t for t in snapshot.trades if t.trade_date < market.as_of]
+            )
             prev_pf = Portfolio(prev_trades, prev_market, reporting, universe=universe)
             prev_sens = compute_sensitivities(prev_pf)
             pnl = explain_pnl(pf, prev_market, prev_trades, prev_sens)
@@ -226,6 +234,9 @@ def run_eod(
             )
         breaches = int((limit_table["status"] == "BREACH").sum())
         warnings = int((limit_table["status"] == "WARNING").sum())
+    sync = sync_breaches(repo, run.run_id, market.as_of, limit_table) if persist else None
+    if sync is not None:
+        events += sync.events
     st = stress_table(stress, val.table)
     worst = st.iloc[0] if len(st) else None
     run.summary = {
@@ -243,6 +254,9 @@ def run_eod(
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
+        "breaches_raised": len(sync.raised) if sync else 0,
+        "breaches_auto_escalated": len(sync.auto_escalated) if sync else 0,
+        "breaches_back_within_limit": len(sync.back_within_limit) if sync else 0,
         "dq_findings": len(dq.findings),
         "dq_verdict": dq.verdict,
         "pnl_total": pnl.total if pnl else None,

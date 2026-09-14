@@ -1,4 +1,5 @@
 """Portfolio snapshots with content-hash identifiers (docs/02-architecture.md)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -29,10 +30,7 @@ class PortfolioSnapshot(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def snapshot_id(self) -> str:
-        rows = [
-            t.model_dump(mode="json")
-            for t in sorted(self.trades, key=lambda t: (t.trade_id, t.version))
-        ]
+        rows = [t.model_dump(mode="json") for t in sorted(self.trades, key=lambda t: (t.trade_id, t.version))]
         return content_hash({"business_date": self.business_date.isoformat(), "trades": rows})
 
     @property

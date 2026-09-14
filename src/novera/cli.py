@@ -10,6 +10,8 @@ from novera.config import get_settings
 app = typer.Typer(no_args_is_help=True, help="Market and counterparty risk intelligence platform.")
 run_app = typer.Typer(no_args_is_help=True, help="Governed risk runs.")
 app.add_typer(run_app, name="run")
+breach_app = typer.Typer(no_args_is_help=True, help="Breach workflow: list, acknowledge, escalate, close.")
+app.add_typer(breach_app, name="breach")
 
 
 @app.command()
@@ -42,6 +44,7 @@ def simulate(
     no_inject: bool = typer.Option(False, help="Do not plant the demo problems"),
     years: float = typer.Option(3.0, help="Years of daily market-data history"),
     no_market_data: bool = typer.Option(False, help="Skip market-data generation"),
+    days: int = typer.Option(2, help="Business days to simulate; day 1 carries the planted problems"),
 ) -> None:
     """Build the simulated bank, portfolio and market data, store them, and print a summary."""
     from collections import Counter
@@ -52,6 +55,7 @@ def simulate(
         build_counterparty_universe,
         build_global_macro_bank,
         build_limits,
+        evolve_portfolio,
         generate_portfolio,
     )
     from novera.storage.duckdb_repository import DuckDBRepository
@@ -60,6 +64,9 @@ def simulate(
     bd = _date.fromisoformat(business_date)
     org = build_global_macro_bank()
     cp = build_counterparty_universe(org)
+    from novera.simulation.market_data import business_days_after
+
+    dates = [bd] + business_days_after(bd, max(days - 1, 0))
     md = None
     history = None
     if not no_market_data:
@@ -67,10 +74,25 @@ def simulate(
         from novera.simulation.market_data import MarketSimConfig, generate_market_data
 
         md = generate_market_data(
-            MarketSimConfig(end_date=bd, years=years, seed=seed, plant_data_quality_problems=not no_inject)
+            MarketSimConfig(
+                end_date=dates[-1],
+                years=years,
+                seed=seed,
+                plant_data_quality_problems=not no_inject,
+                problem_date=bd,
+                snapshot_days=len(dates) + 1,
+            )
         )
         history = MarketHistory.from_long(md.history)
     gen = generate_portfolio(org, cp, TradeGeneratorConfig(bd, trades, seed, not no_inject, history))
+    snapshots = [gen.snapshot]
+    day_changes: dict[str, list[str]] = {}
+    for d in dates[1:]:
+        nxt, changes = evolve_portfolio(
+            snapshots[-1], d, org, cp, gen.injections, history, seed=seed + len(snapshots)
+        )
+        snapshots.append(nxt)
+        day_changes[str(d)] = changes
     s.db_path.parent.mkdir(parents=True, exist_ok=True)
     with DuckDBRepository(s.db_path) as repo:
         repo.init_schema()
@@ -79,11 +101,12 @@ def simulate(
         repo.save_netting_sets(cp.netting_sets, cp.csas)
         repo.save_limits(build_limits(org, cp, bd))
         sid = repo.save_portfolio_snapshot(gen.snapshot)
+        for snap_ in snapshots[1:]:
+            repo.save_portfolio_snapshot(snap_)
         if md is not None:
             repo.save_risk_factors(md.universe)
             n_rows = repo.save_market_history(md.history)
-            prev_id = repo.save_market_snapshot(md.previous_snapshot)
-            md_id = repo.save_market_snapshot(md.snapshot)
+            md_ids = {d: repo.save_market_snapshot(m) for d, m in md.snapshots.items()}
     snap = gen.snapshot
     typer.echo(
         f"{org.firm.name}: {len(org.legal_entities)} legal entities, {len(org.desks)} desks, "
@@ -97,9 +120,9 @@ def simulate(
             f"market data: {len(md.universe)} risk factors, {n_rows:,} history rows over "
             f"{md.history['as_of'].nunique()} days"
         )
-        typer.echo(
-            f"market snapshots: {prev_id} ({md.previous_snapshot.as_of}), {md_id} ({md.snapshot.as_of})"
-        )
+        typer.echo("market snapshots: " + ", ".join(f"{d} {i}" for d, i in md_ids.items()))
+    for d, changes in day_changes.items():
+        typer.echo(f"day {d}: " + "; ".join(changes))
     if gen.injections or (md is not None and md.planted):
         typer.echo("planted problems:")
         for inj in gen.injections:
@@ -276,6 +299,115 @@ def run_eod_cmd(
         steps = ", ".join(f"{k} {v / m:+.2f}" for k, v in sm["pnl_steps"].items() if abs(v) > 1e3)
         typer.echo(f"  P&L {sm['pnl_total'] / m:+,.2f}m  [{steps}]")
     typer.echo("  timings: " + ", ".join(f"{k} {v:.1f}s" for k, v in r.timings.items()))
+
+
+@breach_app.command("list")
+def breach_list(all_: bool = typer.Option(False, "--all", help="Include closed breaches")) -> None:
+    """List breaches with their status and latest utilisation."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(get_settings().db_path, read_only=True) as repo:
+        for b in repo.load_breaches(open_only=not all_):
+            flag = " (within limit, close pending)" if b.within_limit_on_latest_run else ""
+            typer.echo(
+                f"{b.breach_id}  {b.status:<12} {b.limit_id:<32} day {b.consecutive_days}  "
+                f"{b.latest_utilisation:.0%}  owner {b.owner}"
+                + (f"  -> {b.escalated_to}" if b.escalated_to else "")
+                + flag
+            )
+
+
+def _breach_action(fn, *args, **kwargs) -> None:
+    from novera.limits import WorkflowError
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(get_settings().db_path) as repo:
+        try:
+            obj, events = fn(repo, *args, **kwargs)
+        except WorkflowError as e:
+            raise typer.BadParameter(str(e)) from e
+    typer.echo(
+        f"{obj.status.value}: {getattr(obj, 'breach_id', getattr(obj, 'increase_id', ''))} "
+        f"({len(events)} audit events)"
+    )
+
+
+@breach_app.command("ack")
+def breach_ack(
+    breach_id: str,
+    actor: str = typer.Option(..., help="Who acknowledges"),
+    comment: str = typer.Option("", help="Comment"),
+) -> None:
+    """Acknowledge an open breach."""
+    from novera.limits import acknowledge
+
+    _breach_action(acknowledge, breach_id, actor, comment)
+
+
+@breach_app.command("escalate")
+def breach_escalate(
+    breach_id: str,
+    actor: str = typer.Option(...),
+    to: str = typer.Option(None),
+    comment: str = typer.Option(""),
+) -> None:
+    """Escalate a breach to a named role."""
+    from novera.limits import escalate
+
+    _breach_action(escalate, breach_id, actor, to, comment)
+
+
+@breach_app.command("close")
+def breach_close(
+    breach_id: str,
+    actor: str = typer.Option(...),
+    reason: str = typer.Option(
+        ..., help="RISK_REDUCED, TEMPORARY_INCREASE_APPROVED, LIMIT_RETIRED, FALSE_POSITIVE"
+    ),
+    comment: str = typer.Option(""),
+) -> None:
+    """Close a breach with a reason. Rules in docs/methodology/MR-008-breach-workflow.md."""
+    from novera.limits import close
+
+    _breach_action(close, breach_id, actor, reason, comment)
+
+
+@breach_app.command("request-increase")
+def breach_request_increase(
+    limit_id: str,
+    amount: float = typer.Option(..., help="New limit amount"),
+    expires: str = typer.Option(..., help="YYYY-MM-DD"),
+    actor: str = typer.Option(...),
+    rationale: str = typer.Option(...),
+    breach_id: str = typer.Option(None),
+) -> None:
+    """Request a temporary limit increase."""
+    from datetime import date as _date
+
+    from novera.limits import request_increase
+
+    _breach_action(
+        request_increase,
+        limit_id,
+        amount,
+        _date.fromisoformat(expires),
+        actor,
+        rationale,
+        breach_id=breach_id,
+    )
+
+
+@breach_app.command("decide-increase")
+def breach_decide_increase(
+    increase_id: str,
+    approver: str = typer.Option(...),
+    reject: bool = typer.Option(False),
+    comment: str = typer.Option(""),
+) -> None:
+    """Approve or reject a temporary increase (approval matrix applies)."""
+    from novera.limits import decide_increase
+
+    _breach_action(decide_increase, increase_id, approver, not reject, comment)
 
 
 if __name__ == "__main__":

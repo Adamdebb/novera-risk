@@ -3,6 +3,7 @@
 Identity is the content hash of values and observation dates, so two snapshots with the
 same numbers have the same id and a stale factor changes the id.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -41,11 +42,13 @@ class MarketSnapshot(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def snapshot_id(self) -> str:
-        return content_hash({
-            "as_of": self.as_of.isoformat(),
-            "values": dict(sorted(self.values.items())),
-            "observed_at": {k: v.isoformat() for k, v in sorted(self.observed_at.items())},
-        })
+        return content_hash(
+            {
+                "as_of": self.as_of.isoformat(),
+                "values": dict(sorted(self.values.items())),
+                "observed_at": {k: v.isoformat() for k, v in sorted(self.observed_at.items())},
+            }
+        )
 
     # --- accessors -----------------------------------------------------------------
     def value(self, factor_id: str) -> float:
@@ -106,8 +109,9 @@ class MarketSnapshot(BaseModel):
         key = f"cc:{code}"
         if key in self._cache:
             return self._cache[key]
-        nodes = sorted((TENOR_YEARS[k.split(":")[2]], self.values[k])
-                       for k in self.factors_with_prefix(f"CMD:{code}:"))
+        nodes = sorted(
+            (TENOR_YEARS[k.split(":")[2]], self.values[k]) for k in self.factors_with_prefix(f"CMD:{code}:")
+        )
         if not nodes:
             raise KeyError(f"no commodity curve for {code}")
         curve = CommodityCurve(code, np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes]))
@@ -141,5 +145,9 @@ class MarketSnapshot(BaseModel):
     def with_values(self, updates: dict[str, float]) -> MarketSnapshot:
         """Return a new snapshot with some factor values replaced (used by stress and bumping).
         Built fresh rather than copied so cached curves and surfaces are not inherited."""
-        return MarketSnapshot(as_of=self.as_of, values={**self.values, **updates},
-                              observed_at=self.observed_at, source=self.source)
+        return MarketSnapshot(
+            as_of=self.as_of,
+            values={**self.values, **updates},
+            observed_at=self.observed_at,
+            source=self.source,
+        )

@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from novera.domain.breaches import CloseReason
+from novera.limits import workflow as wf
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import RunRecord
 
@@ -244,3 +246,166 @@ class RiskService:
 
     def organisation(self, firm_id: str = "GMB") -> dict[str, Any]:
         return self.repo.load_organisation(firm_id).model_dump(mode="json")
+
+    # --- breach workflow (reads) -------------------------------------------------------------
+    def breaches(self, open_only: bool = True, limit_id: str | None = None) -> list[dict[str, Any]]:
+        return [b.model_dump(mode="json") for b in self.repo.load_breaches(open_only, limit_id)]
+
+    def breach(self, breach_id: str) -> dict[str, Any]:
+        b = self.repo.load_breach(breach_id)
+        d = b.model_dump(mode="json")
+        d["actions"] = [a.model_dump(mode="json") for a in self.repo.load_breach_actions(breach_id)]
+        d["increases"] = [i.model_dump(mode="json") for i in self.repo.load_increases(limit_id=b.limit_id)]
+        return d
+
+    def increases(self, status: str | None = None, limit_id: str | None = None) -> list[dict[str, Any]]:
+        out = []
+        limits = {lim.limit_id: lim for lim in self.repo.load_limits()}
+        for i in self.repo.load_increases(status, limit_id):
+            d = i.model_dump(mode="json")
+            lim = limits.get(i.limit_id)
+            d["allowed_approvers"] = list(wf.allowed_approvers(i, lim)) if lim else []
+            d["increase_pct"] = i.increase_pct
+            out.append(d)
+        return out
+
+    # --- run comparison ------------------------------------------------------------------------
+    def compare(self, run_a: str | None, run_b: str | None, by: str = "asset_class") -> dict[str, Any]:
+        """What changed between two runs: headline numbers, VaR by group, limit statuses,
+        breaches, and the trades whose PV or VaR contribution moved most."""
+        a, b = self.resolve(run_a), self.resolve(run_b)
+        sa, sb = a.summary, b.summary
+        keys = [
+            "pv",
+            "var",
+            "es",
+            "challenger_var",
+            "worst_stress",
+            "breaches",
+            "warnings",
+            "dq_findings",
+            "pnl_total",
+        ]
+        headline = {
+            k: {
+                "a": sa.get(k),
+                "b": sb.get(k),
+                "change": (sb.get(k) or 0) - (sa.get(k) or 0) if sa.get(k) is not None else None,
+            }
+            for k in keys
+        }
+        va = (
+            pd.DataFrame(self.var_by(by, a.run_id)).set_index(by)["component_var"]
+            if self.var_by(by, a.run_id)
+            else pd.Series(dtype=float)
+        )
+        vb = (
+            pd.DataFrame(self.var_by(by, b.run_id)).set_index(by)["component_var"]
+            if self.var_by(by, b.run_id)
+            else pd.Series(dtype=float)
+        )
+        var_by = pd.DataFrame({"a": va, "b": vb}).fillna(0.0)
+        var_by["change"] = var_by["b"] - var_by["a"]
+        la = (
+            pd.DataFrame(self.limits(a.run_id)).set_index("limit_id")
+            if self.limits(a.run_id)
+            else pd.DataFrame()
+        )
+        lb = (
+            pd.DataFrame(self.limits(b.run_id)).set_index("limit_id")
+            if self.limits(b.run_id)
+            else pd.DataFrame()
+        )
+        limit_changes = []
+        if not la.empty and not lb.empty:
+            j = la[["status", "utilisation", "amount"]].join(
+                lb[["status", "utilisation", "amount", "owner"]], lsuffix="_a", rsuffix="_b", how="outer"
+            )
+            moved = j[
+                (j["status_a"] != j["status_b"]) | ((j["utilisation_b"] - j["utilisation_a"]).abs() > 0.1)
+            ]
+            limit_changes = _records(moved.reset_index().sort_values("utilisation_b", ascending=False))
+        vla, vlb = self.valuation(a.run_id), self.valuation(b.run_id)
+        m = vla[["trade_id", "pv", "desk_id", "product_type"]].merge(
+            vlb[["trade_id", "pv"]], on="trade_id", how="outer", suffixes=("_a", "_b"), indicator=True
+        )
+        m["pv_change"] = m["pv_b"].fillna(0.0) - m["pv_a"].fillna(0.0)
+        m["presence"] = m["_merge"].map({"both": "both", "left_only": "only in A", "right_only": "only in B"})
+        top_trades = _records(
+            m.reindex(m["pv_change"].abs().sort_values(ascending=False).index).head(15).drop(columns="_merge")
+        )
+        breaches_b = self.breaches(open_only=False)
+        return {
+            "a": self._run_dict(a),
+            "b": self._run_dict(b),
+            "headline": headline,
+            "var_by": _records(var_by.reset_index().rename(columns={"index": by})),
+            "limit_changes": limit_changes,
+            "top_trade_changes": top_trades,
+            "trades_only_in_a": int((m["_merge"] == "left_only").sum()),
+            "trades_only_in_b": int((m["_merge"] == "right_only").sum()),
+            "breaches": [
+                x
+                for x in breaches_b
+                if x["first_run_id"] in (a.run_id, b.run_id) or x["latest_run_id"] in (a.run_id, b.run_id)
+            ],
+        }
+
+
+class RiskWriteService:
+    """Write side: breach actions and temporary increases. Opened on a writable connection."""
+
+    def __init__(self, repo: DuckDBRepository) -> None:
+        self.repo = repo
+
+    def acknowledge(self, breach_id: str, actor: str, comment: str = "") -> dict[str, Any]:
+        b, _ = wf.acknowledge(self.repo, breach_id, actor, comment)
+        return b.model_dump(mode="json")
+
+    def escalate(
+        self, breach_id: str, actor: str, to: str | None = None, comment: str = ""
+    ) -> dict[str, Any]:
+        b, _ = wf.escalate(self.repo, breach_id, actor, to, comment)
+        return b.model_dump(mode="json")
+
+    def comment(self, breach_id: str, actor: str, text: str) -> dict[str, Any]:
+        b, _ = wf.comment(self.repo, breach_id, actor, text)
+        return b.model_dump(mode="json")
+
+    def close(self, breach_id: str, actor: str, reason: str, comment: str = "") -> dict[str, Any]:
+        b, _ = wf.close(self.repo, breach_id, actor, CloseReason(reason), comment)
+        return b.model_dump(mode="json")
+
+    def request_increase(
+        self,
+        limit_id: str,
+        new_amount: float,
+        expires_on: str,
+        requested_by: str,
+        rationale: str,
+        effective_from: str | None = None,
+        breach_id: str | None = None,
+    ) -> dict[str, Any]:
+        from datetime import date as _date
+
+        inc, _ = wf.request_increase(
+            self.repo,
+            limit_id,
+            new_amount,
+            _date.fromisoformat(expires_on),
+            requested_by,
+            rationale,
+            _date.fromisoformat(effective_from) if effective_from else None,
+            breach_id,
+        )
+        return inc.model_dump(mode="json")
+
+    def decide_increase(
+        self, increase_id: str, approver: str, approve: bool, comment: str = ""
+    ) -> dict[str, Any]:
+        inc, _ = wf.decide_increase(self.repo, increase_id, approver, approve, comment)
+        return inc.model_dump(mode="json")
+
+    def cancel_increase(self, increase_id: str, actor: str) -> dict[str, Any]:
+        inc, _ = wf.cancel_increase(self.repo, increase_id, actor)
+        return inc.model_dump(mode="json")

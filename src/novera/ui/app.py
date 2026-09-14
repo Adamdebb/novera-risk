@@ -52,7 +52,18 @@ with st.sidebar:
     run_id = st.selectbox("Run", list(labels), format_func=labels.get)
     page = st.radio(
         "View",
-        ["Overview", "Drill-down", "VaR", "Stress", "Limits", "P&L explain", "Data quality", "Runs & audit"],
+        [
+            "Overview",
+            "Drill-down",
+            "VaR",
+            "Stress",
+            "Limits",
+            "Breaches",
+            "P&L explain",
+            "Data quality",
+            "Compare runs",
+            "Runs & audit",
+        ],
     )
     st.caption("Every figure is read from the stored run. Nothing is computed on this page.")
 
@@ -319,6 +330,178 @@ elif page == "P&L explain":
             .round(3),
             hide_index=True,
             use_container_width=True,
+        )
+
+elif page == "Breaches":
+    header("Breach workflow")
+    from novera.limits import WorkflowError
+
+    def act(fn, *args, **kwargs):
+        try:
+            fn(*args, **kwargs)
+            st.cache_data.clear()
+            st.rerun()
+        except WorkflowError as e:
+            st.error(str(e))
+
+    show_closed = st.checkbox("Show closed breaches", value=False)
+    breaches = client.breaches(open_only=not show_closed)
+    if not breaches:
+        st.success("No open breaches.")
+    for b in breaches:
+        badge = {"OPEN": "🔴", "ACKNOWLEDGED": "🟠", "ESCALATED": "🟣", "CLOSED": "⚪"}[b["status"]]
+        title = (
+            f"{badge} {b['status']} · {b['limit_id']} · {b['latest_utilisation']:.0%} · day "
+            f"{b['consecutive_days']} · owner {b['owner']}"
+            + (f" · escalated to {b['escalated_to']}" if b.get("escalated_to") else "")
+            + (" · back within limit" if b.get("within_limit_on_latest_run") else "")
+        )
+        with st.expander(title, expanded=b["status"] != "CLOSED"):
+            detail = client.breach(b["breach_id"])
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("First seen", b["first_date"], f"{b['first_utilisation']:.0%}")
+            c2.metric("Latest", b["latest_date"], f"{b['latest_utilisation']:.0%}")
+            c3.metric("Peak utilisation", f"{b['peak_utilisation']:.0%}")
+            c4.metric("Runs breaching", b["consecutive_days"])
+            st.caption(
+                f"breach {b['breach_id']} · first run {b['first_run_id']} · latest run {b['latest_run_id']}"
+            )
+            hist = df(detail["actions"])
+            if not hist.empty:
+                st.dataframe(
+                    hist[["at", "actor", "action", "comment", "escalated_to", "close_reason"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            if b["status"] != "CLOSED":
+                actor = st.text_input("Acting as", value=b["owner"], key=f"actor_{b['breach_id']}")
+                note = st.text_input("Comment", key=f"note_{b['breach_id']}")
+                a1, a2, a3, a4 = st.columns(4)
+                if b["status"] == "OPEN" and a1.button("Acknowledge", key=f"ack_{b['breach_id']}"):
+                    act(client.acknowledge, b["breach_id"], actor, note)
+                if b["status"] in ("OPEN", "ACKNOWLEDGED") and a2.button(
+                    "Escalate", key=f"esc_{b['breach_id']}"
+                ):
+                    act(client.escalate, b["breach_id"], actor, None, note)
+                if a3.button("Add comment", key=f"cmt_{b['breach_id']}"):
+                    act(client.comment, b["breach_id"], actor, note)
+                reason = a4.selectbox(
+                    "Close reason",
+                    ["RISK_REDUCED", "TEMPORARY_INCREASE_APPROVED", "LIMIT_RETIRED", "FALSE_POSITIVE"],
+                    key=f"reason_{b['breach_id']}",
+                )
+                if a4.button("Close", key=f"close_{b['breach_id']}"):
+                    act(client.close, b["breach_id"], actor, reason, note)
+                with st.form(key=f"inc_{b['breach_id']}"):
+                    st.markdown("**Request a temporary limit increase**")
+                    lim_row = next(
+                        (r for r in load("limits", run_id) if r["limit_id"] == b["limit_id"]), None
+                    )
+                    base = lim_row["base_amount"] if lim_row else 0.0
+                    i1, i2, i3 = st.columns(3)
+                    conc = b["limit_type"] == "CONCENTRATION"
+                    new_amt = i1.number_input(
+                        "New amount" + ("" if conc else " (m)"), value=float(base if conc else base / M) * 1.2
+                    )
+                    expires = i2.date_input("Expires on")
+                    requester = i3.text_input("Requested by", value=b["owner"])
+                    rationale = st.text_input("Rationale")
+                    if st.form_submit_button("Submit request"):
+                        act(
+                            client.request_increase,
+                            b["limit_id"],
+                            new_amt if conc else new_amt * M,
+                            str(expires),
+                            requester,
+                            rationale,
+                            None,
+                            b["breach_id"],
+                        )
+    st.subheader("Temporary limit increases")
+    incs = client.increases()
+    if not incs:
+        st.caption("None requested.")
+    for inc in incs:
+        conc = inc["base_amount"] < 10
+        fmt = (lambda x: f"{x:.2f}") if conc else (lambda x: money(x))
+        st.markdown(
+            f"**{inc['status']}** · {inc['limit_id']} · {fmt(inc['base_amount'])} → {fmt(inc['new_amount'])} "
+            f"(+{inc['increase_pct']:.0%}) · until {inc['expires_on']} · "
+            f"requested by {inc['requested_by']} · "
+            f"approvers: {', '.join(inc['allowed_approvers'])}"
+        )
+        st.caption(
+            inc["rationale"]
+            + (
+                f" · decided by {inc['decided_by']}: {inc['decision_comment']}"
+                if inc.get("decided_by")
+                else ""
+            )
+        )
+        if inc["status"] == "REQUESTED":
+            d1, d2, d3 = st.columns([2, 1, 1])
+            approver = d1.selectbox(
+                "Deciding as",
+                inc["allowed_approvers"] + ["Head of Desk (not allowed)"],
+                key=f"appr_{inc['increase_id']}",
+            )
+            if d2.button("Approve", key=f"ok_{inc['increase_id']}"):
+                act(client.decide_increase, inc["increase_id"], approver, True, "")
+            if d3.button("Reject", key=f"no_{inc['increase_id']}"):
+                act(client.decide_increase, inc["increase_id"], approver, False, "")
+    st.caption(
+        "Approval matrix: desk and book limits need Head of Market Risk or CRO; firm and business "
+        "limits need the CRO; increases above 25% always need the CRO; requesters cannot approve "
+        "their own request (MR-008)."
+    )
+
+elif page == "Compare runs":
+    header("Compare two runs")
+    others = [r for r in labels if r != run_id]
+    if not others:
+        st.info("Only one run stored. Run a second business day to compare.")
+        st.stop()
+    other = st.selectbox("Compare against", others, format_func=labels.get)
+    by = st.selectbox("VaR by", ["asset_class", "business_id", "desk_id", "book_id"])
+    c = client.compare(other, run_id, by=by)
+    st.caption(f"A = {labels[other]}   →   B = {labels[run_id]}")
+    cols = st.columns(5)
+    for col, key in zip(cols, ["var", "es", "worst_stress", "breaches", "pnl_total"], strict=False):
+        h = c["headline"][key]
+        is_money = key != "breaches"
+        value = money(h["b"], digits=2) if is_money else h["b"]
+        delta = None if h["change"] is None else (money(h["change"], digits=2) if is_money else h["change"])
+        col.metric(key.replace("_", " "), value, delta)
+    st.subheader(f"Component VaR by {by}")
+    vb = df(c["var_by"])
+    if not vb.empty:
+        vb[["a", "b", "change"]] = vb[["a", "b", "change"]] / M
+        st.dataframe(vb.round(2).sort_values("change"), use_container_width=True, hide_index=True)
+    st.subheader("Limits that changed status or moved more than 10 points")
+    lc = df(c["limit_changes"])
+    if lc.empty:
+        st.caption("None.")
+    else:
+        for col_ in ("utilisation_a", "utilisation_b"):
+            lc[col_] = (lc[col_] * 100).round(0)
+        st.dataframe(
+            lc[["limit_id", "status_a", "status_b", "utilisation_a", "utilisation_b", "owner"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.subheader("Trades whose value moved most")
+    st.caption(
+        f"{c['trades_only_in_a']} trades only in A (unwound or matured), "
+        f"{c['trades_only_in_b']} only in B (new)"
+    )
+    tt = df(c["top_trade_changes"])
+    if not tt.empty:
+        for col_ in ("pv_a", "pv_b", "pv_change"):
+            tt[col_] = tt[col_] / M
+        st.dataframe(
+            tt[["trade_id", "desk_id", "product_type", "pv_a", "pv_b", "pv_change", "presence"]].round(2),
+            use_container_width=True,
+            hide_index=True,
         )
 
 elif page == "Data quality":

@@ -1,4 +1,5 @@
 """CDS index with a flat hazard rate from the credit triangle. Methodology record PR-008."""
+
 from __future__ import annotations
 
 import math
@@ -15,8 +16,13 @@ CDS_MODEL_VERSION = "1.0.0"
 
 
 def cds_legs(
-    notional: float, coupon: float, spread_bp: float, recovery: float, periods: list[tuple[date, date]],
-    as_of: date, df,
+    notional: float,
+    coupon: float,
+    spread_bp: float,
+    recovery: float,
+    periods: list[tuple[date, date]],
+    as_of: date,
+    df,
 ) -> tuple[float, float, float]:
     """(protection_pv, premium_pv, risky_annuity) per unit notional scaled by ``notional``.
     Flat hazard λ = s / (1 - R); survival Q(t) = exp(-λ t); default assumed at period midpoint."""
@@ -42,18 +48,29 @@ def price_cds_index(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricin
     ins = trade.instrument
     assert isinstance(ins, CDSIndex)
     if ins.maturity_date <= as_of:
-        return PricingResult(trade.trade_id, ins.currency, 0.0, "cds_flat_hazard", CDS_MODEL_VERSION,
-                             note="matured")
+        return PricingResult(
+            trade.trade_id, ins.currency, 0.0, "cds_flat_hazard", CDS_MODEL_VERSION, note="matured"
+        )
     curve = market.zero_curve(ins.currency)
     spread = market.cds_spread_bp(ins.index_family)
     periods = remaining_periods(as_of.replace(day=1), ins.maturity_date, ins.premium_frequency, as_of)
-    prot, prem, annuity = cds_legs(trade.quantity, ins.fixed_coupon, spread, ins.recovery_rate, periods,
-                                   as_of, curve.df)
+    prot, prem, annuity = cds_legs(
+        trade.quantity, ins.fixed_coupon, spread, ins.recovery_rate, periods, as_of, curve.df
+    )
     sign = 1.0 if trade.direction is BuySell.BUY else -1.0  # BUY = buy protection
     pv = sign * (prot - prem)
     return PricingResult(
-        trade.trade_id, ins.currency, pv, "cds_flat_hazard", CDS_MODEL_VERSION,
-        details={"spread_bp": spread, "hazard_rate": (spread / 1e4) / (1 - ins.recovery_rate),
-                 "protection_leg_pv": sign * prot, "premium_leg_pv": -sign * prem, "risky_annuity": annuity,
-                 "years_to_maturity": year_fraction_act365(as_of, ins.maturity_date)},
+        trade.trade_id,
+        ins.currency,
+        pv,
+        "cds_flat_hazard",
+        CDS_MODEL_VERSION,
+        details={
+            "spread_bp": spread,
+            "hazard_rate": (spread / 1e4) / (1 - ins.recovery_rate),
+            "protection_leg_pv": sign * prot,
+            "premium_leg_pv": -sign * prem,
+            "risky_annuity": annuity,
+            "years_to_maturity": year_fraction_act365(as_of, ins.maturity_date),
+        },
     )

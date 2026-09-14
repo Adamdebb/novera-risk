@@ -34,7 +34,9 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 - Pricing benchmarked against QuantLib; sensitivities, historical VaR with a challenger,
   stress library, 79 seeded limits, P&L explain, data-quality verdict.
 - A governed end-of-day run stored with its run id, snapshot ids, model versions and
-  audit events. A FastAPI read API and a Streamlit morning dashboard over the stored run.
+  audit events. A FastAPI API and a Streamlit morning dashboard over the stored run.
+- Breach workflow with auto-escalation and an approval matrix for temporary limit
+  increases, and run-to-run comparison. Two simulated business days out of the box.
 
 ## Morning dashboard
 
@@ -46,7 +48,9 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 uv sync --all-extras
 uv run pytest                      # ~2 minutes
 uv run novera simulate             # build the bank, portfolio and market data (~10s)
-uv run novera run eod              # governed end-of-day run (~2 minutes)
+uv run novera run eod --business-date 2026-09-11   # day 1: breaches raised (~2 minutes)
+uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breaches auto-escalate
+uv run novera breach list
 uv run streamlit run src/novera/ui/app.py           # morning dashboard
 uv run uvicorn novera.api.app:app --reload          # read API, docs at /docs
 ```

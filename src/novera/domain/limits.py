@@ -1,4 +1,5 @@
 """Limit definitions. Utilisation and breach lifecycle live in ``novera.limits``."""
+
 from __future__ import annotations
 
 from datetime import date

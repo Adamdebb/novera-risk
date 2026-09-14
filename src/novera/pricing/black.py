@@ -1,4 +1,5 @@
 """Black (1976) and Black–Scholes–Merton formulas on a forward. Pure functions."""
+
 from __future__ import annotations
 
 import math
@@ -35,8 +36,12 @@ def black_greeks(
     """Forward delta, gamma (per unit forward), vega (per 1.00 vol), theta (per year)."""
     if expiry <= 0 or vol <= 0:
         itm = (forward > strike) if kind is OptionType.CALL else (forward < strike)
-        return {"delta_fwd": df * (1.0 if itm else 0.0) * (1 if kind is OptionType.CALL else -1),
-                "gamma_fwd": 0.0, "vega": 0.0, "theta": 0.0}
+        return {
+            "delta_fwd": df * (1.0 if itm else 0.0) * (1 if kind is OptionType.CALL else -1),
+            "gamma_fwd": 0.0,
+            "vega": 0.0,
+            "theta": 0.0,
+        }
     sd = vol * math.sqrt(expiry)
     d1 = (math.log(forward / strike) + 0.5 * sd * sd) / sd
     d2 = d1 - sd

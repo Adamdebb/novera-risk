@@ -4,6 +4,7 @@ Pricers return present value and, where meaningful, cashflows and diagnostics. T
 compute sensitivities: those come from ``novera.risk`` by bumping the snapshot and
 re-pricing, or from analytic hooks exposed in ``details``.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

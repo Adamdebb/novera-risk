@@ -13,6 +13,7 @@ Factor id conventions:
     CRYPTO:{SYMBOL}              price in USD
     VOL:{UNDERLYING}:{EXPIRY}:{MONEYNESS}   implied vol, decimal, K/F moneyness
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -48,9 +49,22 @@ class RiskFactor(BaseModel):
 
 
 TENOR_YEARS: dict[str, float] = {
-    "1W": 7 / 365, "1M": 1 / 12, "2M": 2 / 12, "3M": 0.25, "6M": 0.5, "9M": 0.75, "1Y": 1.0,
-    "18M": 1.5, "2Y": 2.0, "3Y": 3.0, "5Y": 5.0, "7Y": 7.0, "10Y": 10.0, "15Y": 15.0,
-    "20Y": 20.0, "30Y": 30.0,
+    "1W": 7 / 365,
+    "1M": 1 / 12,
+    "2M": 2 / 12,
+    "3M": 0.25,
+    "6M": 0.5,
+    "9M": 0.75,
+    "1Y": 1.0,
+    "18M": 1.5,
+    "2Y": 2.0,
+    "3Y": 3.0,
+    "5Y": 5.0,
+    "7Y": 7.0,
+    "10Y": 10.0,
+    "15Y": 15.0,
+    "20Y": 20.0,
+    "30Y": 30.0,
 }
 
 

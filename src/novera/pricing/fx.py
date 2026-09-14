@@ -1,4 +1,5 @@
 """FX spot, forwards and vanilla options. Methodology records PR-003 and PR-004."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -31,24 +32,42 @@ def price_fx_spot(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingR
     assert isinstance(ins, FXSpot)
     spot = market.fx_spot(ins.pair)
     pv = trade.signed_quantity * (spot - trade.trade_price)
-    return PricingResult(trade.trade_id, ins.currency, pv, "fx_spot_mtm", FX_FORWARD_MODEL_VERSION,
-                         details={"spot": spot, "base_amount": trade.signed_quantity})
+    return PricingResult(
+        trade.trade_id,
+        ins.currency,
+        pv,
+        "fx_spot_mtm",
+        FX_FORWARD_MODEL_VERSION,
+        details={"spot": spot, "base_amount": trade.signed_quantity},
+    )
 
 
 def price_fx_forward(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
     ins = trade.instrument
     assert isinstance(ins, FXForward)
     if ins.settlement_date <= as_of:
-        return PricingResult(trade.trade_id, ins.currency, 0.0, "fx_forward_cip", FX_FORWARD_MODEL_VERSION,
-                             note="settled")
+        return PricingResult(
+            trade.trade_id, ins.currency, 0.0, "fx_forward_cip", FX_FORWARD_MODEL_VERSION, note="settled"
+        )
     t = year_fraction_act365(as_of, ins.settlement_date)
     fwd, df_q, df_b = fx_forward_rate(market, ins.pair, t)
     pv = trade.signed_quantity * (fwd - ins.forward_rate) * df_q
     flows = (Cashflow(ins.settlement_date, trade.signed_quantity * (fwd - ins.forward_rate), "SETTLEMENT"),)
-    return PricingResult(trade.trade_id, ins.currency, pv, "fx_forward_cip", FX_FORWARD_MODEL_VERSION,
-                         cashflows=flows,
-                         details={"forward": fwd, "spot": market.fx_spot(ins.pair), "df_quote": df_q,
-                                  "df_base": df_b, "years_to_settlement": t})
+    return PricingResult(
+        trade.trade_id,
+        ins.currency,
+        pv,
+        "fx_forward_cip",
+        FX_FORWARD_MODEL_VERSION,
+        cashflows=flows,
+        details={
+            "forward": fwd,
+            "spot": market.fx_spot(ins.pair),
+            "df_quote": df_q,
+            "df_base": df_b,
+            "years_to_settlement": t,
+        },
+    )
 
 
 def price_fx_option(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
@@ -56,8 +75,14 @@ def price_fx_option(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricin
     ins = trade.instrument
     assert isinstance(ins, FXOption)
     if ins.expiry_date <= as_of:
-        return PricingResult(trade.trade_id, ins.currency, 0.0, "fx_option_garman_kohlhagen",
-                             FX_OPTION_MODEL_VERSION, note="expired")
+        return PricingResult(
+            trade.trade_id,
+            ins.currency,
+            0.0,
+            "fx_option_garman_kohlhagen",
+            FX_OPTION_MODEL_VERSION,
+            note="expired",
+        )
     t = year_fraction_act365(as_of, ins.expiry_date)
     fwd, df_q, _ = fx_forward_rate(market, ins.pair, t)
     vol = market.vol_surface(ins.pair).vol(t, ins.strike / fwd)
@@ -65,9 +90,21 @@ def price_fx_option(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricin
     sign = 1.0 if trade.direction is BuySell.BUY else -1.0
     greeks = black_greeks(ins.option_type, fwd, ins.strike, vol, t, df_q)
     return PricingResult(
-        trade.trade_id, ins.currency, sign * trade.quantity * unit, "fx_option_garman_kohlhagen",
+        trade.trade_id,
+        ins.currency,
+        sign * trade.quantity * unit,
+        "fx_option_garman_kohlhagen",
         FX_OPTION_MODEL_VERSION,
-        details={"forward": fwd, "vol": vol, "unit_price": unit, "years_to_expiry": t,
-                 "moneyness": ins.strike / fwd, **{k: sign * trade.quantity * v for k, v in greeks.items()
-                                                    if k in ("delta_fwd", "gamma_fwd", "vega", "theta")}},
+        details={
+            "forward": fwd,
+            "vol": vol,
+            "unit_price": unit,
+            "years_to_expiry": t,
+            "moneyness": ins.strike / fwd,
+            **{
+                k: sign * trade.quantity * v
+                for k, v in greeks.items()
+                if k in ("delta_fwd", "gamma_fwd", "vega", "theta")
+            },
+        },
     )

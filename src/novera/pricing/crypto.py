@@ -1,4 +1,5 @@
 """Digital-asset spot marked to market. Methodology record PR-009."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -15,5 +16,11 @@ def price_crypto_spot(trade: Trade, market: MarketSnapshot, as_of: date) -> Pric
     ins = trade.instrument
     assert isinstance(ins, CryptoSpot)
     spot = market.crypto_spot(ins.symbol)
-    return PricingResult(trade.trade_id, ins.currency, trade.signed_quantity * spot, "crypto_mtm",
-                         CRYPTO_MODEL_VERSION, details={"spot": spot, "units": trade.signed_quantity})
+    return PricingResult(
+        trade.trade_id,
+        ins.currency,
+        trade.signed_quantity * spot,
+        "crypto_mtm",
+        CRYPTO_MODEL_VERSION,
+        details={"spot": spot, "units": trade.signed_quantity},
+    )

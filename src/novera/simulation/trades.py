@@ -4,6 +4,7 @@ Reproducible for a given seed. Produces a realistic mix per desk and deliberatel
 the problems listed in ``docs/03-roadmap.md`` so the platform has something to detect.
 Each planted problem is recorded in ``GeneratedPortfolio.injections`` for the demo.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -79,36 +80,67 @@ _DESK_MIX: dict[str, dict[str, float]] = {
 }
 # Relative desk activity (share of trades).
 _DESK_WEIGHT: dict[str, float] = {
-    "USD_RATES": 0.16, "EUR_RATES": 0.10, "GBP_RATES": 0.06, "JPY_RATES": 0.05, "EM_RATES": 0.04,
-    "G10_FX": 0.12, "EM_FX": 0.06, "INDEX_EQ": 0.08, "SINGLE_NAME_EQ": 0.12,
-    "IG_CREDIT": 0.05, "HY_CREDIT": 0.04, "ENERGY": 0.05, "METALS": 0.04, "DIGITAL": 0.03,
+    "USD_RATES": 0.16,
+    "EUR_RATES": 0.10,
+    "GBP_RATES": 0.06,
+    "JPY_RATES": 0.05,
+    "EM_RATES": 0.04,
+    "G10_FX": 0.12,
+    "EM_FX": 0.06,
+    "INDEX_EQ": 0.08,
+    "SINGLE_NAME_EQ": 0.12,
+    "IG_CREDIT": 0.05,
+    "HY_CREDIT": 0.04,
+    "ENERGY": 0.05,
+    "METALS": 0.04,
+    "DIGITAL": 0.03,
 }
 _DESK_CURRENCY: dict[str, list[str]] = {
-    "USD_RATES": ["USD"], "EUR_RATES": ["EUR"], "GBP_RATES": ["GBP"], "JPY_RATES": ["JPY"],
+    "USD_RATES": ["USD"],
+    "EUR_RATES": ["EUR"],
+    "GBP_RATES": ["GBP"],
+    "JPY_RATES": ["JPY"],
     "EM_RATES": ["MXN", "BRL", "ZAR"],
 }
 _DESK_FX_PAIRS: dict[str, list[str]] = {
-    "G10_FX": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CHF", "USD/CAD", "NZD/USD",
-               "EUR/GBP"],
+    "G10_FX": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CHF", "USD/CAD", "NZD/USD", "EUR/GBP"],
     "EM_FX": ["USD/MXN", "USD/BRL", "USD/ZAR", "USD/INR", "USD/TRY", "USD/SGD"],
 }
-_DESK_INDICES: dict[str, list[str]] = {"EU_INDEX": ["SX5E", "DAX", "FTSE"],
-                                       "US_INDEX": ["SPX", "NDX"],
-                                       "INDEX_VOL": ["SPX", "SX5E", "NKY"]}
+_DESK_INDICES: dict[str, list[str]] = {
+    "EU_INDEX": ["SX5E", "DAX", "FTSE"],
+    "US_INDEX": ["SPX", "NDX"],
+    "INDEX_VOL": ["SPX", "SX5E", "NKY"],
+}
 _BOOK_EQUITIES: dict[str, list[str]] = {
     "US_CASH_EQ": [t for t, v in ref.EQUITIES.items() if v[3] == "US"],
     "EU_CASH_EQ": [t for t, v in ref.EQUITIES.items() if v[3] != "US"],
     "SN_OPTIONS": [t for t, v in ref.EQUITIES.items() if v[3] == "US"],
 }
-_BOOK_CDS: dict[str, str] = {"CDX_IG": "CDX.NA.IG", "ITRAXX_MAIN": "ITRAXX.EUR.MAIN",
-                             "CDX_HY": "CDX.NA.HY", "ITRAXX_XOVER": "ITRAXX.EUR.XOVER"}
-_BOOK_COMMODITIES: dict[str, list[str]] = {"CRUDE": ["BRENT", "WTI"], "NATGAS": ["NATGAS"],
-                                           "PRECIOUS": ["GOLD", "SILVER"],
-                                           "BASE_METALS": ["COPPER", "ALUMINIUM"]}
-_EXCHANGE_CPTY = {"CME": "EXCH_CME", "EUREX": "EXCH_EUREX", "ICE": "EXCH_ICE", "NYSE": "EXCH_NYSE",
-                  "NASDAQ": "EXCH_NYSE", "XETRA": "EXCH_XETRA", "EURONEXT": "EXCH_XETRA",
-                  "SIX": "EXCH_XETRA", "LSE": "EXCH_XETRA", "OSE": "EXCH_CME",
-                  "COINBASE": "EXCH_COINBASE"}
+_BOOK_CDS: dict[str, str] = {
+    "CDX_IG": "CDX.NA.IG",
+    "ITRAXX_MAIN": "ITRAXX.EUR.MAIN",
+    "CDX_HY": "CDX.NA.HY",
+    "ITRAXX_XOVER": "ITRAXX.EUR.XOVER",
+}
+_BOOK_COMMODITIES: dict[str, list[str]] = {
+    "CRUDE": ["BRENT", "WTI"],
+    "NATGAS": ["NATGAS"],
+    "PRECIOUS": ["GOLD", "SILVER"],
+    "BASE_METALS": ["COPPER", "ALUMINIUM"],
+}
+_EXCHANGE_CPTY = {
+    "CME": "EXCH_CME",
+    "EUREX": "EXCH_EUREX",
+    "ICE": "EXCH_ICE",
+    "NYSE": "EXCH_NYSE",
+    "NASDAQ": "EXCH_NYSE",
+    "XETRA": "EXCH_XETRA",
+    "EURONEXT": "EXCH_XETRA",
+    "SIX": "EXCH_XETRA",
+    "LSE": "EXCH_XETRA",
+    "OSE": "EXCH_CME",
+    "COINBASE": "EXCH_COINBASE",
+}
 
 
 class _Gen:
@@ -147,8 +179,10 @@ class _Gen:
     def _book_and_trader(self, desk_id: str) -> tuple[str, str]:
         books = [b for b in self.org.books if b.desk_id == desk_id]
         traders = [t for t in self.org.traders if t.desk_id == desk_id]
-        return (books[int(self.rng.integers(len(books)))].book_id,
-                traders[int(self.rng.integers(len(traders)))].trader_id)
+        return (
+            books[int(self.rng.integers(len(books)))].book_id,
+            traders[int(self.rng.integers(len(traders)))].trader_id,
+        )
 
     def _bilateral(self, book_id: str, prefer: str | None = None) -> tuple[str, str]:
         cid = prefer or str(self.rng.choice(self._bilateral_ids, p=self._bilateral_w))
@@ -165,8 +199,11 @@ class _Gen:
         return {"counterparty_id": cid, "clearing": ClearingType.BILATERAL, "netting_set_id": ns}
 
     def _listed(self, exchange: str) -> dict:
-        return {"counterparty_id": _EXCHANGE_CPTY[exchange], "clearing": ClearingType.EXCHANGE,
-                "netting_set_id": None}
+        return {
+            "counterparty_id": _EXCHANGE_CPTY[exchange],
+            "clearing": ClearingType.EXCHANGE,
+            "netting_set_id": None,
+        }
 
     def _fair(self, trade: Trade, noise_bp: float = 5.0) -> Trade:
         """Re-strike the trade at fair market on its trade date, if history is available.
@@ -190,12 +227,14 @@ class _Gen:
             fair = d["dirty_price"]
         elif pt is ProductType.INTEREST_RATE_SWAP:
             fair = d["par_rate"]
-            trade = trade.model_copy(update={"instrument": trade.instrument.model_copy(
-                update={"fixed_rate": round(fair, 5)})})
+            trade = trade.model_copy(
+                update={"instrument": trade.instrument.model_copy(update={"fixed_rate": round(fair, 5)})}
+            )
         elif pt is ProductType.FX_FORWARD:
             fair = d["forward"]
-            trade = trade.model_copy(update={"instrument": trade.instrument.model_copy(
-                update={"forward_rate": round(fair, 5)})})
+            trade = trade.model_copy(
+                update={"instrument": trade.instrument.model_copy(update={"forward_rate": round(fair, 5)})}
+            )
         elif pt is ProductType.FX_SPOT:
             fair = d["spot"]
         elif pt in (ProductType.FX_OPTION, ProductType.EQUITY_OPTION):
@@ -216,16 +255,28 @@ class _Gen:
         book, trader = self._book_and_trader(desk_id)
         td = self._trade_date()
         return Trade(
-            trade_id=self._id("BOND"), instrument=bond, direction=self._direction(),
+            trade_id=self._id("BOND"),
+            instrument=bond,
+            direction=self._direction(),
             quantity=self._round(self._lognormal(5e6, 150e6), 1e6),
-            trade_price=round(float(self.rng.normal(99.5, 2.0)), 3), trade_date=td,
-            settlement_date=td + relativedelta(days=1), book_id=book, trader_id=trader,
+            trade_price=round(float(self.rng.normal(99.5, 2.0)), 3),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=1),
+            book_id=book,
+            trader_id=trader,
             **self._listed("CME" if ccy == "USD" else "EUREX"),
         )
 
-    def swap(self, desk_id: str, tenor: str | None = None, notional: float | None = None,
-             side: SwapSide | None = None, book_id: str | None = None,
-             prefer_cpty: str | None = None, max_days_back: int = 500) -> Trade:
+    def swap(
+        self,
+        desk_id: str,
+        tenor: str | None = None,
+        notional: float | None = None,
+        side: SwapSide | None = None,
+        book_id: str | None = None,
+        prefer_cpty: str | None = None,
+        max_days_back: int = 500,
+    ) -> Trade:
         ccy = str(self.rng.choice(_DESK_CURRENCY[desk_id]))
         tenor = tenor or str(self.rng.choice(inst.SWAP_TENORS, p=[0.3, 0.3, 0.3, 0.1]))
         td = self._trade_date(max_days_back)
@@ -240,10 +291,17 @@ class _Gen:
         else:
             cp = self._otc(book, "CCP_LCH", cleared_share=0.7)
         return Trade(
-            trade_id=self._id("IRS"), instrument=s, direction=BuySell.BUY,
+            trade_id=self._id("IRS"),
+            instrument=s,
+            direction=BuySell.BUY,
             swap_side=side or (SwapSide.PAY_FIXED if self.rng.random() < 0.5 else SwapSide.RECEIVE_FIXED),
             quantity=notional or self._round(self._lognormal(25e6, 500e6), 5e6),
-            trade_price=rate, trade_date=td, settlement_date=eff, book_id=book, trader_id=trader, **cp,
+            trade_price=rate,
+            trade_date=td,
+            settlement_date=eff,
+            book_id=book,
+            trader_id=trader,
+            **cp,
         )
 
     def fx_spot(self, desk_id: str) -> Trade:
@@ -252,16 +310,27 @@ class _Gen:
         book, trader = self._book_and_trader(desk_id)
         td = self._trade_date(3)
         return Trade(
-            trade_id=self._id("FXS"), instrument=inst.fx_spot(pair), direction=self._direction(),
+            trade_id=self._id("FXS"),
+            instrument=inst.fx_spot(pair),
+            direction=self._direction(),
             quantity=self._round(self._lognormal(5e6, 200e6), 1e6),
-            trade_price=round(spot * (1 + float(self.rng.normal(0, 0.002))), 5), trade_date=td,
-            settlement_date=td + relativedelta(days=2), book_id=book, trader_id=trader,
+            trade_price=round(spot * (1 + float(self.rng.normal(0, 0.002))), 5),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=2),
+            book_id=book,
+            trader_id=trader,
             **self._otc(book, None, 0.0),
         )
 
-    def fx_forward(self, desk_id: str, pair: str | None = None, notional: float | None = None,
-                   book_id: str | None = None, prefer_cpty: str | None = None,
-                   direction: BuySell | None = None) -> Trade:
+    def fx_forward(
+        self,
+        desk_id: str,
+        pair: str | None = None,
+        notional: float | None = None,
+        book_id: str | None = None,
+        prefer_cpty: str | None = None,
+        direction: BuySell | None = None,
+    ) -> Trade:
         pair = pair or str(self.rng.choice(_DESK_FX_PAIRS[desk_id]))
         spot, _ = ref.FX_SPOT[pair]
         book, trader = self._book_and_trader(desk_id)
@@ -280,10 +349,16 @@ class _Gen:
         else:
             cp = self._otc(book, None, 0.0)
         return Trade(
-            trade_id=self._id("FXF"), instrument=inst.fx_forward(pair, settle, fwd),
+            trade_id=self._id("FXF"),
+            instrument=inst.fx_forward(pair, settle, fwd),
             direction=direction or self._direction(),
             quantity=notional or self._round(self._lognormal(5e6, 250e6), 1e6),
-            trade_price=fwd, trade_date=td, settlement_date=settle, book_id=book, trader_id=trader, **cp,
+            trade_price=fwd,
+            trade_date=td,
+            settlement_date=settle,
+            book_id=book,
+            trader_id=trader,
+            **cp,
         )
 
     def fx_option(self, desk_id: str) -> Trade:
@@ -297,10 +372,16 @@ class _Gen:
         strike = round(spot * float(np.exp(self.rng.normal(0, vol * 0.5))), 4)
         premium = round(spot * vol * np.sqrt(months / 12) * 0.4, 5)
         return Trade(
-            trade_id=self._id("FXO"), instrument=inst.fx_option(pair, expiry, strike, kind),
-            direction=self._direction(), quantity=self._round(self._lognormal(10e6, 150e6), 1e6),
-            trade_price=premium, trade_date=td, settlement_date=td + relativedelta(days=2),
-            book_id=book, trader_id=trader, **self._otc(book, None, 0.0),
+            trade_id=self._id("FXO"),
+            instrument=inst.fx_option(pair, expiry, strike, kind),
+            direction=self._direction(),
+            quantity=self._round(self._lognormal(10e6, 150e6), 1e6),
+            trade_price=premium,
+            trade_date=td,
+            settlement_date=td + relativedelta(days=2),
+            book_id=book,
+            trader_id=trader,
+            **self._otc(book, None, 0.0),
         )
 
     def index_future(self, desk_id: str) -> Trade:
@@ -312,10 +393,16 @@ class _Gen:
         fut = inst.index_futures(index, self.bd)[int(self.rng.choice([0, 0, 1, 2]))]
         td = self._trade_date(60)
         return Trade(
-            trade_id=self._id("EIF"), instrument=fut, direction=self._direction(),
+            trade_id=self._id("EIF"),
+            instrument=fut,
+            direction=self._direction(),
             quantity=self._round(self._lognormal(50, 2500), 10),
-            trade_price=round(level * (1 + float(self.rng.normal(0, 0.01))), 2), trade_date=td,
-            settlement_date=td, book_id=book, trader_id=trader, **self._listed(exch),
+            trade_price=round(level * (1 + float(self.rng.normal(0, 0.01))), 2),
+            trade_date=td,
+            settlement_date=td,
+            book_id=book,
+            trader_id=trader,
+            **self._listed(exch),
         )
 
     def index_option(self, desk_id: str) -> Trade:
@@ -330,10 +417,15 @@ class _Gen:
         strike = self._round(level * float(np.exp(self.rng.normal(0, vol * 0.4))), 25 if level > 1000 else 5)
         opt = inst.equity_option(index, expiry, strike, kind, ccy, exch, mult)
         return Trade(
-            trade_id=self._id("EIO"), instrument=opt, direction=self._direction(),
+            trade_id=self._id("EIO"),
+            instrument=opt,
+            direction=self._direction(),
             quantity=self._round(self._lognormal(100, 5000), 10),
-            trade_price=round(level * vol * np.sqrt(months / 12) * 0.4, 2), trade_date=td,
-            settlement_date=td + relativedelta(days=1), book_id=book, trader_id=trader,
+            trade_price=round(level * vol * np.sqrt(months / 12) * 0.4, 2),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=1),
+            book_id=book,
+            trader_id=trader,
             **self._listed(exch),
         )
 
@@ -345,10 +437,15 @@ class _Gen:
         exch, _, _, _, price, _ = ref.EQUITIES[ticker]
         td = self._trade_date(400)
         return Trade(
-            trade_id=self._id("EQ"), instrument=inst.cash_equity(ticker), direction=self._direction(),
+            trade_id=self._id("EQ"),
+            instrument=inst.cash_equity(ticker),
+            direction=self._direction(),
             quantity=self._round(self._lognormal(5_000, 600_000), 100),
-            trade_price=round(price * (1 + float(self.rng.normal(0, 0.05))), 2), trade_date=td,
-            settlement_date=td + relativedelta(days=2), book_id=book, trader_id=trader,
+            trade_price=round(price * (1 + float(self.rng.normal(0, 0.05))), 2),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=2),
+            book_id=book,
+            trader_id=trader,
             **self._listed(exch),
         )
 
@@ -364,15 +461,26 @@ class _Gen:
         strike = self._round(price * float(np.exp(self.rng.normal(0, vol * 0.4))), 5 if price > 50 else 1)
         opt = inst.equity_option(ticker, expiry, strike, kind, ccy, exch)
         return Trade(
-            trade_id=self._id("EQO"), instrument=opt, direction=self._direction(),
+            trade_id=self._id("EQO"),
+            instrument=opt,
+            direction=self._direction(),
             quantity=self._round(self._lognormal(100, 8000), 10),
-            trade_price=round(price * vol * np.sqrt(months / 12) * 0.4, 2), trade_date=td,
-            settlement_date=td + relativedelta(days=1), book_id=book, trader_id=trader,
+            trade_price=round(price * vol * np.sqrt(months / 12) * 0.4, 2),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=1),
+            book_id=book,
+            trader_id=trader,
             **self._listed(exch),
         )
 
-    def cds_index(self, desk_id: str, book_id: str | None = None, prefer_cpty: str | None = None,
-                  notional: float | None = None, direction: BuySell | None = None) -> Trade:
+    def cds_index(
+        self,
+        desk_id: str,
+        book_id: str | None = None,
+        prefer_cpty: str | None = None,
+        notional: float | None = None,
+        direction: BuySell | None = None,
+    ) -> Trade:
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
         family = _BOOK_CDS[book]
@@ -385,17 +493,27 @@ class _Gen:
             cp = self._otc(book, "CCP_ICE", cleared_share=0.8)
         # BUY = buy protection.
         return Trade(
-            trade_id=self._id("CDS"), instrument=inst.cds_index(family, self.bd),
+            trade_id=self._id("CDS"),
+            instrument=inst.cds_index(family, self.bd),
             direction=direction or self._direction(),
             quantity=notional or self._round(self._lognormal(10e6, 300e6), 5e6),
             trade_price=round((spread_bp + float(self.rng.normal(0, spread_bp * 0.08))) / 1e4, 6),
-            trade_date=td, settlement_date=td + relativedelta(days=1), book_id=book,
-            trader_id=trader, **cp,
+            trade_date=td,
+            settlement_date=td + relativedelta(days=1),
+            book_id=book,
+            trader_id=trader,
+            **cp,
         )
 
-    def commodity_future(self, desk_id: str, code: str | None = None, contracts: float | None = None,
-                         contract_index: int | None = None, book_id: str | None = None,
-                         direction: BuySell | None = None) -> Trade:
+    def commodity_future(
+        self,
+        desk_id: str,
+        code: str | None = None,
+        contracts: float | None = None,
+        contract_index: int | None = None,
+        book_id: str | None = None,
+        direction: BuySell | None = None,
+    ) -> Trade:
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
         code = code or str(self.rng.choice(_BOOK_COMMODITIES[book]))
@@ -404,25 +522,41 @@ class _Gen:
         fut = futs[contract_index if contract_index is not None else int(self.rng.choice([0, 0, 1, 1, 2, 3]))]
         td = self._trade_date(90)
         return Trade(
-            trade_id=self._id("CMF"), instrument=fut, direction=direction or self._direction(),
+            trade_id=self._id("CMF"),
+            instrument=fut,
+            direction=direction or self._direction(),
             quantity=contracts or self._round(self._lognormal(50, 1500), 10),
-            trade_price=round(price * (1 + float(self.rng.normal(0, 0.03))), 3), trade_date=td,
-            settlement_date=td, book_id=book, trader_id=trader, **self._listed(exch),
+            trade_price=round(price * (1 + float(self.rng.normal(0, 0.03))), 3),
+            trade_date=td,
+            settlement_date=td,
+            book_id=book,
+            trader_id=trader,
+            **self._listed(exch),
         )
 
-    def crypto_spot(self, desk_id: str, symbol: str | None = None, units: float | None = None,
-                    direction: BuySell | None = None) -> Trade:
+    def crypto_spot(
+        self,
+        desk_id: str,
+        symbol: str | None = None,
+        units: float | None = None,
+        direction: BuySell | None = None,
+    ) -> Trade:
         book, trader = self._book_and_trader(desk_id)
         symbol = symbol or str(self.rng.choice(["BTC", "ETH"], p=[0.6, 0.4]))
         venue, price, _ = ref.CRYPTO[symbol]
         td = self._trade_date(200)
         lo, hi = (2, 150) if symbol == "BTC" else (50, 4000)
         return Trade(
-            trade_id=self._id("CRY"), instrument=inst.crypto_spot(symbol),
+            trade_id=self._id("CRY"),
+            instrument=inst.crypto_spot(symbol),
             direction=direction or self._direction(),
             quantity=units or round(self._lognormal(lo, hi), 2),
-            trade_price=round(price * (1 + float(self.rng.normal(0, 0.08))), 2), trade_date=td,
-            settlement_date=td, book_id=book, trader_id=trader, **self._listed(venue),
+            trade_price=round(price * (1 + float(self.rng.normal(0, 0.08))), 2),
+            trade_date=td,
+            settlement_date=td,
+            book_id=book,
+            trader_id=trader,
+            **self._listed(venue),
         )
 
     # --- injected problems -------------------------------------------------------------
@@ -435,81 +569,136 @@ class _Gen:
         #    PV and real counterparty exposure as well as DV01.
         t = []
         for _ in range(6):
-            s = self._fair(self.swap("USD_RATES", tenor="10Y", notional=400e6, side=SwapSide.RECEIVE_FIXED,
-                                     book_id="USD_MACRO_RV", prefer_cpty="BANK_A", max_days_back=10))
+            s = self._fair(
+                self.swap(
+                    "USD_RATES",
+                    tenor="10Y",
+                    notional=400e6,
+                    side=SwapSide.RECEIVE_FIXED,
+                    book_id="USD_MACRO_RV",
+                    prefer_cpty="BANK_A",
+                    max_days_back=10,
+                )
+            )
             ins = s.instrument.model_copy(update={"fixed_rate": round(s.instrument.fixed_rate + 0.006, 5)})
             t.append(s.model_copy(update={"instrument": ins, "trade_price": ins.fixed_rate}))
         trades += t
-        inj.append(Injection(
-            name="usd_10y_concentration",
-            description="Six receive-fixed 10Y USD swaps of 400m each in USD Macro RV, all facing Bank A, "
-                        "struck 60bp above par (legacy novations).",
-            trade_ids=tuple(x.trade_id for x in t),
-            expected_detection="USD Rates 10Y DV01 limit breach; Bank A the largest counterparty exposure.",
-        ))
+        inj.append(
+            Injection(
+                name="usd_10y_concentration",
+                description="Six receive-fixed 10Y USD swaps of 400m each in USD Macro RV, "
+                "all facing Bank A, "
+                "struck 60bp above par (legacy novations).",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="USD Rates 10Y DV01 limit breach; Bank A the largest counterparty "
+                "exposure.",
+            )
+        )
 
         # 2. Illiquid far-dated Brent.
-        t = [self.commodity_future("ENERGY", code="BRENT", contracts=10_000, contract_index=5,
-                                   book_id="CRUDE", direction=BuySell.BUY)]
+        t = [
+            self.commodity_future(
+                "ENERGY",
+                code="BRENT",
+                contracts=10_000,
+                contract_index=5,
+                book_id="CRUDE",
+                direction=BuySell.BUY,
+            )
+        ]
         trades += t
-        inj.append(Injection(
-            name="illiquid_brent",
-            description="10,000 lots of the furthest Brent contract in one book.",
-            trade_ids=tuple(x.trade_id for x in t),
-            expected_detection="Brent concentration limit; days-to-liquidate warning.",
-        ))
+        inj.append(
+            Injection(
+                name="illiquid_brent",
+                description="10,000 lots of the furthest Brent contract in one book.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Brent concentration limit; days-to-liquidate warning.",
+            )
+        )
 
         # 3. Outsized BTC exposure.
         t = [self.crypto_spot("DIGITAL", symbol="BTC", units=2500, direction=BuySell.BUY)]
         trades += t
-        inj.append(Injection(
-            name="btc_exposure",
-            description="2,500 BTC long in Crypto Spot.",
-            trade_ids=tuple(x.trade_id for x in t),
-            expected_detection="Digital assets stress-loss limit breach under BTC -50%.",
-        ))
+        inj.append(
+            Injection(
+                name="btc_exposure",
+                description="2,500 BTC long in Crypto Spot.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Digital assets stress-loss limit breach under BTC -50%.",
+            )
+        )
 
         # 4. Wrong-way risk: long USD/ARS forwards with an uncollateralised EM sovereign.
-        t = [self.fx_forward("EM_FX", pair="USD/ARS", notional=40e6, book_id="EM_FX_FWD",
-                             prefer_cpty="SOV_EM", direction=BuySell.BUY) for _ in range(3)]
+        t = [
+            self.fx_forward(
+                "EM_FX",
+                pair="USD/ARS",
+                notional=40e6,
+                book_id="EM_FX_FWD",
+                prefer_cpty="SOV_EM",
+                direction=BuySell.BUY,
+            )
+            for _ in range(3)
+        ]
         trades += t
-        inj.append(Injection(
-            name="wrong_way_sovereign",
-            description="Three long USD/ARS forwards facing the Republic of Andoria, no CSA.",
-            trade_ids=tuple(x.trade_id for x in t),
-            expected_detection="Wrong-way-risk flag: exposure rises as the counterparty's currency weakens.",
-        ))
+        inj.append(
+            Injection(
+                name="wrong_way_sovereign",
+                description="Three long USD/ARS forwards facing the Republic of Andoria, no CSA.",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Wrong-way-risk flag: exposure rises as the counterparty's currency "
+                "weakens.",
+            )
+        )
 
         # 5. Wrong-way risk: protection bought on HY from a HY-rated corporate.
-        t = [self.cds_index("HY_CREDIT", book_id="CDX_HY", prefer_cpty="CORP_AIR", notional=75e6,
-                            direction=BuySell.BUY)]
+        t = [
+            self.cds_index(
+                "HY_CREDIT", book_id="CDX_HY", prefer_cpty="CORP_AIR", notional=75e6, direction=BuySell.BUY
+            )
+        ]
         trades += t
-        inj.append(Injection(
-            name="wrong_way_credit",
-            description="CDX HY protection bought from TransAtlantic Air (BB+, uncollateralised).",
-            trade_ids=tuple(x.trade_id for x in t),
-            expected_detection="Wrong-way-risk flag on counterparty watchlist.",
-        ))
+        inj.append(
+            Injection(
+                name="wrong_way_credit",
+                description="CDX HY protection bought from TransAtlantic Air (BB+, uncollateralised).",
+                trade_ids=tuple(x.trade_id for x in t),
+                expected_detection="Wrong-way-risk flag on counterparty watchlist.",
+            )
+        )
 
         # 6. Invalid trades for the data-quality module.
         base = self.swap("USD_RATES", book_id="USD_SWAPS_FLOW")
         bad = [
-            base.model_copy(update={"trade_id": self._id("IRS"), "netting_set_id": None,
-                                    "clearing": ClearingType.BILATERAL, "status": TradeStatus.INVALID,
-                                    "validation_errors": ("missing netting_set_id for bilateral OTC",)}),
-            base.model_copy(update={"trade_id": self._id("IRS"), "counterparty_id": "BANK_Z",
-                                    "clearing": ClearingType.BILATERAL,
-                                    "netting_set_id": "NS_BANK_Z_GMB_NY"}),
+            base.model_copy(
+                update={
+                    "trade_id": self._id("IRS"),
+                    "netting_set_id": None,
+                    "clearing": ClearingType.BILATERAL,
+                    "status": TradeStatus.INVALID,
+                    "validation_errors": ("missing netting_set_id for bilateral OTC",),
+                }
+            ),
+            base.model_copy(
+                update={
+                    "trade_id": self._id("IRS"),
+                    "counterparty_id": "BANK_Z",
+                    "clearing": ClearingType.BILATERAL,
+                    "netting_set_id": "NS_BANK_Z_GMB_NY",
+                }
+            ),
             base.model_copy(update={"trade_id": self._id("IRS"), "book_id": "GHOST_BOOK"}),
         ]
         trades += bad
-        inj.append(Injection(
-            name="invalid_trades",
-            description="One swap without a netting set, one facing an unknown counterparty, "
-                        "one booked to a non-existent book.",
-            trade_ids=tuple(x.trade_id for x in bad),
-            expected_detection="Data-quality exceptions; run trust verdict AMBER.",
-        ))
+        inj.append(
+            Injection(
+                name="invalid_trades",
+                description="One swap without a netting set, one facing an unknown counterparty, "
+                "one booked to a non-existent book.",
+                trade_ids=tuple(x.trade_id for x in bad),
+                expected_detection="Data-quality exceptions; run trust verdict AMBER.",
+            )
+        )
         return trades, inj
 
     # --- driver ----------------------------------------------------------------------
@@ -534,7 +723,47 @@ class _Gen:
         return GeneratedPortfolio(snapshot=snap, injections=injections)
 
 
-def generate_portfolio(org: Organisation, cp: CounterpartyUniverse,
-                       cfg: TradeGeneratorConfig) -> GeneratedPortfolio:
+def generate_portfolio(
+    org: Organisation, cp: CounterpartyUniverse, cfg: TradeGeneratorConfig
+) -> GeneratedPortfolio:
     """Generate a reproducible simulated portfolio for the organisation."""
     return _Gen(org, cp, cfg).run()
+
+
+def evolve_portfolio(
+    previous: PortfolioSnapshot,
+    new_date: date,
+    org: Organisation,
+    cp: CounterpartyUniverse,
+    injections: list[Injection],
+    market_history: MarketHistory | None = None,
+    seed: int = 43,
+    new_trade_share: float = 0.03,
+) -> tuple[PortfolioSnapshot, list[str]]:
+    """Next-day portfolio: yesterday's trades plus a day of new business, with one of the USD
+    10Y concentration swaps unwound (removed) so the concentration breach improves but persists.
+    Returns the snapshot and a list of what changed, for the demo narrative."""
+    gen = _Gen(org, cp, TradeGeneratorConfig(new_date, 0, seed, False, market_history))
+    gen.n = max((int(t.trade_id.split("_")[-1]) for t in previous.trades), default=0)
+    gen._trade_date = lambda *_a, **_k: new_date  # type: ignore[method-assign]  # all new business dated today
+    changes: list[str] = []
+    conc = next((i for i in injections if i.name == "usd_10y_concentration"), None)
+    trades = list(previous.trades)
+    if conc is not None:
+        unwound = conc.trade_ids[0]
+        trades = [t for t in trades if t.trade_id != unwound]
+        changes.append(f"unwound {unwound} (one of the six 10Y Bank A swaps)")
+    desks = list(_DESK_WEIGHT)
+    w = np.array([_DESK_WEIGHT[d] for d in desks])
+    n_new = max(int(len(previous) * new_trade_share), 1)
+    counts = gen.rng.multinomial(n_new, w / w.sum())
+    new: list[Trade] = []
+    for desk_id, k in zip(desks, counts, strict=True):
+        mix = _DESK_MIX[desk_id]
+        recipes = list(mix)
+        p = np.array([mix[r] for r in recipes])
+        for r in gen.rng.choice(recipes, size=int(k), p=p / p.sum()):
+            new.append(gen._fair(getattr(gen, str(r))(desk_id)))
+    trades += new
+    changes.append(f"{len(new)} new trades booked on {new_date}")
+    return PortfolioSnapshot(business_date=new_date, trades=tuple(trades), source="SIM"), changes

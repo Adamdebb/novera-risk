@@ -4,6 +4,7 @@ All user-facing branding reads ``settings.platform_name`` (ADR 0005). Environmen
 variables use the ``NOVERA_`` prefix; a ``.env`` file in the working directory is read
 if present.
 """
+
 from __future__ import annotations
 
 from functools import lru_cache

@@ -13,6 +13,7 @@ Model (methodology record SIM-001):
 - The business-date snapshot plants two data-quality problems: a stale EUR/USD vol surface
   and a missing USD 7Y node.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,44 +43,116 @@ MODEL_VERSION = "1.0.0"
 
 # --- Universe ------------------------------------------------------------------------
 
+
 def build_risk_factor_universe() -> list[RiskFactor]:
     out: list[RiskFactor] = []
     for ccy, curve in ref.SWAP_CURVES.items():
         for tenor in curve:
-            out.append(RiskFactor(factor_id=ir_id(ccy, tenor), factor_type=RiskFactorType.IR_ZERO,
-                                  asset_class="RATES", currency=ccy, underlying=ccy, tenor=tenor,
-                                  tenor_years=TENOR_YEARS[tenor], unit="rate", shock_type="ABSOLUTE"))
+            out.append(
+                RiskFactor(
+                    factor_id=ir_id(ccy, tenor),
+                    factor_type=RiskFactorType.IR_ZERO,
+                    asset_class="RATES",
+                    currency=ccy,
+                    underlying=ccy,
+                    tenor=tenor,
+                    tenor_years=TENOR_YEARS[tenor],
+                    unit="rate",
+                    shock_type="ABSOLUTE",
+                )
+            )
     for pair in ref.FX_SPOT:
-        out.append(RiskFactor(factor_id=fx_id(pair), factor_type=RiskFactorType.FX_SPOT, asset_class="FX",
-                              currency=pair[4:], underlying=pair, unit="price", shock_type="RELATIVE"))
+        out.append(
+            RiskFactor(
+                factor_id=fx_id(pair),
+                factor_type=RiskFactorType.FX_SPOT,
+                asset_class="FX",
+                currency=pair[4:],
+                underlying=pair,
+                unit="price",
+                shock_type="RELATIVE",
+            )
+        )
     for ticker, (_, ccy, _, _, _, _) in ref.EQUITIES.items():
-        out.append(RiskFactor(factor_id=eq_id(ticker), factor_type=RiskFactorType.EQUITY_SPOT,
-                              asset_class="EQUITY", currency=ccy, underlying=ticker, unit="price",
-                              shock_type="RELATIVE"))
+        out.append(
+            RiskFactor(
+                factor_id=eq_id(ticker),
+                factor_type=RiskFactorType.EQUITY_SPOT,
+                asset_class="EQUITY",
+                currency=ccy,
+                underlying=ticker,
+                unit="price",
+                shock_type="RELATIVE",
+            )
+        )
     for index, (_, ccy, _, _, _) in ref.EQUITY_INDICES.items():
-        out.append(RiskFactor(factor_id=eqidx_id(index), factor_type=RiskFactorType.EQUITY_INDEX,
-                              asset_class="EQUITY", currency=ccy, underlying=index, unit="level",
-                              shock_type="RELATIVE"))
+        out.append(
+            RiskFactor(
+                factor_id=eqidx_id(index),
+                factor_type=RiskFactorType.EQUITY_INDEX,
+                asset_class="EQUITY",
+                currency=ccy,
+                underlying=index,
+                unit="level",
+                shock_type="RELATIVE",
+            )
+        )
     for code in ref.COMMODITIES:
         for tenor in ref.COMMODITY_TENORS:
-            out.append(RiskFactor(factor_id=cmd_id(code, tenor), factor_type=RiskFactorType.COMMODITY_CURVE,
-                                  asset_class="COMMODITY", currency="USD", underlying=code, tenor=tenor,
-                                  tenor_years=TENOR_YEARS[tenor], unit="price", shock_type="RELATIVE"))
+            out.append(
+                RiskFactor(
+                    factor_id=cmd_id(code, tenor),
+                    factor_type=RiskFactorType.COMMODITY_CURVE,
+                    asset_class="COMMODITY",
+                    currency="USD",
+                    underlying=code,
+                    tenor=tenor,
+                    tenor_years=TENOR_YEARS[tenor],
+                    unit="price",
+                    shock_type="RELATIVE",
+                )
+            )
     for family, (ccy, _, _, _, _) in ref.CDS_INDICES.items():
-        out.append(RiskFactor(factor_id=cds_id(family), factor_type=RiskFactorType.CREDIT_SPREAD,
-                              asset_class="CREDIT", currency=ccy, underlying=family, unit="bp",
-                              shock_type="ABSOLUTE"))
+        out.append(
+            RiskFactor(
+                factor_id=cds_id(family),
+                factor_type=RiskFactorType.CREDIT_SPREAD,
+                asset_class="CREDIT",
+                currency=ccy,
+                underlying=family,
+                unit="bp",
+                shock_type="ABSOLUTE",
+            )
+        )
     for symbol in ref.CRYPTO:
-        out.append(RiskFactor(factor_id=crypto_id(symbol), factor_type=RiskFactorType.CRYPTO_SPOT,
-                              asset_class="DIGITAL_ASSET", currency="USD", underlying=symbol, unit="price",
-                              shock_type="RELATIVE"))
+        out.append(
+            RiskFactor(
+                factor_id=crypto_id(symbol),
+                factor_type=RiskFactorType.CRYPTO_SPOT,
+                asset_class="DIGITAL_ASSET",
+                currency="USD",
+                underlying=symbol,
+                unit="price",
+                shock_type="RELATIVE",
+            )
+        )
     for underlying, ccy, ac in _vol_underlyings():
         for expiry in ref.VOL_EXPIRIES:
             for m in ref.VOL_MONEYNESS:
-                out.append(RiskFactor(
-                    factor_id=vol_id(underlying, expiry, m), factor_type=RiskFactorType.IMPLIED_VOL,
-                    asset_class=ac, currency=ccy, underlying=underlying, tenor=expiry,
-                    expiry_years=TENOR_YEARS[expiry], moneyness=m, unit="vol", shock_type="RELATIVE"))
+                out.append(
+                    RiskFactor(
+                        factor_id=vol_id(underlying, expiry, m),
+                        factor_type=RiskFactorType.IMPLIED_VOL,
+                        asset_class=ac,
+                        currency=ccy,
+                        underlying=underlying,
+                        tenor=expiry,
+                        expiry_years=TENOR_YEARS[expiry],
+                        moneyness=m,
+                        unit="vol",
+                        shock_type="RELATIVE",
+                    )
+                )
     return out
 
 
@@ -91,6 +164,7 @@ def _vol_underlyings() -> list[tuple[str, str, str]]:
 
 
 # --- Episodes ------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class Episode:
@@ -113,12 +187,38 @@ class Episode:
 
 
 DEFAULT_EPISODES: tuple[Episode, ...] = (
-    Episode("stylised_risk_off_crash", start_offset_days=480, length=22, equity=-0.27, credit_mult=2.1,
-            vol_mult=2.3, crypto=-0.45, usd=0.06, rates_short_bp=-90, rates_long_bp=-60, energy=-0.32,
-            gold=0.05, skew_mult=1.6, daily_vol_mult=2.5),
-    Episode("stylised_rates_shock", start_offset_days=220, length=30, equity=-0.13, credit_mult=1.35,
-            vol_mult=1.45, crypto=-0.25, usd=0.04, rates_short_bp=150, rates_long_bp=90, energy=0.08,
-            gold=-0.06, skew_mult=1.2, daily_vol_mult=1.8),
+    Episode(
+        "stylised_risk_off_crash",
+        start_offset_days=480,
+        length=22,
+        equity=-0.27,
+        credit_mult=2.1,
+        vol_mult=2.3,
+        crypto=-0.45,
+        usd=0.06,
+        rates_short_bp=-90,
+        rates_long_bp=-60,
+        energy=-0.32,
+        gold=0.05,
+        skew_mult=1.6,
+        daily_vol_mult=2.5,
+    ),
+    Episode(
+        "stylised_rates_shock",
+        start_offset_days=220,
+        length=30,
+        equity=-0.13,
+        credit_mult=1.35,
+        vol_mult=1.45,
+        crypto=-0.25,
+        usd=0.04,
+        rates_short_bp=150,
+        rates_long_bp=90,
+        energy=0.08,
+        gold=-0.06,
+        skew_mult=1.2,
+        daily_vol_mult=1.8,
+    ),
 )
 
 
@@ -129,18 +229,24 @@ class MarketSimConfig:
     seed: int = 42
     episodes: tuple[Episode, ...] = DEFAULT_EPISODES
     plant_data_quality_problems: bool = True
+    problem_date: date | None = None
+    """Business date that carries the planted data-quality problems (default: end_date)."""
+    snapshot_days: int = 2
+    """How many trailing daily snapshots to return in ``snapshots`` (at least 2)."""
 
 
 @dataclass
 class GeneratedMarketData:
     universe: list[RiskFactor]
     history: pd.DataFrame  # columns as_of, factor_id, value
-    snapshot: MarketSnapshot  # business date, with planted problems
-    previous_snapshot: MarketSnapshot  # the day before, clean
+    snapshot: MarketSnapshot  # the problem date, with planted problems
+    previous_snapshot: MarketSnapshot  # the day before the problem date, clean
+    snapshots: dict[date, MarketSnapshot] = field(default_factory=dict)  # trailing days, oldest first
     planted: list[str] = field(default_factory=list)
 
 
 # --- Simulator -----------------------------------------------------------------------
+
 
 def business_days(end: date, n: int) -> list[date]:
     out: list[date] = []
@@ -150,6 +256,16 @@ def business_days(end: date, n: int) -> list[date]:
             out.append(d)
         d -= timedelta(days=1)
     return out[::-1]
+
+
+def business_days_after(start: date, n: int) -> list[date]:
+    out: list[date] = []
+    d = start
+    while len(out) < n:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            out.append(d)
+    return out
 
 
 class _Sim:
@@ -163,9 +279,20 @@ class _Sim:
         self.g = self.rng.standard_normal(self.n)  # global risk appetite
         self.vol_mult = np.ones(self.n)  # daily vol scaling by episodes
         self.skew_mult = np.ones(self.n)
-        self.drift: dict[str, np.ndarray] = {k: np.zeros(self.n) for k in
-                                             ("equity", "credit", "vol", "crypto", "usd", "rates_short",
-                                              "rates_long", "energy", "gold")}
+        self.drift: dict[str, np.ndarray] = {
+            k: np.zeros(self.n)
+            for k in (
+                "equity",
+                "credit",
+                "vol",
+                "crypto",
+                "usd",
+                "rates_short",
+                "rates_long",
+                "energy",
+                "gold",
+            )
+        }
         for ep in cfg.episodes:
             s = max(self.n - ep.start_offset_days, 0)
             e = min(s + ep.length, self.n)
@@ -197,8 +324,14 @@ class _Sim:
         return z
 
     def _lognormal_path(
-        self, s0: float, ann_vol: float, beta: float, extra_drift: np.ndarray,
-        common: np.ndarray | None = None, common_w: float = 0.0, annual_drift: float = 0.0,
+        self,
+        s0: float,
+        ann_vol: float,
+        beta: float,
+        extra_drift: np.ndarray,
+        common: np.ndarray | None = None,
+        common_w: float = 0.0,
+        annual_drift: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         eps = self._noise()
         z = beta * self.g + common_w * (common if common is not None else 0.0)
@@ -225,8 +358,10 @@ class _Sim:
                 short = self.drift["rates_short"][i]
                 long_ = self.drift["rates_long"][i]
                 ep_drift = short + (long_ - short) * (slope_load + 1) / 2
-                shock = dv * self.vol_mult[i] * (
-                    level[i] + 0.45 * slope_load * e_slope[i] + 0.25 * curv_load * e_curv[i]
+                shock = (
+                    dv
+                    * self.vol_mult[i]
+                    * (level[i] + 0.45 * slope_load * e_slope[i] + 0.25 * curv_load * e_curv[i])
                 )
                 cur = cur + shock + ep_drift - 0.003 * (cur - base)
                 cur = np.maximum(cur, -0.01)
@@ -296,8 +431,9 @@ class _Sim:
             path = np.zeros(self.n)
             cur = log_s
             for i in range(self.n):
-                cur += (vol * self.sq * self.vol_mult[i] * z[i] + self.drift["credit"][i]
-                        - 0.004 * (cur - log_s))
+                cur += (
+                    vol * self.sq * self.vol_mult[i] * z[i] + self.drift["credit"][i] - 0.004 * (cur - log_s)
+                )
                 path[i] = cur
             self.series[cds_id(family)] = np.exp(path)
 
@@ -313,8 +449,11 @@ class _Sim:
         mny = np.array(ref.VOL_MONEYNESS)
         for underlying, _, ac in _vol_underlyings():
             if ac == "EQUITY":
-                base_vol = (ref.EQUITY_INDICES[underlying][3] if underlying in ref.EQUITY_INDICES
-                            else ref.EQUITIES[underlying][5])
+                base_vol = (
+                    ref.EQUITY_INDICES[underlying][3]
+                    if underlying in ref.EQUITY_INDICES
+                    else ref.EQUITIES[underlying][5]
+                )
                 ret = self.eq_returns[underlying]
                 vov, corr, skew, smile = 0.9, -0.65, 0.30, 0.10
                 term = np.array([1.06, 1.02, 1.0, 0.98, 0.97])
@@ -356,26 +495,40 @@ class _Sim:
         missing = [i for i in ids if i not in self.series]
         assert not missing, missing[:5]
         matrix = np.column_stack([self.series[i] for i in ids])
-        history = pd.DataFrame({
-            "as_of": np.repeat(np.array(self.dates, dtype="datetime64[D]"), len(ids)),
-            "factor_id": np.tile(np.array(ids), self.n),
-            "value": matrix.ravel(),
-        })
-        last = {i: float(matrix[-1, j]) for j, i in enumerate(ids)}
-        prev = {i: float(matrix[-2, j]) for j, i in enumerate(ids)}
-        previous = MarketSnapshot(as_of=self.dates[-2], values=prev)
+        history = pd.DataFrame(
+            {
+                "as_of": np.repeat(np.array(self.dates, dtype="datetime64[D]"), len(ids)),
+                "factor_id": np.tile(np.array(ids), self.n),
+                "value": matrix.ravel(),
+            }
+        )
+        problem_date = self.cfg.problem_date or self.dates[-1]
+        if problem_date not in self.dates:
+            raise ValueError(f"problem_date {problem_date} is not a business day in the history")
+        pi = self.dates.index(problem_date)
+        if pi < 1:
+            raise ValueError("problem_date must have at least one prior day of history")
+        n_snap = max(self.cfg.snapshot_days, 2)
+        first = max(min(pi - 1, self.n - n_snap), 0)
+        snapshots: dict[date, MarketSnapshot] = {}
         planted: list[str] = []
-        observed: dict[str, date] = {}
-        if self.cfg.plant_data_quality_problems:
-            stale = [i for i in ids if i.startswith("VOL:EURUSD:")]
-            for i in stale:
-                last[i] = prev[i]
-                observed[i] = self.dates[-2]
-            planted.append("stale_eurusd_vol_surface: EUR/USD vol surface not updated on the business date")
-            del last[ir_id("USD", "7Y")]
-            planted.append("missing_usd_7y_node: USD zero curve is missing its 7Y node")
-        snapshot = MarketSnapshot(as_of=self.dates[-1], values=last, observed_at=observed)
-        return GeneratedMarketData(universe, history, snapshot, previous, planted)
+        for k in range(first, self.n):
+            vals = {i: float(matrix[k, j]) for j, i in enumerate(ids)}
+            observed: dict[str, date] = {}
+            if k == pi and self.cfg.plant_data_quality_problems:
+                prev_vals = {i: float(matrix[k - 1, j]) for j, i in enumerate(ids)}
+                for i in [x for x in ids if x.startswith("VOL:EURUSD:")]:
+                    vals[i] = prev_vals[i]
+                    observed[i] = self.dates[k - 1]
+                planted.append(
+                    "stale_eurusd_vol_surface: EUR/USD vol surface not updated on the business date"
+                )
+                del vals[ir_id("USD", "7Y")]
+                planted.append("missing_usd_7y_node: USD zero curve is missing its 7Y node")
+            snapshots[self.dates[k]] = MarketSnapshot(as_of=self.dates[k], values=vals, observed_at=observed)
+        snapshot = snapshots[problem_date]
+        previous = snapshots[self.dates[pi - 1]]
+        return GeneratedMarketData(universe, history, snapshot, previous, snapshots, planted)
 
 
 def generate_market_data(cfg: MarketSimConfig) -> GeneratedMarketData:

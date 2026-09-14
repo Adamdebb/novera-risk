@@ -1,4 +1,5 @@
 """Counterparties, netting sets and credit support annexes (CSAs)."""
+
 from __future__ import annotations
 
 from enum import StrEnum

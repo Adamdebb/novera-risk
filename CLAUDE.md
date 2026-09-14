@@ -69,7 +69,8 @@ uv sync --all-extras          # create .venv and install
 uv run pytest                 # tests
 uv run novera --help          # CLI
 uv run novera simulate        # simulated bank, portfolio, market data, limits
-uv run novera run eod         # governed EOD run, stores results and audit events
+uv run novera run eod         # governed EOD run, stores results and audit events (--business-date)
+uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload

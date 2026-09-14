@@ -1,4 +1,5 @@
 """Wide-format access to the daily factor history: snapshots at any date, return series."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -36,10 +37,13 @@ class MarketHistory:
         if idx < 0:
             raise KeyError(f"no market data on or before {as_of}")
         row = self.wide.iloc[idx]
-        return MarketSnapshot(as_of=self.wide.index[idx], values={k: float(v) for k, v in row.items()
-                                                                if not np.isnan(v)}, source=source)
+        return MarketSnapshot(
+            as_of=self.wide.index[idx],
+            values={k: float(v) for k, v in row.items() if not np.isnan(v)},
+            source=source,
+        )
 
     def window(self, end: date, days: int) -> pd.DataFrame:
         """The last ``days`` rows ending at ``end`` (inclusive)."""
         idx = self.wide.index.searchsorted(end, side="right")
-        return self.wide.iloc[max(idx - days, 0):idx]
+        return self.wide.iloc[max(idx - days, 0) : idx]
