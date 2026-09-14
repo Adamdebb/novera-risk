@@ -1,4 +1,5 @@
 """Implied volatility surface in (expiry, moneyness K/F) with bilinear interpolation."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

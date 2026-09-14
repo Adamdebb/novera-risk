@@ -9,6 +9,7 @@ SQL is ANSI except where marked ``# duckdb-only``.
 from __future__ import annotations
 
 import json
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ import duckdb
 import pandas as pd
 from pydantic import TypeAdapter
 
+from novera.domain.breaches import Breach, BreachAction, LimitIncrease
 from novera.domain.counterparties import CSA, Counterparty, NettingSet
 from novera.domain.limits import Limit
 from novera.domain.organisation import (
@@ -144,6 +146,28 @@ CREATE TABLE IF NOT EXISTS audit_event (
     subject VARCHAR NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS breach (
+    breach_id VARCHAR PRIMARY KEY,
+    limit_id VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    first_date DATE NOT NULL,
+    latest_date DATE NOT NULL,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS breach_action (
+    action_id VARCHAR PRIMARY KEY,
+    breach_id VARCHAR NOT NULL,
+    occurred_at TIMESTAMP NOT NULL,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS limit_increase (
+    increase_id VARCHAR PRIMARY KEY,
+    limit_id VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    effective_from DATE NOT NULL,
+    expires_on DATE NOT NULL,
+    payload JSON NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_value (
     snapshot_id VARCHAR NOT NULL,
     factor_id VARCHAR NOT NULL,
@@ -155,8 +179,18 @@ CREATE TABLE IF NOT EXISTS market_value (
 
 
 class DuckDBRepository:
-    def __init__(self, path: Path | str = ":memory:", read_only: bool = False) -> None:
-        self._conn = duckdb.connect(str(path), read_only=read_only and str(path) != ":memory:")
+    def __init__(self, path: Path | str = ":memory:", read_only: bool = False, retries: int = 20) -> None:
+        ro = read_only and str(path) != ":memory:"
+        last: Exception | None = None
+        for _ in range(retries):
+            try:
+                self._conn = duckdb.connect(str(path), read_only=ro)
+                break
+            except duckdb.IOException as e:  # another process holds the lock; wait briefly
+                last = e
+                time.sleep(0.25)
+        else:
+            raise last  # type: ignore[misc]
 
     # --- lifecycle -----------------------------------------------------------------
     def close(self) -> None:
@@ -518,6 +552,95 @@ class DuckDBRepository:
         q += " ORDER BY occurred_at DESC LIMIT ?"
         params.append(limit)
         return self._conn.execute(q, params).df()  # duckdb-only
+
+    # --- breaches and increases ------------------------------------------------------
+    def save_breach(self, breach: Breach) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO breach VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                breach.breach_id,
+                breach.limit_id,
+                breach.status.value,
+                breach.first_date,
+                breach.latest_date,
+                breach.model_dump_json(),
+            ],
+        )
+
+    def load_breach(self, breach_id: str) -> Breach:
+        row = self._conn.execute("SELECT payload FROM breach WHERE breach_id = ?", [breach_id]).fetchone()
+        if row is None:
+            raise KeyError(f"breach {breach_id!r} not found")
+        return Breach.model_validate_json(row[0])
+
+    def load_breaches(self, open_only: bool = False, limit_id: str | None = None) -> list[Breach]:
+        clauses, params = [], []
+        if open_only:
+            clauses.append("status <> 'CLOSED'")
+        if limit_id:
+            clauses.append("limit_id = ?")
+            params.append(limit_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"SELECT payload FROM breach {where} ORDER BY first_date DESC, breach_id", params
+        ).fetchall()
+        return [Breach.model_validate_json(r[0]) for r in rows]
+
+    def save_breach_action(self, action: BreachAction) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO breach_action VALUES (?, ?, ?, ?)",
+            [action.action_id, action.breach_id, action.at, action.model_dump_json()],
+        )
+
+    def load_breach_actions(self, breach_id: str) -> list[BreachAction]:
+        rows = self._conn.execute(
+            "SELECT payload FROM breach_action WHERE breach_id = ? ORDER BY occurred_at", [breach_id]
+        ).fetchall()
+        return [BreachAction.model_validate_json(r[0]) for r in rows]
+
+    def save_increase(self, inc: LimitIncrease) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO limit_increase VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                inc.increase_id,
+                inc.limit_id,
+                inc.status.value,
+                inc.effective_from,
+                inc.expires_on,
+                inc.model_dump_json(),
+            ],
+        )
+
+    def load_increase(self, increase_id: str) -> LimitIncrease:
+        row = self._conn.execute(
+            "SELECT payload FROM limit_increase WHERE increase_id = ?", [increase_id]
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"increase {increase_id!r} not found")
+        return LimitIncrease.model_validate_json(row[0])
+
+    def load_increases(self, status: str | None = None, limit_id: str | None = None) -> list[LimitIncrease]:
+        clauses, params = [], []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if limit_id:
+            clauses.append("limit_id = ?")
+            params.append(limit_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"SELECT payload FROM limit_increase {where} ORDER BY effective_from DESC, increase_id", params
+        ).fetchall()
+        return [LimitIncrease.model_validate_json(r[0]) for r in rows]
+
+    def load_portfolio_snapshot_before(self, on: date) -> PortfolioSnapshot | None:
+        """Latest portfolio snapshot strictly before ``on`` (for day-on-day P&L)."""
+        row = self._conn.execute(
+            "SELECT snapshot_id FROM portfolio_snapshot WHERE business_date < ? "
+            "ORDER BY business_date DESC, created_at DESC LIMIT 1",
+            [on],
+        ).fetchone()
+        return self.load_portfolio_snapshot(row[0]) if row else None
 
 
 def _run_from_row(row: tuple) -> RunRecord:

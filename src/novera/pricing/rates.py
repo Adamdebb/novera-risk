@@ -1,4 +1,5 @@
 """Government bonds and interest-rate swaps. Methodology records PR-001 and PR-002."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -16,8 +17,13 @@ SWAP_MODEL_VERSION = "1.0.0"
 # Static government-to-swap spread used to discount government bonds off the zero curve.
 # In Phase 3 this becomes a market-data factor per currency.
 GOVT_SPREAD: dict[str, float] = {
-    "USD": 0.0005, "EUR": -0.0035, "GBP": 0.0005, "JPY": -0.0005, "MXN": 0.0020,
-    "BRL": 0.0050, "ZAR": 0.0080,
+    "USD": 0.0005,
+    "EUR": -0.0035,
+    "GBP": 0.0005,
+    "JPY": -0.0005,
+    "MXN": 0.0020,
+    "BRL": 0.0050,
+    "ZAR": 0.0080,
 }
 
 
@@ -25,8 +31,9 @@ def price_government_bond(trade: Trade, market: MarketSnapshot, as_of: date) -> 
     bond = trade.instrument
     assert isinstance(bond, GovernmentBond)
     if bond.maturity_date <= as_of:
-        return PricingResult(trade.trade_id, bond.currency, 0.0, "bond_discounting", BOND_MODEL_VERSION,
-                             note="matured")
+        return PricingResult(
+            trade.trade_id, bond.currency, 0.0, "bond_discounting", BOND_MODEL_VERSION, note="matured"
+        )
     curve = market.zero_curve(bond.currency).shifted(GOVT_SPREAD.get(bond.currency, 0.0))
     bounds = schedule(bond.issue_date, bond.maturity_date, bond.coupon_frequency)
     periods = list(zip(bounds[:-1], bounds[1:], strict=True))
@@ -51,11 +58,18 @@ def price_government_bond(trade: Trade, market: MarketSnapshot, as_of: date) -> 
         accrued = full * (as_of - s).days / (e - s).days
     scale = trade.signed_quantity / 100.0
     return PricingResult(
-        trade_id=trade.trade_id, currency=bond.currency, pv_local=pv_per_100 * scale,
-        model="bond_discounting", model_version=BOND_MODEL_VERSION,
+        trade_id=trade.trade_id,
+        currency=bond.currency,
+        pv_local=pv_per_100 * scale,
+        model="bond_discounting",
+        model_version=BOND_MODEL_VERSION,
         cashflows=tuple(Cashflow(f.pay_date, f.amount * scale, f.kind) for f in flows),
-        details={"dirty_price": pv_per_100, "clean_price": pv_per_100 - accrued, "accrued": accrued,
-                 "years_to_maturity": t_mat},
+        details={
+            "dirty_price": pv_per_100,
+            "clean_price": pv_per_100 - accrued,
+            "accrued": accrued,
+            "years_to_maturity": t_mat,
+        },
     )
 
 
@@ -63,8 +77,9 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
     swap = trade.instrument
     assert isinstance(swap, InterestRateSwap)
     if swap.maturity_date <= as_of:
-        return PricingResult(trade.trade_id, swap.currency, 0.0, "swap_single_curve", SWAP_MODEL_VERSION,
-                             note="matured")
+        return PricingResult(
+            trade.trade_id, swap.currency, 0.0, "swap_single_curve", SWAP_MODEL_VERSION, note="matured"
+        )
     curve = market.zero_curve(swap.currency)
     n = trade.quantity
     fixed_pv = 0.0
@@ -81,8 +96,11 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
     for start, end in remaining_periods(swap.effective_date, swap.maturity_date, swap.float_frequency, as_of):
         t1 = max(year_fraction_act365(as_of, start), 0.0)
         t2 = year_fraction_act365(as_of, end)
-        tau = year_fraction(max(start, as_of), end, swap.float_day_count) if start < as_of \
+        tau = (
+            year_fraction(max(start, as_of), end, swap.float_day_count)
+            if start < as_of
             else year_fraction(start, end, swap.float_day_count)
+        )
         # Simple forward in the leg's own day count: (DF(t1)/DF(t2) - 1) / tau.
         df1, df = float(curve.df(t1)), float(curve.df(t2))
         fwd = (df1 / df - 1.0) / tau if tau > 0 else 0.0
@@ -93,9 +111,17 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
     pv = sign * (fixed_pv - float_pv)
     par_rate = (float_pv / n) / annuity if annuity > 0 else 0.0
     return PricingResult(
-        trade_id=trade.trade_id, currency=swap.currency, pv_local=pv, model="swap_single_curve",
+        trade_id=trade.trade_id,
+        currency=swap.currency,
+        pv_local=pv,
+        model="swap_single_curve",
         model_version=SWAP_MODEL_VERSION,
         cashflows=tuple(Cashflow(f.pay_date, sign * f.amount, f.kind) for f in flows),
-        details={"fixed_leg_pv": fixed_pv, "float_leg_pv": float_pv, "annuity": annuity,
-                 "par_rate": par_rate, "years_to_maturity": year_fraction_act365(as_of, swap.maturity_date)},
+        details={
+            "fixed_leg_pv": fixed_pv,
+            "float_leg_pv": float_pv,
+            "annuity": annuity,
+            "par_rate": par_rate,
+            "years_to_maturity": year_fraction_act365(as_of, swap.maturity_date),
+        },
     )

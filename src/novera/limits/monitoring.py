@@ -36,6 +36,8 @@ COLUMNS = [
     "entity_id",
     "filters",
     "amount",
+    "base_amount",
+    "increase_id",
     "current",
     "utilisation",
     "status",
@@ -159,7 +161,17 @@ def status_of(utilisation: float, warning: float) -> str:
     return "OK"
 
 
-def monitor(limits: list[Limit], inputs: RiskInputs, on: date) -> pd.DataFrame:
+def monitor(
+    limits: list[Limit],
+    inputs: RiskInputs,
+    on: date,
+    base_amounts: dict[str, float] | None = None,
+    increase_ids: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """``limits`` should already carry effective amounts (see ``workflow.effective_limits``);
+    ``base_amounts`` and ``increase_ids`` record where an approved increase applied."""
+    base_amounts = base_amounts or {}
+    increase_ids = increase_ids or {}
     rows = []
     for lim in limits:
         if not lim.is_effective(on):
@@ -177,6 +189,8 @@ def monitor(limits: list[Limit], inputs: RiskInputs, on: date) -> pd.DataFrame:
                 "entity_id": lim.scope.entity_id,
                 "filters": filters,
                 "amount": lim.amount,
+                "base_amount": base_amounts.get(lim.limit_id, lim.amount),
+                "increase_id": increase_ids.get(lim.limit_id),
                 "current": current,
                 "utilisation": util,
                 "status": status_of(util, lim.warning_threshold),

@@ -1,4 +1,5 @@
 """Enumerations shared across the platform."""
+
 from __future__ import annotations
 
 from enum import StrEnum

@@ -4,6 +4,7 @@ Each instrument is a frozen pydantic model carrying only contractual terms. Mark
 and valuation live elsewhere. ``Instrument`` is a discriminated union on ``product_type``
 so trades can be serialised and parsed without knowing the concrete class.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -42,6 +43,7 @@ class InstrumentBase(BaseModel):
 
 # --- Rates -------------------------------------------------------------------------
 
+
 class GovernmentBond(InstrumentBase):
     product_type: Literal[ProductType.GOVERNMENT_BOND] = ProductType.GOVERNMENT_BOND
     issuer: str
@@ -79,6 +81,7 @@ class InterestRateSwap(InstrumentBase):
 
 
 # --- FX ----------------------------------------------------------------------------
+
 
 class _FXBase(InstrumentBase):
     pair: str = Field(pattern=r"^[A-Z]{3}/[A-Z]{3}$", description="BASE/QUOTE, e.g. EUR/USD")
@@ -119,6 +122,7 @@ class FXOption(_FXBase):
 
 # --- Equity ------------------------------------------------------------------------
 
+
 class CashEquity(InstrumentBase):
     product_type: Literal[ProductType.CASH_EQUITY] = ProductType.CASH_EQUITY
     ticker: str
@@ -147,6 +151,7 @@ class EquityOption(InstrumentBase):
 
 # --- Commodities -------------------------------------------------------------------
 
+
 class CommodityFuture(InstrumentBase):
     product_type: Literal[ProductType.COMMODITY_FUTURE] = ProductType.COMMODITY_FUTURE
     commodity: str = Field(description="e.g. BRENT, WTI, NATGAS, GOLD, COPPER")
@@ -157,6 +162,7 @@ class CommodityFuture(InstrumentBase):
 
 
 # --- Credit ------------------------------------------------------------------------
+
 
 class CDSIndex(InstrumentBase):
     product_type: Literal[ProductType.CDS_INDEX] = ProductType.CDS_INDEX
@@ -169,6 +175,7 @@ class CDSIndex(InstrumentBase):
 
 
 # --- Digital assets ----------------------------------------------------------------
+
 
 class CryptoSpot(InstrumentBase):
     product_type: Literal[ProductType.CRYPTO_SPOT] = ProductType.CRYPTO_SPOT

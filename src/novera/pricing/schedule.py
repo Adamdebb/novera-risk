@@ -4,6 +4,7 @@ Schedules are generated backwards from maturity with no calendar adjustment (the
 simulator has no holiday calendars). Day counts implement the standard formulas; ACT/ACT
 is approximated as ACT/365.25 and documented as such in the methodology records.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -14,7 +15,10 @@ from dateutil.relativedelta import relativedelta
 from novera.domain.enums import DayCount, Frequency
 
 MONTHS: dict[Frequency, int] = {
-    Frequency.ANNUAL: 12, Frequency.SEMI_ANNUAL: 6, Frequency.QUARTERLY: 3, Frequency.MONTHLY: 1,
+    Frequency.ANNUAL: 12,
+    Frequency.SEMI_ANNUAL: 6,
+    Frequency.QUARTERLY: 3,
+    Frequency.MONTHLY: 1,
 }
 
 

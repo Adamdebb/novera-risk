@@ -105,3 +105,35 @@ def test_local_client_matches_service(db_path):
     s = c.summary()
     assert s["run_id"].startswith("run_")
     assert c.limits(status="BREACH") == [r for r in c.limits() if r["status"] == "BREACH"]
+
+
+def test_breach_endpoints_round_trip(client):
+    breaches = client.get("/breaches").json()
+    assert breaches, "the EOD run should have raised at least one breach"
+    bid = breaches[0]["breach_id"]
+    detail = client.get(f"/breaches/{bid}").json()
+    assert detail["actions"][0]["action"] == "RAISED"
+    r = client.post(f"/breaches/{bid}/acknowledge", json={"actor": "Head of Desk", "comment": "on it"})
+    assert r.status_code == 200 and r.json()["status"] == "ACKNOWLEDGED"
+    r = client.post(f"/breaches/{bid}/acknowledge", json={"actor": "Head of Desk"})
+    assert r.status_code == 409  # workflow rule violated
+    r = client.post(f"/breaches/{bid}/close", json={"actor": "Head of Desk", "reason": "RISK_REDUCED"})
+    assert r.status_code == 409
+    lid = breaches[0]["limit_id"]
+    lim = next(x for x in client.get("/runs/latest/limits").json() if x["limit_id"] == lid)
+    r = client.post("/increases", json={"limit_id": lid, "new_amount": lim["base_amount"] * 1.1,
+                                        "expires_on": "2026-10-10", "requested_by": "Head of Desk",
+                                        "rationale": "unwind scheduled", "effective_from": "2026-09-11",
+                                        "breach_id": bid})
+    assert r.status_code == 200, r.text
+    iid = r.json()["increase_id"]
+    inc = next(i for i in client.get("/increases").json() if i["increase_id"] == iid)
+    assert inc["allowed_approvers"]
+    r = client.post(f"/increases/{iid}/decide", json={"approver": "Head of Desk", "approve": True})
+    assert r.status_code == 409
+    r = client.post(f"/increases/{iid}/decide", json={"approver": inc["allowed_approvers"][0], "approve": True})
+    assert r.status_code == 200 and r.json()["status"] == "APPROVED"
+    r = client.post(f"/breaches/{bid}/close", json={"actor": "Head of Desk", "reason": "TEMPORARY_INCREASE_APPROVED"})
+    assert r.status_code == 200 and r.json()["status"] == "CLOSED"
+    rid = client.get("/runs").json()[0]["run_id"]
+    assert client.get("/compare", params={"run_a": rid, "run_b": rid}).json()["headline"]["var"]["change"] == 0

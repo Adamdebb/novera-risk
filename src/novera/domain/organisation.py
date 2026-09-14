@@ -4,6 +4,7 @@ Aggregation hierarchy: book -> desk -> business -> firm. Legal entity is carried
 book and is a cross-cutting dimension, as in a real bank where one desk books into
 several entities.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator

@@ -5,6 +5,7 @@ entities, roughly thirty books. Counterparties include banks, dealers, funds, co
 sovereigns, CCPs and exchanges, with netting sets and CSAs for bilateral OTC business.
 Two counterparties are deliberately uncollateralised to seed wrong-way-risk stories.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,63 +29,161 @@ FIRM_ID = "GMB"
 
 # desk_id, business_id, name, asset class, region, books (book_id, legal_entity_id, name)
 _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] = [
-    ("USD_RATES", "MACRO", "USD Rates", AssetClass.RATES, "AMER", [
-        ("USD_MACRO_RV", "GMB_NY", "USD Macro RV"),
-        ("USD_SWAPS_FLOW", "GMB_NY", "USD Swaps Flow"),
-        ("UST_CASH", "GMB_NY", "UST Cash"),
-    ]),
-    ("EUR_RATES", "MACRO", "EUR Rates", AssetClass.RATES, "EMEA", [
-        ("EUR_SWAPS", "GMB_LN", "EUR Swaps"),
-        ("EGB_CASH", "GMB_LN", "European Govies"),
-    ]),
-    ("GBP_RATES", "MACRO", "GBP Rates", AssetClass.RATES, "EMEA", [
-        ("GBP_SWAPS", "GMB_LN", "GBP Swaps"),
-        ("GILTS", "GMB_LN", "Gilts"),
-    ]),
-    ("JPY_RATES", "MACRO", "JPY Rates", AssetClass.RATES, "APAC", [
-        ("JPY_SWAPS", "GMB_SG", "JPY Swaps"),
-        ("JGB_CASH", "GMB_SG", "JGB Cash"),
-    ]),
-    ("EM_RATES", "MACRO", "EM Rates", AssetClass.RATES, "EMEA", [
-        ("EM_LOCAL_RATES", "GMB_LN", "EM Local Rates"),
-    ]),
-    ("G10_FX", "MACRO", "G10 FX", AssetClass.FX, "EMEA", [
-        ("G10_SPOT_FWD", "GMB_LN", "G10 Spot and Forwards"),
-        ("G10_FX_OPTIONS", "GMB_LN", "G10 FX Options"),
-    ]),
-    ("EM_FX", "MACRO", "EM FX", AssetClass.FX, "APAC", [
-        ("EM_FX_FWD", "GMB_SG", "EM FX Forwards"),
-        ("EM_FX_OPTIONS", "GMB_SG", "EM FX Options"),
-    ]),
-    ("INDEX_EQ", "EQUITIES", "Index Equity", AssetClass.EQUITY, "EMEA", [
-        ("EU_INDEX", "GMB_LN", "European Index"),
-        ("US_INDEX", "GMB_NY", "US Index"),
-        ("INDEX_VOL", "GMB_LN", "Index Volatility"),
-    ]),
-    ("SINGLE_NAME_EQ", "EQUITIES", "Single Name Equity", AssetClass.EQUITY, "AMER", [
-        ("US_CASH_EQ", "GMB_NY", "US Cash Equity"),
-        ("EU_CASH_EQ", "GMB_LN", "European Cash Equity"),
-        ("SN_OPTIONS", "GMB_NY", "Single Name Options"),
-    ]),
-    ("IG_CREDIT", "CREDIT", "IG Credit", AssetClass.CREDIT, "AMER", [
-        ("CDX_IG", "GMB_NY", "CDX IG Index"),
-        ("ITRAXX_MAIN", "GMB_LN", "iTraxx Main"),
-    ]),
-    ("HY_CREDIT", "CREDIT", "HY Credit", AssetClass.CREDIT, "EMEA", [
-        ("CDX_HY", "GMB_NY", "CDX HY Index"),
-        ("ITRAXX_XOVER", "GMB_LN", "iTraxx Crossover"),
-    ]),
-    ("ENERGY", "COMMODITIES", "Energy", AssetClass.COMMODITY, "EMEA", [
-        ("CRUDE", "GMB_LN", "Crude Oil"),
-        ("NATGAS", "GMB_LN", "Natural Gas"),
-    ]),
-    ("METALS", "COMMODITIES", "Metals", AssetClass.COMMODITY, "AMER", [
-        ("PRECIOUS", "GMB_NY", "Precious Metals"),
-        ("BASE_METALS", "GMB_LN", "Base Metals"),
-    ]),
-    ("DIGITAL", "DIGITAL_ASSETS", "Digital Assets", AssetClass.DIGITAL_ASSET, "APAC", [
-        ("CRYPTO_SPOT", "GMB_SG", "Crypto Spot"),
-    ]),
+    (
+        "USD_RATES",
+        "MACRO",
+        "USD Rates",
+        AssetClass.RATES,
+        "AMER",
+        [
+            ("USD_MACRO_RV", "GMB_NY", "USD Macro RV"),
+            ("USD_SWAPS_FLOW", "GMB_NY", "USD Swaps Flow"),
+            ("UST_CASH", "GMB_NY", "UST Cash"),
+        ],
+    ),
+    (
+        "EUR_RATES",
+        "MACRO",
+        "EUR Rates",
+        AssetClass.RATES,
+        "EMEA",
+        [
+            ("EUR_SWAPS", "GMB_LN", "EUR Swaps"),
+            ("EGB_CASH", "GMB_LN", "European Govies"),
+        ],
+    ),
+    (
+        "GBP_RATES",
+        "MACRO",
+        "GBP Rates",
+        AssetClass.RATES,
+        "EMEA",
+        [
+            ("GBP_SWAPS", "GMB_LN", "GBP Swaps"),
+            ("GILTS", "GMB_LN", "Gilts"),
+        ],
+    ),
+    (
+        "JPY_RATES",
+        "MACRO",
+        "JPY Rates",
+        AssetClass.RATES,
+        "APAC",
+        [
+            ("JPY_SWAPS", "GMB_SG", "JPY Swaps"),
+            ("JGB_CASH", "GMB_SG", "JGB Cash"),
+        ],
+    ),
+    (
+        "EM_RATES",
+        "MACRO",
+        "EM Rates",
+        AssetClass.RATES,
+        "EMEA",
+        [
+            ("EM_LOCAL_RATES", "GMB_LN", "EM Local Rates"),
+        ],
+    ),
+    (
+        "G10_FX",
+        "MACRO",
+        "G10 FX",
+        AssetClass.FX,
+        "EMEA",
+        [
+            ("G10_SPOT_FWD", "GMB_LN", "G10 Spot and Forwards"),
+            ("G10_FX_OPTIONS", "GMB_LN", "G10 FX Options"),
+        ],
+    ),
+    (
+        "EM_FX",
+        "MACRO",
+        "EM FX",
+        AssetClass.FX,
+        "APAC",
+        [
+            ("EM_FX_FWD", "GMB_SG", "EM FX Forwards"),
+            ("EM_FX_OPTIONS", "GMB_SG", "EM FX Options"),
+        ],
+    ),
+    (
+        "INDEX_EQ",
+        "EQUITIES",
+        "Index Equity",
+        AssetClass.EQUITY,
+        "EMEA",
+        [
+            ("EU_INDEX", "GMB_LN", "European Index"),
+            ("US_INDEX", "GMB_NY", "US Index"),
+            ("INDEX_VOL", "GMB_LN", "Index Volatility"),
+        ],
+    ),
+    (
+        "SINGLE_NAME_EQ",
+        "EQUITIES",
+        "Single Name Equity",
+        AssetClass.EQUITY,
+        "AMER",
+        [
+            ("US_CASH_EQ", "GMB_NY", "US Cash Equity"),
+            ("EU_CASH_EQ", "GMB_LN", "European Cash Equity"),
+            ("SN_OPTIONS", "GMB_NY", "Single Name Options"),
+        ],
+    ),
+    (
+        "IG_CREDIT",
+        "CREDIT",
+        "IG Credit",
+        AssetClass.CREDIT,
+        "AMER",
+        [
+            ("CDX_IG", "GMB_NY", "CDX IG Index"),
+            ("ITRAXX_MAIN", "GMB_LN", "iTraxx Main"),
+        ],
+    ),
+    (
+        "HY_CREDIT",
+        "CREDIT",
+        "HY Credit",
+        AssetClass.CREDIT,
+        "EMEA",
+        [
+            ("CDX_HY", "GMB_NY", "CDX HY Index"),
+            ("ITRAXX_XOVER", "GMB_LN", "iTraxx Crossover"),
+        ],
+    ),
+    (
+        "ENERGY",
+        "COMMODITIES",
+        "Energy",
+        AssetClass.COMMODITY,
+        "EMEA",
+        [
+            ("CRUDE", "GMB_LN", "Crude Oil"),
+            ("NATGAS", "GMB_LN", "Natural Gas"),
+        ],
+    ),
+    (
+        "METALS",
+        "COMMODITIES",
+        "Metals",
+        AssetClass.COMMODITY,
+        "AMER",
+        [
+            ("PRECIOUS", "GMB_NY", "Precious Metals"),
+            ("BASE_METALS", "GMB_LN", "Base Metals"),
+        ],
+    ),
+    (
+        "DIGITAL",
+        "DIGITAL_ASSETS",
+        "Digital Assets",
+        AssetClass.DIGITAL_ASSET,
+        "APAC",
+        [
+            ("CRYPTO_SPOT", "GMB_SG", "Crypto Spot"),
+        ],
+    ),
 ]
 
 _BUSINESSES = [
@@ -106,8 +205,16 @@ def build_global_macro_bank() -> Organisation:
     desks, books, traders = [], [], []
     n = 1
     for desk_id, business_id, name, ac, region, book_defs in _DESKS:
-        desks.append(Desk(desk_id=desk_id, business_id=business_id, name=name,
-                          asset_class=ac, region=region, head=f"Head of {name}"))
+        desks.append(
+            Desk(
+                desk_id=desk_id,
+                business_id=business_id,
+                name=name,
+                asset_class=ac,
+                region=region,
+                head=f"Head of {name}",
+            )
+        )
         for book_id, le, bname in book_defs:
             books.append(Book(book_id=book_id, desk_id=desk_id, legal_entity_id=le, name=bname))
         for _ in range(2):
@@ -116,8 +223,7 @@ def build_global_macro_bank() -> Organisation:
     return Organisation(
         firm=Firm(firm_id=FIRM_ID, name="Global Macro Bank", firm_type="INVESTMENT_BANK"),
         legal_entities=tuple(
-            LegalEntity(legal_entity_id=i, firm_id=FIRM_ID, name=n_, jurisdiction=j,
-                        functional_currency=c)
+            LegalEntity(legal_entity_id=i, firm_id=FIRM_ID, name=n_, jurisdiction=j, functional_currency=c)
             for i, n_, j, c in _LEGAL_ENTITIES
         ),
         businesses=tuple(Business(business_id=i, firm_id=FIRM_ID, name=n_) for i, n_ in _BUSINESSES),
@@ -129,6 +235,7 @@ def build_global_macro_bank() -> Organisation:
 
 # --- Counterparties ------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class CounterpartyUniverse:
     counterparties: list[Counterparty]
@@ -137,8 +244,11 @@ class CounterpartyUniverse:
 
     @property
     def bilateral(self) -> list[Counterparty]:
-        return [c for c in self.counterparties
-                if c.counterparty_type not in (CounterpartyType.CCP, CounterpartyType.EXCHANGE)]
+        return [
+            c
+            for c in self.counterparties
+            if c.counterparty_type not in (CounterpartyType.CCP, CounterpartyType.EXCHANGE)
+        ]
 
     def ccp(self, name: str) -> Counterparty:
         return next(c for c in self.counterparties if c.counterparty_id == name)
@@ -184,15 +294,33 @@ _COUNTERPARTIES: list[tuple[str, str, CounterpartyType, str, str, str, bool]] = 
     ("EXCH_DTC", "DTC / Treasury settlement", CounterpartyType.EXCHANGE, "US", "Financials", "NR", False),
 ]
 
-_PD_BY_RATING = {"AAA": 0.0002, "AA": 0.0003, "AA-": 0.0004, "A+": 0.0006, "A": 0.0008,
-                 "A-": 0.001, "BBB+": 0.0015, "BBB": 0.002, "BB+": 0.006, "B": 0.04, "NR": 0.01}
+_PD_BY_RATING = {
+    "AAA": 0.0002,
+    "AA": 0.0003,
+    "AA-": 0.0004,
+    "A+": 0.0006,
+    "A": 0.0008,
+    "A-": 0.001,
+    "BBB+": 0.0015,
+    "BBB": 0.002,
+    "BB+": 0.006,
+    "B": 0.04,
+    "NR": 0.01,
+}
 
 
 def build_counterparty_universe(org: Organisation) -> CounterpartyUniverse:
     cpties = [
-        Counterparty(counterparty_id=i, name=n, counterparty_type=t, country=c, sector=s,
-                     rating=r, internal_pd=_PD_BY_RATING[r],
-                     on_watchlist=(i in {"CORP_AIR", "SOV_EM"}))
+        Counterparty(
+            counterparty_id=i,
+            name=n,
+            counterparty_type=t,
+            country=c,
+            sector=s,
+            rating=r,
+            internal_pd=_PD_BY_RATING[r],
+            on_watchlist=(i in {"CORP_AIR", "SOV_EM"}),
+        )
         for i, n, t, c, s, r, _ in _COUNTERPARTIES
     ]
     csas: list[CSA] = []
@@ -205,18 +333,25 @@ def build_counterparty_universe(org: Organisation) -> CounterpartyUniverse:
             # Banks and dealers on tight terms; funds and corporates on looser thresholds.
             tight = t in (CounterpartyType.BANK, CounterpartyType.BROKER_DEALER)
             csa = CSA(
-                csa_id=f"CSA_{i}", collateral_currency="USD",
+                csa_id=f"CSA_{i}",
+                collateral_currency="USD",
                 threshold_we_post=0.0 if tight else 5_000_000.0,
                 threshold_they_post=0.0 if tight else (2_000_000.0 if r.startswith("A") else 10_000_000.0),
                 minimum_transfer_amount=250_000.0 if tight else 500_000.0,
                 independent_amount=0.0 if tight else 1_000_000.0,
-                rounding=10_000.0, haircut=0.0 if tight else 0.02,
+                rounding=10_000.0,
+                haircut=0.0 if tight else 0.02,
             )
             csas.append(csa)
             csa_id = csa.csa_id
         for le in org.legal_entities:
-            netting_sets.append(NettingSet(
-                netting_set_id=f"NS_{i}_{le.legal_entity_id}", counterparty_id=i,
-                legal_entity_id=le.legal_entity_id, agreement_type="ISDA", csa_id=csa_id,
-            ))
+            netting_sets.append(
+                NettingSet(
+                    netting_set_id=f"NS_{i}_{le.legal_entity_id}",
+                    counterparty_id=i,
+                    legal_entity_id=le.legal_entity_id,
+                    agreement_type="ISDA",
+                    csa_id=csa_id,
+                )
+            )
     return CounterpartyUniverse(cpties, netting_sets, csas)

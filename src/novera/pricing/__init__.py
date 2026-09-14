@@ -2,6 +2,7 @@
 
 ``PRICERS`` is the registry used by valuation and by the risk engine.
 """
+
 from novera.domain.enums import ProductType
 from novera.pricing.base import Cashflow, Pricer, PricingError, PricingResult
 from novera.pricing.commodity import price_commodity_future

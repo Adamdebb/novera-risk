@@ -6,10 +6,12 @@ from collections.abc import Iterator
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from novera import __version__
-from novera.api.service import RiskService, RunNotFoundError
+from novera.api.service import RiskService, RiskWriteService, RunNotFoundError
 from novera.config import get_settings
+from novera.limits import WorkflowError
 from novera.storage.duckdb_repository import DuckDBRepository
 
 settings = get_settings()
@@ -23,6 +25,11 @@ def service() -> Iterator[RiskService]:
         yield RiskService(repo)
 
 
+def write_service() -> Iterator[RiskWriteService]:
+    with DuckDBRepository(settings.db_path) as repo:
+        yield RiskWriteService(repo)
+
+
 def _guard(fn, *a, **kw) -> Any:
     try:
         return fn(*a, **kw)
@@ -30,6 +37,31 @@ def _guard(fn, *a, **kw) -> Any:
         raise HTTPException(404, f"run {e.run_id} not found") from e
     except KeyError as e:
         raise HTTPException(404, str(e)) from e
+    except WorkflowError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+class ActionBody(BaseModel):
+    actor: str = Field(min_length=1)
+    comment: str = ""
+    to: str | None = None
+    reason: str | None = None
+
+
+class IncreaseBody(BaseModel):
+    limit_id: str
+    new_amount: float = Field(gt=0)
+    expires_on: str
+    requested_by: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    effective_from: str | None = None
+    breach_id: str | None = None
+
+
+class DecisionBody(BaseModel):
+    approver: str = Field(min_length=1)
+    approve: bool
+    comment: str = ""
 
 
 @app.get("/health")
@@ -144,3 +176,70 @@ def audit(subject: str | None = None, limit: int = 100, svc: RiskService = Depen
 @app.get("/organisation")
 def organisation(svc: RiskService = Depends(service)):
     return svc.organisation()
+
+
+# --- breach workflow ------------------------------------------------------------------------
+@app.get("/breaches")
+def breaches(open_only: bool = True, limit_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.breaches(open_only, limit_id)
+
+
+@app.get("/breaches/{breach_id}")
+def breach(breach_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.breach, breach_id)
+
+
+@app.post("/breaches/{breach_id}/acknowledge")
+def acknowledge(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
+    return _guard(svc.acknowledge, breach_id, body.actor, body.comment)
+
+
+@app.post("/breaches/{breach_id}/escalate")
+def escalate(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
+    return _guard(svc.escalate, breach_id, body.actor, body.to, body.comment)
+
+
+@app.post("/breaches/{breach_id}/comment")
+def comment(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
+    return _guard(svc.comment, breach_id, body.actor, body.comment)
+
+
+@app.post("/breaches/{breach_id}/close")
+def close(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
+    if not body.reason:
+        raise HTTPException(422, "reason is required")
+    return _guard(svc.close, breach_id, body.actor, body.reason, body.comment)
+
+
+@app.get("/increases")
+def increases(status: str | None = None, limit_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.increases(status, limit_id)
+
+
+@app.post("/increases")
+def request_increase(body: IncreaseBody, svc: RiskWriteService = Depends(write_service)):
+    return _guard(
+        svc.request_increase,
+        body.limit_id,
+        body.new_amount,
+        body.expires_on,
+        body.requested_by,
+        body.rationale,
+        body.effective_from,
+        body.breach_id,
+    )
+
+
+@app.post("/increases/{increase_id}/decide")
+def decide_increase(increase_id: str, body: DecisionBody, svc: RiskWriteService = Depends(write_service)):
+    return _guard(svc.decide_increase, increase_id, body.approver, body.approve, body.comment)
+
+
+@app.post("/increases/{increase_id}/cancel")
+def cancel_increase(increase_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
+    return _guard(svc.cancel_increase, increase_id, body.actor)
+
+
+@app.get("/compare")
+def compare(run_a: str, run_b: str, by: str = "asset_class", svc: RiskService = Depends(service)):
+    return _guard(svc.compare, run_a, run_b, by)

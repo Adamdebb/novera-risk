@@ -59,8 +59,12 @@ with drill-down.
 - [x] Daily P&L explain: full-revaluation waterfall with a sensitivity challenger (MR-007)
 - [x] Read API (FastAPI) and Streamlit morning dashboard with drill-down, VaR, stress,
       limits, P&L, data quality, runs and audit, all from the stored run
-- [ ] Run comparison (any two runs side by side)
-- [ ] Breach workflow: acknowledge, escalate, close, with approvals
+- [x] Run comparison (any two runs side by side): headline, VaR by group, limit moves, trade moves
+- [x] Breach workflow (MR-008): raise, acknowledge, escalate, auto-escalate, close with reasons;
+      temporary limit increases with an approval matrix, expiry and effective amounts in monitoring;
+      write endpoints on the API and actions in the dashboard; `novera breach` CLI
+- [x] Second simulated business day (new trades, one concentration swap unwound) so the
+      day-on-day story is real: three breaches auto-escalate, EM FX breaches on a new trade
 - [ ] Independent-challenger reconciliation of externally ingested risk results
 - [ ] Scheduler and alerts
 - [ ] Real market-data adapters (FRED, Yahoo, crypto exchanges) so named historical
