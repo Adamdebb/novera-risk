@@ -82,8 +82,23 @@ def run_counterparty(
     history = MarketHistory.from_long(repo.load_market_history())
     netting_sets, csas = repo.load_netting_sets()
     counterparties = {c.counterparty_id: c for c in repo.load_counterparties()}
+    simm_frame = repo.load_run_frame(run_id, "reg_simm")
+    initial_margin = (
+        {str(r["netting_set_id"]): float(r["im"]) for _, r in simm_frame.iterrows()}
+        if len(simm_frame)
+        else {}
+    )
     res = simulate_exposure(
-        list(snap.trades), market, history, universe, netting_sets, csas, run.reporting_currency, cfg, workers
+        list(snap.trades),
+        market,
+        history,
+        universe,
+        netting_sets,
+        csas,
+        run.reporting_currency,
+        cfg,
+        workers,
+        initial_margin=initial_margin,
     )
     profiles = res.profiles
     netting_summary = summarise(profiles, "netting_set_id")
@@ -130,6 +145,7 @@ def run_counterparty(
             "margin_period_days": cfg.margin_period_days,
             "own_spread_bp": settings.own_credit_spread_bp,
             "lgd": settings.lgd,
+            "initial_margin_sets": len(initial_margin),
         },
     )
     if persist:

@@ -41,7 +41,7 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(counterparty=False, var=VaRConfig(window_days=150), workers=1),
+        res = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
                       runs_dir=tmp_path_factory.mktemp("runs"))
         from novera.counterparty_risk import ExposureSimConfig, run_counterparty
 
@@ -182,3 +182,8 @@ def test_counterparty_endpoints(client):
     r = client.post("/runs/latest/csa-what-if", json={"netting_set_id": ns, "uncollateralised": True})
     assert r.status_code == 200 and r.json()["what_if_csa"] is None and r.json()["after"] and r.json()["before"]
     assert client.get("/runs/latest/counterparties/NOPE").status_code == 404
+
+
+def test_capital_endpoint(client):
+    r = client.get("/runs/latest/capital")
+    assert r.status_code == 200

@@ -255,6 +255,9 @@ class HttpClient:
         r.raise_for_status()
         return r.json()
 
+    def capital(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/capital")
+
     def risk_pack(self, run_id=None, out_dir=None, pdf=True):
         r = self.http.post(f"/runs/{self._rid(run_id)}/risk-pack", params={"pdf": pdf}, timeout=300)
         r.raise_for_status()

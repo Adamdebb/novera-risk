@@ -455,6 +455,62 @@ def build_tools(db_path: str) -> list[Tool]:
             ],
         }
 
+    def capital_tool(run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            c = s.capital(r.run_id)
+        if not c.get("available"):
+            return {"run_id": r.run_id, "error": "no regulatory run stored"}
+        sm = c["summary"]
+        return {
+            "run_id": r.run_id,
+            "capital_m": {
+                k: _m(v)
+                for k, v in sm.items()
+                if k
+                in (
+                    "frtb_sa",
+                    "frtb_sa_sbm",
+                    "frtb_sa_drc",
+                    "frtb_ima",
+                    "imes",
+                    "ses",
+                    "saccr_ead",
+                    "saccr_rwa",
+                    "saccr_capital",
+                    "simm_im",
+                    "ba_cva_capital",
+                )
+            },
+            "ima_multiplier": sm.get("ima_multiplier"),
+            "nmrf": sm.get("nmrf"),
+            "pla_red_desks": sm.get("pla_red_desks"),
+            "frtb_sa_by_class_m": [
+                {
+                    "class": x["risk_class"],
+                    "delta": _m(x["delta"]),
+                    "vega": _m(x["vega"]),
+                    "curvature": _m(x["curvature"]),
+                }
+                for x in c["frtb_sa_classes"]
+            ],
+            "by_desk_m": [
+                {
+                    "desk_id": x["desk_id"],
+                    "frtb_sa": _m(x["frtb_sa"]),
+                    "frtb_ima": _m(x["frtb_ima"]),
+                    "saccr": _m(x["saccr"]),
+                    "ba_cva": _m(x["ba_cva"]),
+                }
+                for x in c["by_desk"][:10]
+            ],
+            "saccr_top_m": [
+                {"counterparty_id": x["counterparty_id"], "ead": _m(x["ead"]), "rwa": _m(x["rwa"])}
+                for x in c["saccr_counterparty"][:6]
+            ],
+        }
+
     def what_if_tool(shocks: list[dict], run_id: str | None = None, by: str = "asset_class") -> dict:
         repo, s = svc()
         with repo:
@@ -602,6 +658,13 @@ def build_tools(db_path: str) -> list[Tool]:
             "terms and stressed exposure for one counterparty_id.",
             _obj({"counterparty_id": {"type": "string"}, "run_id": RUN}),
             counterparty_tool,
+        ),
+        Tool(
+            "capital",
+            "Regulatory capital: FRTB SA by risk class and desk, FRTB IMA (IMES, multiplier, NMRF, "
+            "P&L attribution zones), SA-CCR EAD and RWA by counterparty, SIMM-lite initial margin, BA-CVA.",
+            _obj({"run_id": RUN}),
+            capital_tool,
         ),
         Tool(
             "what_if",
