@@ -1,0 +1,270 @@
+"""DuckDB implementation of the repository protocol.
+
+Design: reference data and trades are stored with their key columns for querying and a
+JSON ``payload`` holding the full pydantic document. That keeps the schema stable while
+the domain evolves, and the payload round-trips through pydantic validation on load.
+SQL is ANSI except where marked ``# duckdb-only``.
+"""
+from __future__ import annotations
+
+import json
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+import duckdb
+from pydantic import TypeAdapter
+
+from novera.domain.counterparties import CSA, Counterparty, NettingSet
+from novera.domain.limits import Limit
+from novera.domain.organisation import (
+    Book,
+    Business,
+    Desk,
+    Firm,
+    LegalEntity,
+    Organisation,
+    Trader,
+)
+from novera.domain.snapshots import PortfolioSnapshot
+from novera.domain.trades import Trade
+
+_TRADE = TypeAdapter(Trade)
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS organisation_entity (
+    firm_id VARCHAR NOT NULL,
+    entity_kind VARCHAR NOT NULL,
+    entity_id VARCHAR NOT NULL,
+    ordinal INTEGER NOT NULL,
+    payload JSON NOT NULL,
+    PRIMARY KEY (firm_id, entity_kind, entity_id)
+);
+CREATE TABLE IF NOT EXISTS counterparty (
+    counterparty_id VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    counterparty_type VARCHAR NOT NULL,
+    country VARCHAR NOT NULL,
+    rating VARCHAR NOT NULL,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS csa (
+    csa_id VARCHAR PRIMARY KEY,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS netting_set (
+    netting_set_id VARCHAR PRIMARY KEY,
+    counterparty_id VARCHAR NOT NULL,
+    legal_entity_id VARCHAR NOT NULL,
+    csa_id VARCHAR,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS risk_limit (
+    limit_id VARCHAR PRIMARY KEY,
+    limit_type VARCHAR NOT NULL,
+    scope_level VARCHAR NOT NULL,
+    scope_entity_id VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    effective_from DATE NOT NULL,
+    effective_to DATE,
+    payload JSON NOT NULL
+);
+CREATE TABLE IF NOT EXISTS portfolio_snapshot (
+    snapshot_id VARCHAR PRIMARY KEY,
+    business_date DATE NOT NULL,
+    source VARCHAR NOT NULL,
+    trade_count INTEGER NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS trade (
+    snapshot_id VARCHAR NOT NULL,
+    trade_id VARCHAR NOT NULL,
+    version INTEGER NOT NULL,
+    product_type VARCHAR NOT NULL,
+    asset_class VARCHAR NOT NULL,
+    currency VARCHAR NOT NULL,
+    book_id VARCHAR NOT NULL,
+    trader_id VARCHAR NOT NULL,
+    counterparty_id VARCHAR NOT NULL,
+    netting_set_id VARCHAR,
+    status VARCHAR NOT NULL,
+    trade_date DATE NOT NULL,
+    payload JSON NOT NULL,
+    PRIMARY KEY (snapshot_id, trade_id, version)
+);
+"""
+
+
+class DuckDBRepository:
+    def __init__(self, path: Path | str = ":memory:") -> None:
+        self._conn = duckdb.connect(str(path))
+
+    # --- lifecycle -----------------------------------------------------------------
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self) -> DuckDBRepository:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def init_schema(self) -> None:
+        for stmt in SCHEMA.strip().split(";"):
+            if stmt.strip():
+                self._conn.execute(stmt)
+
+    # --- organisation --------------------------------------------------------------
+    def save_organisation(self, org: Organisation) -> None:
+        rows: list[tuple[str, str, str, int, str]] = [
+            (org.firm.firm_id, "firm", org.firm.firm_id, 0, org.firm.model_dump_json())
+        ]
+        groups: list[tuple[str, tuple[Any, ...], str]] = [
+            ("legal_entity", org.legal_entities, "legal_entity_id"),
+            ("business", org.businesses, "business_id"),
+            ("desk", org.desks, "desk_id"),
+            ("book", org.books, "book_id"),
+            ("trader", org.traders, "trader_id"),
+        ]
+        for kind, items, key in groups:
+            rows.extend(
+                (org.firm.firm_id, kind, getattr(i, key), n, i.model_dump_json())
+                for n, i in enumerate(items)
+            )
+        self._conn.execute("DELETE FROM organisation_entity WHERE firm_id = ?", [org.firm.firm_id])
+        self._conn.executemany("INSERT INTO organisation_entity VALUES (?, ?, ?, ?, ?)", rows)
+
+    def load_organisation(self, firm_id: str) -> Organisation:
+        rows = self._conn.execute(
+            "SELECT entity_kind, payload FROM organisation_entity WHERE firm_id = ? "
+            "ORDER BY entity_kind, ordinal",
+            [firm_id],
+        ).fetchall()
+        if not rows:
+            raise KeyError(f"no organisation for firm_id={firm_id!r}")
+        by_kind: dict[str, list[dict[str, Any]]] = {}
+        for kind, payload in rows:
+            by_kind.setdefault(kind, []).append(json.loads(payload))
+        return Organisation(
+            firm=Firm(**by_kind["firm"][0]),
+            legal_entities=tuple(LegalEntity(**d) for d in by_kind.get("legal_entity", [])),
+            businesses=tuple(Business(**d) for d in by_kind.get("business", [])),
+            desks=tuple(Desk(**d) for d in by_kind.get("desk", [])),
+            books=tuple(Book(**d) for d in by_kind.get("book", [])),
+            traders=tuple(Trader(**d) for d in by_kind.get("trader", [])),
+        )
+
+    # --- counterparties, netting, CSA ----------------------------------------------
+    def save_counterparties(self, items: list[Counterparty]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO counterparty VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (c.counterparty_id, c.name, c.counterparty_type.value, c.country, c.rating,
+                 c.model_dump_json())
+                for c in items
+            ],
+        )
+
+    def load_counterparties(self) -> list[Counterparty]:
+        rows = self._conn.execute(
+            "SELECT payload FROM counterparty ORDER BY counterparty_id"
+        ).fetchall()
+        return [Counterparty(**json.loads(p)) for (p,) in rows]
+
+    def save_netting_sets(self, items: list[NettingSet], csas: list[CSA]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO csa VALUES (?, ?)",
+            [(c.csa_id, c.model_dump_json()) for c in csas],
+        )
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO netting_set VALUES (?, ?, ?, ?, ?)",
+            [
+                (n.netting_set_id, n.counterparty_id, n.legal_entity_id, n.csa_id,
+                 n.model_dump_json())
+                for n in items
+            ],
+        )
+
+    def load_netting_sets(self) -> tuple[list[NettingSet], list[CSA]]:
+        ns = self._conn.execute(
+            "SELECT payload FROM netting_set ORDER BY netting_set_id"
+        ).fetchall()
+        cs = self._conn.execute("SELECT payload FROM csa ORDER BY csa_id").fetchall()
+        return (
+            [NettingSet(**json.loads(p)) for (p,) in ns],
+            [CSA(**json.loads(p)) for (p,) in cs],
+        )
+
+    # --- limits --------------------------------------------------------------------
+    def save_limits(self, items: list[Limit]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO risk_limit VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    lim.limit_id, lim.limit_type.value, lim.scope.level.value, lim.scope.entity_id,
+                    lim.status.value, lim.effective_from, lim.effective_to, lim.model_dump_json(),
+                )
+                for lim in items
+            ],
+        )
+
+    def load_limits(self, on: date | None = None) -> list[Limit]:
+        if on is None:
+            rows = self._conn.execute("SELECT payload FROM risk_limit ORDER BY limit_id").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT payload FROM risk_limit WHERE status = 'APPROVED' AND effective_from <= ? "
+                "AND (effective_to IS NULL OR effective_to >= ?) ORDER BY limit_id",
+                [on, on],
+            ).fetchall()
+        return [Limit(**json.loads(p)) for (p,) in rows]
+
+    # --- portfolio snapshots -------------------------------------------------------
+    def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> str:
+        sid = snapshot.snapshot_id
+        exists = self._conn.execute(
+            "SELECT 1 FROM portfolio_snapshot WHERE snapshot_id = ?", [sid]
+        ).fetchone()
+        if exists:
+            return sid  # immutable: same content, same id, nothing to do
+        self._conn.execute(
+            "INSERT INTO portfolio_snapshot (snapshot_id, business_date, source, trade_count) "
+            "VALUES (?, ?, ?, ?)",
+            [sid, snapshot.business_date, snapshot.source, len(snapshot)],
+        )
+        self._conn.executemany(
+            "INSERT INTO trade VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    sid, t.trade_id, t.version, t.product_type.value, t.asset_class.value,
+                    t.currency, t.book_id, t.trader_id, t.counterparty_id, t.netting_set_id,
+                    t.status.value, t.trade_date, t.model_dump_json(),
+                )
+                for t in snapshot.trades
+            ],
+        )
+        return sid
+
+    def load_portfolio_snapshot(self, snapshot_id: str) -> PortfolioSnapshot:
+        head = self._conn.execute(
+            "SELECT business_date, source FROM portfolio_snapshot WHERE snapshot_id = ?",
+            [snapshot_id],
+        ).fetchone()
+        if head is None:
+            raise KeyError(f"snapshot {snapshot_id!r} not found")
+        rows = self._conn.execute(
+            "SELECT payload FROM trade WHERE snapshot_id = ? ORDER BY trade_id, version",
+            [snapshot_id],
+        ).fetchall()
+        trades = tuple(_TRADE.validate_json(p) for (p,) in rows)
+        snap = PortfolioSnapshot(business_date=head[0], trades=trades, source=head[1])
+        if snap.snapshot_id != snapshot_id:
+            raise RuntimeError(f"snapshot {snapshot_id} failed integrity check on load")
+        return snap
+
+    def list_portfolio_snapshots(self) -> list[tuple[str, date, int]]:
+        rows = self._conn.execute(
+            "SELECT snapshot_id, business_date, trade_count FROM portfolio_snapshot "
+            "ORDER BY business_date, created_at"
+        ).fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
