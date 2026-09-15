@@ -93,7 +93,6 @@ def app(db_path, monkeypatch):
         "Drill-down",
         "VaR",
         "Stress",
-        "Limits",
         "Limit management",
         "Breaches",
         "Counterparty",
@@ -176,3 +175,7 @@ def test_limit_management_hierarchy_table(app):
     next(t for t in app.multiselect if t.label == "Run status").set_value(["BREACH"]).run()
     assert not app.exception, [e.value for e in app.exception]
     assert app.dataframe[0].value["status"].str.contains("BREACH").all()
+    # Utilisation tab: the exceptions view, highest utilisation first, trades in scope as a column
+    util = next(d.value for d in app.dataframe if "trades in scope" in d.value.columns)
+    assert util["status"].str.contains("BREACH|WARNING").all()
+    assert list(util["utilisation"]) == sorted(util["utilisation"], reverse=True)

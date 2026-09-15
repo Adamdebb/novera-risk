@@ -153,10 +153,11 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       methodology record, defining fields), risk-measure tree (area → measure → methodology
       record) and risk-factor tree (asset class → factor type → underlying) with a filter;
       `GET /reference/{counterparties,products,measures,risk-factors}` (round 15)
-- [x] Limit management module, Hierarchy tab: every limit in the firm hierarchy with its
-      definition and the run's utilisation, grouped by hierarchy or by type (round 16)
-- [ ] Limit management: move utilisation, breaches and increases into the module; then
-      limit creation, amendment and approval
+- [x] Limit management module: Hierarchy tab (every limit in the firm hierarchy with its
+      definition and the run's utilisation, grouped by hierarchy or by type) and Utilisation
+      tab (the exceptions view that replaced the Limits page) (round 16)
+- [ ] Limit management: move breaches and increases into the module; then limit creation,
+      amendment and approval
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
       for a full phase; morning overview and limits first
 
