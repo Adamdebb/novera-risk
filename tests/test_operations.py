@@ -246,6 +246,70 @@ def test_named_crises_require_coverage():
     assert named_crisis_scenarios(short) == []
 
 
+class FakeSMTP:
+    """Stands in for smtplib.SMTP: records the TLS and login calls and the message sent."""
+
+    def __init__(self, box: dict) -> None:
+        self.box = box
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.box["closed"] = True
+
+    def starttls(self):
+        self.box["tls"] = True
+
+    def login(self, user, password):
+        self.box["login"] = (user, password)
+
+    def send_message(self, msg):
+        self.box["message"] = msg
+
+
+def test_email_channel_builds_and_sends_the_message(db_path):
+    from novera.workflows.alerts import Email, channel_test_alert
+
+    box: dict = {}
+    ch = Email(
+        "smtp.example.com", 587, "u", "p", "novera@example.com", ["a@x.com", "b@x.com"], lambda: FakeSMTP(box)
+    )
+    with DuckDBRepository(db_path) as repo:
+        sent = dispatch(repo, [channel_test_alert("pytest", "hello")], [ch])
+    assert sent[0].status == "SENT" and sent[0].deliveries == {"email": "ok"}
+    msg = box["message"]
+    assert box["tls"] and box["login"] == ("u", "p") and box["closed"]
+    assert msg["Subject"] == "[WARNING] Alert channel test" and msg["To"] == "a@x.com, b@x.com"
+    assert "hello" in msg.get_content() and "Kind: CHANNEL_TEST" in msg.get_content()
+    # Without credentials the channel talks plain SMTP (a local relay or sink): no TLS, no login.
+    box.clear()
+    ch = Email("localhost", 8025, None, None, "novera@localhost", ["a@x.com"], lambda: FakeSMTP(box))
+    with DuckDBRepository(db_path) as repo:
+        again = dispatch(repo, [channel_test_alert("pytest")], [ch])
+    assert again[0].status == "SENT" and "tls" not in box and "login" not in box
+
+
+def test_alert_test_command_reports_missing_channel(db_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from novera.cli import app
+    from novera.config import get_settings
+
+    monkeypatch.setenv("NOVERA_DB_PATH", str(db_path))
+    for k in (
+        "NOVERA_SLACK_WEBHOOK_URL",
+        "NOVERA_SMTP_HOST",
+        "NOVERA_ALERT_EMAIL_FROM",
+        "NOVERA_ALERT_EMAIL_TO",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    get_settings.cache_clear()
+    r = CliRunner().invoke(app, ["alert", "test"])
+    assert r.exit_code == 1 and "no alert channel configured" in r.output
+    get_settings.cache_clear()
+
+
 def test_alert_recipients_are_unique_and_ordered():
     """An escalation whose target is also the limit owner names the role once."""
     from novera.workflows.alerts import _alert

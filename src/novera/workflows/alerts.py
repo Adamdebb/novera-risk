@@ -178,6 +178,23 @@ def run_failed_alert(business_date: date, error: str, attempt: int) -> Alert:
 # --- channels --------------------------------------------------------------------------------
 
 
+def channel_test_alert(actor: str, note: str = "") -> Alert:
+    """A WARNING alert that exercises every configured channel; one per call (the subject is
+    unique, so repeated tests are delivered rather than suppressed as duplicates)."""
+    now = datetime.now(UTC)
+    return _alert(
+        "CHANNEL_TEST",
+        "WARNING",
+        new_run_id("tst"),
+        "Alert channel test",
+        f"Test alert sent by {actor} at {now:%Y-%m-%d %H:%M:%S} UTC. No breach, no run: if you "
+        f"can read this, the channel is configured correctly." + (f" {note}" if note else ""),
+        now.date(),
+        None,
+        ["Market Risk Control"],
+    )
+
+
 class Channel(Protocol):
     name: str
 

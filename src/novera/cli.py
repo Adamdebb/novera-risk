@@ -18,6 +18,8 @@ agent_app = typer.Typer(
     no_args_is_help=True, help="Agents: investigate, scenarios, validation, ingest (AI-002/003)."
 )
 app.add_typer(agent_app, name="agent")
+alert_app = typer.Typer(no_args_is_help=True, help="Alert channels: test delivery, list stored alerts.")
+app.add_typer(alert_app, name="alert")
 lab_app = typer.Typer(
     no_args_is_help=True, help="Portfolio Lab: plant problems, run, see what was detected (LAB-001)."
 )
@@ -586,6 +588,45 @@ def schedule(
 
     for job in serve(str(s.db_path), hhmm, advance, cfg, sleep=log_sleep):
         typer.echo(f"  job {job.job_id} {job.status} {job.business_date} run {job.run_id}")
+
+
+@alert_app.command("test")
+def alert_test(
+    actor: str = typer.Option("cli", help="Who is running the test; goes into the alert body"),
+    note: str = typer.Option("", help="Free text appended to the alert body"),
+) -> None:
+    """Send one WARNING test alert through every configured channel (Slack webhook, SMTP email)
+    and report delivery per channel. The alert is stored like any other, with its deliveries."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.alerts import channel_test_alert, channels_from_settings, dispatch
+
+    s = get_settings()
+    channels = channels_from_settings(s)
+    if not channels:
+        typer.echo(
+            "no alert channel configured: set NOVERA_SLACK_WEBHOOK_URL, or NOVERA_SMTP_HOST with "
+            "NOVERA_ALERT_EMAIL_FROM and NOVERA_ALERT_EMAIL_TO (see .env.example)"
+        )
+        raise typer.Exit(1)
+    typer.echo("channels: " + ", ".join(ch.name for ch in channels))
+    with DuckDBRepository(s.db_path) as repo:
+        sent = dispatch(repo, [channel_test_alert(actor, note)], channels)
+    a = sent[0]
+    typer.echo(f"alert {a.alert_id} {a.status}")
+    for name, outcome in a.deliveries.items():
+        typer.echo(f"  {name}: {outcome}")
+    raise typer.Exit(0 if a.status == "SENT" else 1)
+
+
+@alert_app.command("list")
+def alert_list(limit: int = typer.Option(20, help="Most recent alerts")) -> None:
+    """Stored alerts, newest first, with delivery status."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(get_settings().db_path, read_only=True) as repo:
+        rows = repo.load_alerts(limit=limit)
+    for r in rows:
+        typer.echo(f"{r['at'][:19]} {r['severity']:<8} {r['status']:<10} {r['kind']:<16} {r['title']}")
 
 
 @app.command("vendor-feed")
