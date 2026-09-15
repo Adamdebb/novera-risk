@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from novera.api.client import LocalClient
+from novera.api.errors import InvalidRequestError
 from novera.api.service import RiskService, RunNotFoundError
 from novera.market_data.history import MarketHistory
 from novera.risk import VaRConfig
@@ -73,7 +74,13 @@ def test_service_summary_and_frames(db_path):
         assert s["var_by_asset_class"] and s["summary"]["var"] > 0
         assert svc.positions(by="desk_id")
         assert svc.var_by("desk_id")
-        assert {"historical_full_revaluation", "delta_gamma_vega"} <= {r["method"] for r in svc.var_summary()}
+        methods = {r["method"] for r in svc.var_summary()}
+        assert methods == {"historical_full_revaluation", "delta_gamma_vega", "monte_carlo_delta_gamma_vega"}
+        for method in methods:
+            rows = svc.var_by("asset_class", method=method)
+            assert rows and all(r["trades"] > 0 for r in rows), method
+        with pytest.raises(InvalidRequestError):
+            svc.var_by("asset_class", method="parametric")
         assert svc.sensitivities(measure="DV01", by="desk_id", desk_id="USD_RATES")
         assert svc.stress(by="asset_class") and svc.stress(by=None)
         assert svc.limits() and all(r["status"] for r in svc.limits())
@@ -133,7 +140,14 @@ def test_http_endpoints(client):
     assert desk["path"].count("›") == 2 and desk["status"] in ("OK", "WARNING", "BREACH", "NO_DATA")
     assert desk["effective_amount"] == desk["amount"] or desk["increase_id"]
     prods = client.get("/reference/products").json()["asset_classes"]
-    assert {a["asset_class"] for a in prods} == {"RATES", "FX", "EQUITY", "CREDIT", "COMMODITY", "DIGITAL_ASSET"}
+    assert {a["asset_class"] for a in prods} == {
+        "RATES",
+        "FX",
+        "EQUITY",
+        "CREDIT",
+        "COMMODITY",
+        "DIGITAL_ASSET",
+    }
     swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
     assert swaption["methodology"] == "PR-012" and swaption["venue"] == "OTC"
     assert {f["name"] for f in swaption["fields"]} >= {"expiry_date", "swap_tenor", "strike", "payer"}

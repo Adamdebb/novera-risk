@@ -319,10 +319,14 @@ elif page == "Drill-down":
 elif page == "VaR":
     header("Value at Risk")
     vs = df(load("var_summary", run_id))
-    c1, c2 = st.columns(2)
-    for col, (_, r) in zip((c1, c2), vs.iterrows(), strict=False):
+    method_labels = {
+        "historical_full_revaluation": "Historical full revaluation",
+        "delta_gamma_vega": "Delta-gamma-vega challenger",
+        "monte_carlo_delta_gamma_vega": "Monte Carlo (delta-gamma-vega)",
+    }
+    for col, (_, r) in zip(st.columns(max(len(vs), 1)), vs.iterrows(), strict=False):
         col.metric(
-            r["method"].replace("_", " "),
+            method_labels.get(r["method"], r["method"].replace("_", " ")),
             money(r["var"], digits=2),
             f"ES {money(r['es'], digits=2)} · 10d {money(r['var_scaled'])} · {int(r['scenarios'])} scenarios",
         )
@@ -331,12 +335,19 @@ elif page == "VaR":
     chal = df(load("var_by", run_id, by=by, method="delta_gamma_vega")).set_index(by)
     comp = pd.DataFrame(
         {"full revaluation (m)": prim["component_var"] / M, "delta-gamma-vega (m)": chal["component_var"] / M}
-    ).fillna(0.0)
-    comp["difference (m)"] = comp.iloc[:, 1] - comp.iloc[:, 0]
+    )
+    if "monte_carlo_delta_gamma_vega" in set(vs["method"]):
+        mc = df(load("var_by", run_id, by=by, method="monte_carlo_delta_gamma_vega"))
+        if not mc.empty:
+            comp["monte carlo (m)"] = mc.set_index(by)["component_var"] / M
+    comp = comp.fillna(0.0)
+    comp["challenger difference (m)"] = comp["delta-gamma-vega (m)"] - comp["full revaluation (m)"]
     st.dataframe(comp.round(2), use_container_width=True)
     st.caption(
         "Where the challenger disagrees, the gap is convexity, cross effects and surface shape "
-        "that sensitivities miss (MR-004)."
+        "that sensitivities miss (MR-004). Monte Carlo values the same sensitivities on 10,000 "
+        "Gaussian factor moves drawn from the window's covariance (MR-010): its distance from "
+        "the challenger is the tail shape of the history, not the pricing approximation."
     )
     sc = df(load("var_scenarios", run_id))
     if not sc.empty:
