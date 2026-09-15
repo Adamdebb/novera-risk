@@ -210,6 +210,37 @@ elif page == "Copilot":
         )
         st.rerun()
 
+    with st.expander("Same tools from outside: MCP server (AI-004)"):
+        st.write(
+            "External MCP clients (Claude Desktop, Claude Code, a firm's own agent) reach these same tools "
+            "through `novera mcp`. The server never calls a model; the client's model configuration decides "
+            "where questions go. Every external call lands in the audit trail below."
+        )
+        st.code(
+            f"claude mcp add novera -- uv run --directory {settings.data_dir.resolve().parent} novera mcp"
+            + (" --fund" if is_fund else ""),
+            language="bash",
+        )
+        mcp_calls = [e for e in client.audit(limit=500) if e.get("event_type") == "MCP_TOOL_CALL"][:50]
+        if mcp_calls:
+            rows = []
+            for e in mcp_calls:
+                p = e.get("payload") or {}
+                if isinstance(p, str):
+                    p = json.loads(p)
+                rows.append(
+                    {
+                        "at": e["at"],
+                        "tool": e["subject"],
+                        "arguments": json.dumps(p.get("arguments", {}))[:80],
+                        "seconds": p.get("seconds"),
+                        "error": p.get("is_error"),
+                    }
+                )
+            st.dataframe(df(rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No external MCP calls recorded yet.")
+
 elif page == "Drill-down":
     header("Risk by hierarchy")
     org = client.organisation()
