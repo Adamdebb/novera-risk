@@ -97,8 +97,10 @@ uv run python scripts/export_openapi.py   # refresh docs/api/openapi.json after 
 uv run python scripts/export_model_inventory.py   # refresh the MV-001 table after changing the pricer catalogue (a test checks it)
 ```
 If `uv run` fails with `ModuleNotFoundError: No module named 'novera'`, Python skipped the
-editable `.pth` file because macOS flagged it hidden after a uv rebuild. Fix:
-`uv sync --all-extras --reinstall-package novera`. Tests are immune (pytest `pythonpath`).
+editable `.pth` file because macOS flagged it hidden (recent Pythons ignore hidden `.pth`
+files, and a reinstall recreates it hidden). Fix:
+`chflags nohidden .venv/lib/python3.12/site-packages/*.pth`. Tests are immune (pytest
+`pythonpath`); `PYTHONPATH=src uv run ...` also works as a one-off.
 
 ## Do not
 - Do not read or use `../z-My_Tests` (owner's private brainstorming).
