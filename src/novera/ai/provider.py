@@ -62,6 +62,17 @@ class Provider(Protocol):
         self, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
     ) -> ProviderResponse: ...
 
+    def draft(self, kind: str, evidence: dict[str, Any], instructions: str) -> tuple[str, dict[str, int]]:
+        """Write prose from evidence the engine gathered (agents, AI-002). No tools: every number
+        in the text must come from ``evidence``."""
+        ...
+
+
+DRAFT_SYSTEM = """You draft risk-management text for {platform} from evidence a deterministic engine
+gathered. Rules: use only numbers that appear in the evidence, cite run ids and trade ids as given,
+never estimate or compute new figures, say plainly when evidence is missing, write for a head of
+market risk in short paragraphs and bullet lists, no headers deeper than level 3."""
+
 
 # --- Anthropic ---------------------------------------------------------------------------
 
@@ -129,6 +140,14 @@ class AnthropicProvider:
             why = getattr(detail, "explanation", None) if detail else None
             content = [TextBlock("The model declined to answer this request" + (f": {why}" if why else "."))]
         return ProviderResponse(content, resp.stop_reason or "end_turn", resp.model, usage)
+
+    def draft(self, kind: str, evidence: dict[str, Any], instructions: str) -> tuple[str, dict[str, int]]:
+        from novera.config import get_settings
+
+        system = DRAFT_SYSTEM.format(platform=get_settings().platform_name)
+        user = f"Task: {kind}\n\n{instructions}\n\nEvidence (JSON):\n{json.dumps(evidence, default=str, indent=1)}"
+        resp = self.complete(system, [{"role": "user", "content": user}], [])
+        return resp.text, resp.usage
 
 
 # --- Scripted -----------------------------------------------------------------------------
@@ -198,6 +217,11 @@ def _plan(q: str) -> list[tuple[str, dict[str, Any]]]:
             ("data_quality", {}),
             ("stress", {"by": "asset_class"}),
         ]
+    mb = re.search(r"\b(brc_[a-z0-9]+_[a-z0-9]+)\b", q)
+    if mb and any(k in ql for k in ("investigat", "why", "explain", "note")):
+        return [("agent", {"agent": "investigate_breach", "breach_id": mb.group(1)})]
+    if any(k in ql for k in ("suggest", "propose", "which scenario", "what scenario", "should i run")):
+        return [("agent", {"agent": "suggest_scenarios"})]
     m = re.search(r"\b([A-Z]{2,4}_\d{6})\b", q)
     if m:
         return [("trade", {"trade_id": m.group(1)})]
@@ -492,6 +516,12 @@ def _compose(question: str, results: list[tuple[str, dict[str, Any], dict[str, A
                         f"- Under {s0['scenario']}, current exposure goes from {_fmt_m(s0['current'])} to "
                         f"{_fmt_m(s0['stressed'])}."
                     )
+        elif name == "agent":
+            if "error" in res:
+                lines.append(f"- {res['error']}")
+            else:
+                lines.append(res["text"].split("\n\n_Scripted provider")[0])
+                lines.append(f"- Stored as agent note {res['note_id']} ({res['status']}).")
         elif name == "lookthrough":
             if not res["fund_trades"]:
                 lines.append("No ETF or mutual-fund positions in this run.")
@@ -629,7 +659,14 @@ class ScriptedProvider:
                 results.append((name, args, payload))
             return ProviderResponse([TextBlock(_compose(question, results))], "end_turn", self.model)
         available = {t["name"] for t in tools}
+        if not available:  # drafting call without tools: answer with the templated draft
+            return ProviderResponse([TextBlock(question)], "end_turn", self.model)
         plan = [(n, a) for n, a in _plan(question) if n in available] or [("run_summary", {})]
         return ProviderResponse(
             [ToolUseBlock(f"toolu_{uuid.uuid4().hex[:12]}", n, a) for n, a in plan], "tool_use", self.model
         )
+
+    def draft(self, kind: str, evidence: dict[str, Any], instructions: str) -> tuple[str, dict[str, int]]:
+        from novera.ai.drafts import templated_draft
+
+        return templated_draft(kind, evidence), {}

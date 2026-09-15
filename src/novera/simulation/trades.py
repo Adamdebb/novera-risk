@@ -34,6 +34,21 @@ from novera.simulation import instruments as inst
 from novera.simulation import reference_levels as ref
 from novera.simulation.organisation import CounterpartyUniverse
 
+BANK_PROBLEMS: tuple[str, ...] = (
+    "usd_10y_concentration",
+    "illiquid_brent",
+    "btc_exposure",
+    "wrong_way_sovereign",
+    "wrong_way_credit",
+    "invalid_trades",
+)
+FUND_PROBLEMS: tuple[str, ...] = (
+    "crowded_single_name",
+    "pb_concentration",
+    "illiquid_vs_redemptions",
+    "short_vol",
+)
+
 
 class Injection(BaseModel):
     """A deliberately planted problem and the trades that carry it."""
@@ -63,6 +78,10 @@ class TradeGeneratorConfig:
     """When given, every trade is struck at fair market on its trade date (plus execution
     noise), so inception P&L is small and later P&L is genuine. Without it, prices come
     from static reference levels."""
+    problems: tuple[str, ...] | None = None
+    """Planted problems to include (names from BANK_PROBLEMS / FUND_PROBLEMS); None = all."""
+    problem_scale: float = 1.0
+    """Size multiplier applied to every planted problem (Portfolio Lab)."""
 
     def __post_init__(self) -> None:
         if self.template is None:
@@ -940,20 +959,35 @@ class _Gen:
             **self._otc(book, None, 0.0),
         )
 
-    def inject(self) -> tuple[list[Trade], list[Injection]]:
+    # --- planted problems ----------------------------------------------------------------
+    # Each problem is a method taking a size multiplier; ``BANK_PROBLEMS`` and ``FUND_PROBLEMS``
+    # fix the order so the default portfolio is reproducible, and the Portfolio Lab can pick a
+    # subset and scale each one.
+
+    def inject(
+        self, problems: tuple[str, ...] | None = None, scale: float = 1.0
+    ) -> tuple[list[Trade], list[Injection]]:
         trades: list[Trade] = []
         inj: list[Injection] = []
+        for name in BANK_PROBLEMS:
+            if problems is not None and name not in problems:
+                continue
+            t, i = getattr(self, f"_problem_{name}")(scale)
+            trades += t
+            inj.append(i)
+        return trades, inj
 
-        # 1. USD 10Y DV01 concentration, all bilateral with Bank A (also cpty concentration).
-        #    Struck 60bp above par: legacy off-market swaps novated in, so they carry positive
-        #    PV and real counterparty exposure as well as DV01.
+    def _problem_usd_10y_concentration(self, scale: float) -> tuple[list[Trade], Injection]:
+        # USD 10Y DV01 concentration, all bilateral with Bank A (also cpty concentration).
+        # Struck 60bp above par: legacy off-market swaps novated in, so they carry positive
+        # PV and real counterparty exposure as well as DV01.
         t = []
         for _ in range(6):
             s = self._fair(
                 self.swap(
                     "USD_RATES",
                     tenor="10Y",
-                    notional=400e6,
+                    notional=400e6 * scale,
                     side=SwapSide.RECEIVE_FIXED,
                     book_id="USD_MACRO_RV",
                     prefer_cpty="BANK_A",
@@ -962,92 +996,80 @@ class _Gen:
             )
             ins = s.instrument.model_copy(update={"fixed_rate": round(s.instrument.fixed_rate + 0.006, 5)})
             t.append(s.model_copy(update={"instrument": ins, "trade_price": ins.fixed_rate}))
-        trades += t
-        inj.append(
-            Injection(
-                name="usd_10y_concentration",
-                description="Six receive-fixed 10Y USD swaps of 400m each in USD Macro RV, "
-                "all facing Bank A, "
-                "struck 60bp above par (legacy novations).",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="USD Rates 10Y DV01 limit breach; Bank A the largest counterparty "
-                "exposure.",
-            )
+        return t, Injection(
+            name="usd_10y_concentration",
+            description=f"Six receive-fixed 10Y USD swaps of {400 * scale:.0f}m each in USD Macro RV, "
+            "all facing Bank A, struck 60bp above par (legacy novations).",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="USD Rates 10Y DV01 limit breach; Bank A the largest counterparty exposure.",
         )
 
-        # 2. Illiquid far-dated Brent.
+    def _problem_illiquid_brent(self, scale: float) -> tuple[list[Trade], Injection]:
         t = [
             self.commodity_future(
                 "ENERGY",
                 code="BRENT",
-                contracts=10_000,
+                contracts=float(round(10_000 * scale)),
                 contract_index=5,
                 book_id="CRUDE",
                 direction=BuySell.BUY,
             )
         ]
-        trades += t
-        inj.append(
-            Injection(
-                name="illiquid_brent",
-                description="10,000 lots of the furthest Brent contract in one book.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Brent concentration limit; days-to-liquidate warning.",
-            )
+        return t, Injection(
+            name="illiquid_brent",
+            description=f"{10_000 * scale:,.0f} lots of the furthest Brent contract in one book.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Brent concentration limit; days-to-liquidate warning.",
         )
 
-        # 3. Outsized BTC exposure.
-        t = [self.crypto_spot("DIGITAL", symbol="BTC", units=2500, direction=BuySell.BUY)]
-        trades += t
-        inj.append(
-            Injection(
-                name="btc_exposure",
-                description="2,500 BTC long in Crypto Spot.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Digital assets stress-loss limit breach under BTC -50%.",
-            )
+    def _problem_btc_exposure(self, scale: float) -> tuple[list[Trade], Injection]:
+        t = [
+            self.crypto_spot("DIGITAL", symbol="BTC", units=float(round(2500 * scale)), direction=BuySell.BUY)
+        ]
+        return t, Injection(
+            name="btc_exposure",
+            description=f"{2500 * scale:,.0f} BTC long in Crypto Spot.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Digital assets stress-loss limit breach under BTC -50%.",
         )
 
-        # 4. Wrong-way risk: long USD/ARS forwards with an uncollateralised EM sovereign.
+    def _problem_wrong_way_sovereign(self, scale: float) -> tuple[list[Trade], Injection]:
         t = [
             self.fx_forward(
                 "EM_FX",
                 pair="USD/ARS",
-                notional=40e6,
+                notional=40e6 * scale,
                 book_id="EM_FX_FWD",
                 prefer_cpty="SOV_EM",
                 direction=BuySell.BUY,
             )
             for _ in range(3)
         ]
-        trades += t
-        inj.append(
-            Injection(
-                name="wrong_way_sovereign",
-                description="Three long USD/ARS forwards facing the Republic of Andoria, no CSA.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Wrong-way-risk flag: exposure rises as the counterparty's currency "
-                "weakens.",
-            )
+        return t, Injection(
+            name="wrong_way_sovereign",
+            description="Three long USD/ARS forwards facing the Republic of Andoria, no CSA.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Wrong-way-risk flag: exposure rises as the counterparty's currency weakens.",
         )
 
-        # 5. Wrong-way risk: protection bought on HY from a HY-rated corporate.
+    def _problem_wrong_way_credit(self, scale: float) -> tuple[list[Trade], Injection]:
         t = [
             self.cds_index(
-                "HY_CREDIT", book_id="CDX_HY", prefer_cpty="CORP_AIR", notional=75e6, direction=BuySell.BUY
+                "HY_CREDIT",
+                book_id="CDX_HY",
+                prefer_cpty="CORP_AIR",
+                notional=75e6 * scale,
+                direction=BuySell.BUY,
             )
         ]
-        trades += t
-        inj.append(
-            Injection(
-                name="wrong_way_credit",
-                description="CDX HY protection bought from TransAtlantic Air (BB+, uncollateralised).",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Wrong-way-risk flag on counterparty watchlist.",
-            )
+        return t, Injection(
+            name="wrong_way_credit",
+            description="CDX HY protection bought from TransAtlantic Air (BB+, uncollateralised).",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Wrong-way-risk flag on counterparty watchlist.",
         )
 
-        # 6. Invalid trades for the data-quality module.
+    def _problem_invalid_trades(self, scale: float) -> tuple[list[Trade], Injection]:
         base = self.swap("USD_RATES", book_id="USD_SWAPS_FLOW")
         bad = [
             base.model_copy(
@@ -1069,23 +1091,30 @@ class _Gen:
             ),
             base.model_copy(update={"trade_id": self._id("IRS"), "book_id": "GHOST_BOOK"}),
         ]
-        trades += bad
-        inj.append(
-            Injection(
-                name="invalid_trades",
-                description="One swap without a netting set, one facing an unknown counterparty, "
-                "one booked to a non-existent book.",
-                trade_ids=tuple(x.trade_id for x in bad),
-                expected_detection="Data-quality exceptions; run trust verdict AMBER.",
-            )
+        return bad, Injection(
+            name="invalid_trades",
+            description="One swap without a netting set, one facing an unknown counterparty, "
+            "one booked to a non-existent book.",
+            trade_ids=tuple(x.trade_id for x in bad),
+            expected_detection="Data-quality exceptions; run trust verdict AMBER.",
         )
-        return trades, inj
 
-    def inject_fund(self) -> tuple[list[Trade], list[Injection]]:
+    def inject_fund(
+        self, problems: tuple[str, ...] | None = None, scale: float = 1.0
+    ) -> tuple[list[Trade], list[Injection]]:
         """Planted problems for the fund template."""
         trades: list[Trade] = []
         inj: list[Injection] = []
-        # 1. Crowded single-name long: NVDA at about 15% of NAV, sized off the live price.
+        for name in FUND_PROBLEMS:
+            if problems is not None and name not in problems:
+                continue
+            t, i = getattr(self, f"_problem_{name}")(scale)
+            trades += t
+            inj.append(i)
+        return trades, inj
+
+    def _problem_crowded_single_name(self, scale: float) -> tuple[list[Trade], Injection]:
+        # Crowded single-name long: NVDA at about 15% of NAV, sized off the live price.
         nav = self.t.nav or 2.0e9
         spot = ref.EQUITIES["NVDA"][4]
         if self.cfg.market_history is not None:
@@ -1093,10 +1122,7 @@ class _Gen:
                 spot = self.cfg.market_history.snapshot_at(self.bd).equity_spot("NVDA")
             except KeyError:
                 pass
-        shares = (
-            self._round(0.15 * nav / spot / 4, 1000) / self.t.size_scale
-        )  # _round is unscaled; undo scale
-        shares = float(round(0.15 * nav / spot / 4 / 1000) * 1000)
+        shares = float(round(0.15 * scale * nav / spot / 4 / 1000) * 1000)
         t = []
         for _ in range(4):
             x = self.cash_equity("EQ_LS_US")
@@ -1111,74 +1137,65 @@ class _Gen:
                 }
             )
             t.append(x)
-        trades += t
-        inj.append(
-            Injection(
-                name="crowded_single_name",
-                description=f"{4 * shares / 1e6:.1f}m NVDA shares long in US Tech L/S: about 15% of NAV in "
-                "the most crowded name.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Single-name concentration limit; crowding flag; crowded exit horizon.",
-            )
+        return t, Injection(
+            name="crowded_single_name",
+            description=f"{4 * shares / 1e6:.1f}m NVDA shares long in US Tech L/S: about "
+            f"{15 * scale:.0f}% of NAV in the most crowded name.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Single-name concentration limit; crowding flag; crowded exit horizon.",
         )
-        # 2. Prime-broker concentration: FX forwards all facing PB_GS.
+
+    def _problem_pb_concentration(self, scale: float) -> tuple[list[Trade], Injection]:
         t = [
             self.fx_forward(
                 "FX_CARRY",
                 pair="USD/JPY",
-                notional=60e6,
+                notional=60e6 * scale,
                 book_id="G10_CARRY",
                 prefer_cpty="PB_GS",
                 direction=BuySell.BUY,
             )
             for _ in range(5)
         ]
-        trades += t
-        inj.append(
-            Injection(
-                name="pb_concentration",
-                description="Five 60m USD/JPY forwards all facing PB_GS on top of the existing book there.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Prime-broker exposure and margin concentrated in one broker.",
-            )
+        return t, Injection(
+            name="pb_concentration",
+            description=f"Five {60 * scale:.0f}m USD/JPY forwards all facing PB_GS on top of the existing "
+            "book there.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Prime-broker exposure and margin concentrated in one broker.",
         )
-        # 3. Illiquid position against monthly liquidity: far-dated natural gas.
+
+    def _problem_illiquid_vs_redemptions(self, scale: float) -> tuple[list[Trade], Injection]:
         t = [
             self.commodity_future(
                 "COMMODITY_TREND",
                 code="NATGAS",
-                contracts=2500,
+                contracts=float(round(2500 * scale)),
                 contract_index=5,
                 book_id="ENERGY_TREND",
                 direction=BuySell.BUY,
             )
         ]
-        trades += t
-        inj.append(
-            Injection(
-                name="illiquid_vs_redemptions",
-                description="2,500 lots of the furthest natural gas contract in one book.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Days to liquidate beyond the monthly dealing window in the redemption "
-                "stress.",
-            )
+        return t, Injection(
+            name="illiquid_vs_redemptions",
+            description=f"{2500 * scale:,.0f} lots of the furthest natural gas contract in one book.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Days to liquidate beyond the monthly dealing window in the redemption "
+            "stress.",
         )
-        # 4. Large short-vol book: sold index puts.
+
+    def _problem_short_vol(self, scale: float) -> tuple[list[Trade], Injection]:
         t = []
         for _ in range(6):
             x = self.index_option("INDEX_VOL_ARB")
-            t.append(x.model_copy(update={"direction": BuySell.SELL, "quantity": 400.0}))
-        trades += t
-        inj.append(
-            Injection(
-                name="short_vol",
-                description="Six sold index options of 400 contracts each in Index Vol Arb.",
-                trade_ids=tuple(x.trade_id for x in t),
-                expected_detection="Negative gamma and vega concentration; stress loss on the equity crash "
-                "scenario.",
-            )
+            t.append(x.model_copy(update={"direction": BuySell.SELL, "quantity": float(round(400 * scale))}))
+        return t, Injection(
+            name="short_vol",
+            description=f"Six sold index options of {400 * scale:.0f} contracts each in Index Vol Arb.",
+            trade_ids=tuple(x.trade_id for x in t),
+            expected_detection="Negative gamma and vega concentration; stress loss on the equity crash "
+            "scenario.",
         )
-        return trades, inj
 
     # --- driver ----------------------------------------------------------------------
     def run(self) -> GeneratedPortfolio:
@@ -1195,7 +1212,8 @@ class _Gen:
                 trades.append(self._fair(getattr(self, str(r))(desk_id)))
         injections: list[Injection] = []
         if self.cfg.inject_problems:
-            extra, injections = self.inject() if self.t.injector == "bank" else self.inject_fund()
+            args = (self.cfg.problems, self.cfg.problem_scale)
+            extra, injections = self.inject(*args) if self.t.injector == "bank" else self.inject_fund(*args)
             conc = {tid for i in injections if i.name == "usd_10y_concentration" for tid in i.trade_ids}
             trades += [t if t.trade_id in conc else self._fair(t) for t in extra]
         snap = PortfolioSnapshot(business_date=self.bd, trades=tuple(trades), source="SIM")

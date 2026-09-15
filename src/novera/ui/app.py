@@ -67,6 +67,8 @@ with st.sidebar:
         "Compare runs",
         "Challenger",
         "Risk pack",
+        "Agents",
+        "Portfolio Lab",
         "Alerts & jobs",
         "Runs & audit",
     ]
@@ -822,6 +824,14 @@ elif page == "Breaches":
                     act(client.escalate, b["breach_id"], actor, None, note)
                 if a3.button("Add comment", key=f"cmt_{b['breach_id']}"):
                     act(client.comment, b["breach_id"], actor, note)
+                if st.button("Investigate with the agent", key=f"inv_{b['breach_id']}"):
+                    with st.spinner("Gathering evidence from the stored runs and drafting the note..."):
+                        note_d = client.investigate_breach(b["breach_id"], True)
+                    st.markdown(note_d["text"])
+                    st.caption(
+                        f"note {note_d['note_id']} attached to the breach · "
+                        f"{note_d['provider']}/{note_d['model']}"
+                    )
                 reason = a4.selectbox(
                     "Close reason",
                     ["RISK_REDUCED", "TEMPORARY_INCREASE_APPROVED", "LIMIT_RETIRED", "FALSE_POSITIVE"],
@@ -1252,6 +1262,157 @@ elif page == "Alerts & jobs":
         st.caption("All history is synthetic. Run `uv run novera fetch` to load real series.")
     else:
         st.dataframe(pv, use_container_width=True, hide_index=True)
+
+elif page == "Agents":
+    header("Agents")
+    st.caption(
+        "Each agent gathers its evidence deterministically from the stored runs and the engine, then drafts "
+        "text from that evidence only (AI-002, AI-003). Notes are stored with their evidence and audited."
+    )
+    tab_sc, tab_val, tab_csa, tab_notes = st.tabs(
+        ["Scenario suggestions", "Model validation", "CSA ingestion", "Notes"]
+    )
+    with tab_sc:
+        n_sc = st.slider("Scenarios to propose", 2, 6, 4)
+        if st.button("Suggest scenarios for this run"):
+            with st.spinner("Sizing scenarios from the history and running them through the engine..."):
+                d = client.suggest_scenarios(run_id, n_sc)
+            st.markdown(d["text"])
+            props = df(d["evidence"].get("proposals", []))
+            if not props.empty and "total_pnl_m" in props:
+                st.dataframe(
+                    props[["name", "why", "total_pnl_m"]].rename(columns={"total_pnl_m": "P&L (m)"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            st.caption(f"note {d['note_id']} · {d['provider']}/{d['model']} · {d['seconds']}s")
+    with tab_val:
+        recs = st.text_input("Records (comma-separated ids or families, empty = all)", value="PR,MR")
+        run_tests = st.checkbox("Execute the named validation tests (slow)", value=False)
+        if st.button("Draft the validation report"):
+            with st.spinner("Collecting evidence and drafting..."):
+                d = client.draft_validation(
+                    run_id, [r.strip() for r in recs.split(",") if r.strip()] or None, run_tests
+                )
+            st.markdown(d["text"])
+            st.caption(f"written to {d.get('path')} · note {d['note_id']}")
+    with tab_csa:
+        st.write(
+            "Parse a CSA term sheet into a proposed netting set and CSA, review, then approve or reject."
+        )
+        docs = sorted(
+            str(p) for p in (settings.data_dir / "documents").glob("*") if p.suffix in (".txt", ".md", ".pdf")
+        )
+        path = st.selectbox("Document", docs) if docs else st.text_input("Document path")
+        if not docs:
+            st.caption("No documents yet: `uv run novera agent ingest` writes a demo term sheet.")
+        if path and st.button("Propose from the document"):
+            with st.spinner("Extracting terms..."):
+                d = client.propose_csa(path)
+            st.session_state["csa_note"] = d
+        d = st.session_state.get("csa_note")
+        if d:
+            st.markdown(d["text"])
+            st.json(d["evidence"]["proposal"])
+            approver = st.text_input("Approver", value="Head of Counterparty Risk")
+            c1, c2 = st.columns(2)
+            if c1.button("Approve and save"):
+                try:
+                    out = client.approve_csa(d["note_id"], approver)
+                    st.success(f"saved netting set {out['netting_set_id']} and CSA {out['csa_id']}")
+                    st.session_state.pop("csa_note", None)
+                except Exception as e:  # noqa: BLE001
+                    st.error(str(e))
+            if c2.button("Reject"):
+                client.reject_csa(d["note_id"], approver, "rejected in review")
+                st.session_state.pop("csa_note", None)
+                st.info("rejected")
+    with tab_notes:
+        notes = df(client.agent_notes(limit=50))
+        if notes.empty:
+            st.caption("No agent notes yet.")
+        else:
+            st.dataframe(
+                notes[["at", "kind", "subject", "status", "provider", "note_id"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            pick = st.selectbox("Open note", notes["note_id"])
+            st.markdown(notes.set_index("note_id").loc[pick, "text"])
+
+elif page == "Portfolio Lab":
+    header("Portfolio Lab")
+    st.caption(
+        "Plant chosen problems at a chosen size in a sandbox organisation, run the governed EOD on it and "
+        "see what the platform detects (LAB-001). Nothing here touches the production databases."
+    )
+    cat = client.problem_catalogue()
+    with st.form("lab"):
+        c1, c2, c3 = st.columns(3)
+        name = c1.text_input("Lab name", value="lab_demo")
+        template = c2.selectbox("Template", ["bank", "hedge_fund"])
+        scale = c3.slider("Problem size multiplier", 0.25, 5.0, 1.0, 0.25)
+        options = {x["name"]: x["title"] for x in cat[template]}
+        problems = st.multiselect(
+            "Problems to plant", list(options), default=list(options)[:2], format_func=options.get
+        )
+        mkt = {x["name"]: x["title"] for x in cat["market"]}
+        market_problems = st.multiselect("Market-data problems", list(mkt), format_func=mkt.get)
+        c4, c5, c6 = st.columns(3)
+        n_trades = c4.number_input("Background trades", 100, 3000, 600, 100)
+        years = c5.number_input("Years of history", 1.0, 3.0, 2.0, 0.5)
+        cpty = c6.checkbox("Run the counterparty engine (slower; needed for wrong-way problems)")
+        go = st.form_submit_button("Run the lab")
+    if go:
+        with st.spinner("Simulating, running EOD and reading back the detections (about a minute)..."):
+            res = client.run_lab(
+                {
+                    "name": name,
+                    "template": template,
+                    "problems": problems,
+                    "market_problems": market_problems,
+                    "scale": scale,
+                    "n_trades": int(n_trades),
+                    "years": float(years),
+                    "counterparty": bool(cpty),
+                }
+            )
+        st.session_state["lab_result"] = res
+    res = st.session_state.get("lab_result")
+    if res:
+        sm = res["summary"]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Detected", f"{res['detected']} / {res['planted']}")
+        c2.metric("VaR", money(sm.get("var"), digits=2))
+        c3.metric("Breaches / warnings", f"{sm.get('breaches')} / {sm.get('warnings')}")
+        c4.metric("Verdict", sm.get("verdict"))
+        st.caption(f"run {res['run_id']} in {res['db_path']} · {res['seconds']}s")
+        for d in res["detections"]:
+            with st.expander(
+                ("✅ " if d["detected"] else "❌ ") + f"{d['title']} — {d['description']}", expanded=True
+            ):
+                st.write(f"Expected: {d['expected']}")
+                for e in d["evidence"]:
+                    st.markdown(f"- {e}")
+                for c in d.get("context", []):
+                    st.markdown(f"- _{c}_")
+                if d.get("needs"):
+                    st.warning(f"needs {d['needs']}")
+    labs = client.labs()
+    if labs:
+        st.subheader("Previous labs")
+        rows = [
+            {
+                "name": x["name"],
+                "run_id": x.get("run_id"),
+                "detected": sum(1 for d in (x.get("detections") or []) if d["detected"]),
+                "planted": len(x.get("detections") or []),
+                "template": (x.get("spec") or {}).get("template"),
+                "scale": (x.get("spec") or {}).get("scale"),
+            }
+            for x in labs
+        ]
+        st.dataframe(df(rows), use_container_width=True, hide_index=True)
 
 elif page == "Runs & audit":
     header("Runs and audit trail")

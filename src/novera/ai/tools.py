@@ -413,6 +413,27 @@ def build_tools(db_path: str) -> list[Tool]:
             },
         }
 
+    def agent_tool(agent: str, breach_id: str | None = None, run_id: str | None = None, n: int = 4) -> dict:
+        """Run an agent and return its note. Agents gather evidence deterministically and draft text."""
+        from novera.api.agents_api import AgentOps
+
+        ops = AgentOps(db_path)
+        if agent == "investigate_breach":
+            if not breach_id:
+                return {"error": "breach_id is required for investigate_breach"}
+            d = ops.investigate_breach(breach_id, attach=True)
+        elif agent == "suggest_scenarios":
+            d = ops.suggest_scenarios(run_id, n)
+        else:
+            return {"error": f"unknown agent {agent}; use investigate_breach or suggest_scenarios"}
+        return {
+            "run_id": d.get("run_id"),
+            "note_id": d["note_id"],
+            "kind": d["kind"],
+            "status": d["status"],
+            "text": d["text"][:6000],
+        }
+
     def backtest_tool(run_id: str | None = None) -> dict:
         repo, s = svc()
         with repo:
@@ -742,6 +763,22 @@ def build_tools(db_path: str) -> list[Tool]:
             "static-portfolio test and the live series.",
             _obj({"run_id": RUN}),
             backtest_tool,
+        ),
+        Tool(
+            "agent",
+            "Run an agent: investigate_breach (needs breach_id; attaches an investigation note to the breach "
+            "with contributors, changes since it opened and an engine-sized remediation) or "
+            "suggest_scenarios (proposes and runs stress scenarios from today's exposures and recent moves).",
+            _obj(
+                {
+                    "agent": {"type": "string", "enum": ["investigate_breach", "suggest_scenarios"]},
+                    "breach_id": {"type": "string"},
+                    "run_id": RUN,
+                    "n": {"type": "integer"},
+                },
+                ["agent"],
+            ),
+            agent_tool,
         ),
         Tool(
             "lookthrough",

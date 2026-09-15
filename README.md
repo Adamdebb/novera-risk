@@ -27,7 +27,7 @@ components that serve those capabilities.
 
 ## Status
 
-Phases 1 to 6 delivered. See `docs/03-roadmap.md`.
+Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
 
 - Simulated bank: 3 legal entities, 14 desks, 38 books, 30 counterparties, ~1,500 trades
   across nineteen products (bonds, swaps, repos, rates futures, swaptions, FX spot,
@@ -56,6 +56,11 @@ Phases 1 to 6 delivered. See `docs/03-roadmap.md`.
 - Instrument breadth: every product priced by a benchmarked closed form (QuantLib or
   analytic), funds seen through to their constituents, and stale or missing market data
   proxied before pricing with an audit trail that travels with the run.
+- Agents: breach investigation (evidence and an engine-sized remediation attached to the
+  breach), scenario suggestion (sized by the history, run through the engine), model
+  validation drafting from the methodology records, and CSA term-sheet ingestion with a
+  review step. Portfolio Lab: plant problems at a chosen size in a sandbox and see what
+  the platform detects.
 - Operations: a scheduler that advances the simulated world and runs EOD with retries,
   alerts to Slack or email, an independent-challenger reconciliation that attributes the
   gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).

@@ -14,6 +14,14 @@ run_app = typer.Typer(no_args_is_help=True, help="Governed risk runs.")
 app.add_typer(run_app, name="run")
 breach_app = typer.Typer(no_args_is_help=True, help="Breach workflow: list, acknowledge, escalate, close.")
 app.add_typer(breach_app, name="breach")
+agent_app = typer.Typer(
+    no_args_is_help=True, help="Agents: investigate, scenarios, validation, ingest (AI-002/003)."
+)
+app.add_typer(agent_app, name="agent")
+lab_app = typer.Typer(
+    no_args_is_help=True, help="Portfolio Lab: plant problems, run, see what was detected (LAB-001)."
+)
+app.add_typer(lab_app, name="lab")
 
 
 def _db(fund: bool):
@@ -700,3 +708,156 @@ def report(
 
 if __name__ == "__main__":
     app()
+
+
+# --- agents -----------------------------------------------------------------------------------
+@agent_app.command("investigate")
+def agent_investigate(
+    breach_id: str = typer.Argument(..., help="Breach id (see `novera breach list`)"),
+    fund: bool = typer.Option(False, help="Use the fund database"),
+    no_attach: bool = typer.Option(False, help="Do not attach the note to the breach as a comment"),
+) -> None:
+    """Breach investigation agent: evidence from the stored runs, drafted note attached to the breach."""
+    from novera.api.agents_api import AgentOps
+
+    d = AgentOps(_db(fund)).investigate_breach(breach_id, attach=not no_attach)
+    typer.echo(d["text"])
+    typer.echo(f"\n[{d['provider']}/{d['model']} · note {d['note_id']} · {d['status']} · {d['seconds']}s]")
+
+
+@agent_app.command("scenarios")
+def agent_scenarios(
+    run_id: str = typer.Option(None, help="Run id; default latest"),
+    n: int = typer.Option(4, help="Scenarios to propose"),
+    fund: bool = typer.Option(False, help="Use the fund database"),
+) -> None:
+    """Scenario suggestion agent: proposals sized by the history, run through the engine."""
+    from novera.api.agents_api import AgentOps
+
+    d = AgentOps(_db(fund)).suggest_scenarios(run_id, n)
+    typer.echo(d["text"])
+    typer.echo(f"\n[{d['provider']}/{d['model']} · note {d['note_id']} · {d['seconds']}s]")
+
+
+@agent_app.command("validation")
+def agent_validation(
+    records: str = typer.Option(None, help="Comma-separated record ids or families, e.g. PR-012,MR"),
+    run_tests: bool = typer.Option(False, help="Execute the named validation tests (slow)"),
+    run_id: str = typer.Option(None, help="Run id for the live evidence; default latest"),
+    fund: bool = typer.Option(False, help="Use the fund database"),
+) -> None:
+    """Model-validation report drafting agent; writes data/reports/model_validation_<date>.md."""
+    from novera.api.agents_api import AgentOps
+
+    recs = [r.strip() for r in records.split(",")] if records else None
+    d = AgentOps(_db(fund)).draft_validation(run_id, recs, run_tests)
+    typer.echo(d["text"][:3000] + ("\n..." if len(d["text"]) > 3000 else ""))
+    typer.echo(f"\nreport written to {d['path']} · note {d['note_id']}")
+
+
+@agent_app.command("ingest")
+def agent_ingest(
+    document: str = typer.Argument(
+        None, help="CSA term sheet (.txt, .md or .pdf); omit to write a demo document"
+    ),
+    approve: str = typer.Option(None, help="Approve the proposal as this actor after review"),
+    fund: bool = typer.Option(False, help="Use the fund database"),
+) -> None:
+    """ISDA/CSA ingestion agent: parse a term sheet into a proposed netting set and CSA, then approve."""
+    from novera.api.agents_api import AgentOps
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    s = get_settings()
+    if document is None:
+        from novera.simulation.documents import write_demo_term_sheet
+
+        with DuckDBRepository(_db(fund), read_only=True) as repo:
+            org = repo.load_organisation(repo.list_firm_ids()[0])
+            cps = {c.counterparty_id: c.name for c in repo.load_counterparties()}
+        cid = "CORP_ENERGY" if "CORP_ENERGY" in cps else next(iter(cps))
+        le = (
+            org.legal_entities[1].legal_entity_id
+            if len(org.legal_entities) > 1
+            else org.legal_entities[0].legal_entity_id
+        )
+        document = str(write_demo_term_sheet(org, s.data_dir / "documents", cps[cid], le))
+        typer.echo(f"demo term sheet written to {document}")
+    ops = AgentOps(_db(fund))
+    d = ops.propose_csa(document)
+    typer.echo(d["text"])
+    typer.echo(f"\n[note {d['note_id']} · {d['status']}]")
+    if approve:
+        out = ops.approve_csa(d["note_id"], approve)
+        typer.echo(f"APPROVED by {approve}: netting set {out['netting_set_id']}, CSA {out['csa_id']}")
+
+
+# --- portfolio lab --------------------------------------------------------------------------------
+@lab_app.command("problems")
+def lab_problems() -> None:
+    """List the problems that can be planted."""
+    from novera.api.agents_api import AgentOps
+
+    cat = AgentOps(get_settings().db_path).problem_catalogue()
+    for group, items in cat.items():
+        typer.echo(group)
+        for it in items:
+            typer.echo(f"  {it['name']:<28} {it['title']}")
+
+
+@lab_app.command("run")
+def lab_run(
+    name: str = typer.Argument(..., help="Lab name (sandbox database data/lab/<name>.duckdb)"),
+    template: str = typer.Option("bank", help="bank or hedge_fund"),
+    problems: str = typer.Option("", help="Comma-separated problem names; empty = none"),
+    market_problems: str = typer.Option("", help="Comma-separated market-data problems"),
+    scale: float = typer.Option(1.0, help="Size multiplier for every planted problem"),
+    trades: int = typer.Option(600, help="Background trades"),
+    seed: int = typer.Option(42),
+    years: float = typer.Option(2.0, help="Years of history"),
+    counterparty: bool = typer.Option(False, help="Run the counterparty engine too (slower)"),
+    regulatory: bool = typer.Option(False, help="Run the regulatory engine too"),
+) -> None:
+    """Build a sandbox with the chosen problems, run EOD on it and print what was detected."""
+    from novera.lab import LabSpec, run_lab
+
+    spec = LabSpec(
+        name=name,
+        template=template,
+        problems=tuple(p.strip() for p in problems.split(",") if p.strip()),
+        market_problems=tuple(p.strip() for p in market_problems.split(",") if p.strip()),
+        scale=scale,
+        n_trades=trades,
+        seed=seed,
+        years=years,
+        counterparty=counterparty,
+        regulatory=regulatory,
+    )
+    res = run_lab(spec)
+    sm = res.summary
+    typer.echo(
+        f"lab {name}: run {res.run_id} on {sm['business_date']} · {sm['trades']} trades · VaR "
+        f"{(sm['var'] or 0) / 1e6:,.2f}m · {sm['breaches']} breaches, {sm['warnings']} warnings · verdict "
+        f"{sm['verdict']} · {res.seconds:.0f}s"
+    )
+    typer.echo(f"detected {res.detected} of {len(res.detections)} planted problems")
+    for d in res.detections:
+        typer.echo(f"  [{'x' if d.detected else ' '}] {d.problem}: {d.description}")
+        for e in d.evidence[:4]:
+            typer.echo(f"        - {e}")
+        if not d.detected:
+            for c in d.context[:3]:
+                typer.echo(f"        · {c}")
+            if d.needs:
+                typer.echo(f"        · needs {d.needs}")
+    typer.echo(f"dashboard: NOVERA_DB_PATH={res.db_path} uv run streamlit run src/novera/ui/app.py")
+
+
+@lab_app.command("list")
+def lab_list() -> None:
+    """List sandbox labs and their detection scores."""
+    from novera.lab import list_labs
+
+    for x in list_labs():
+        det = x.get("detections") or []
+        hits = sum(1 for d in det if d["detected"])
+        typer.echo(f"{x['name']:<20} {x.get('run_id') or '-':<24} {hits}/{len(det)} detected")

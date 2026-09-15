@@ -318,6 +318,30 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 
 ---
 
+## Round 13 — Phase 7 AI and automation (2026-09-15)
+
+### 13.1 MCP server
+- Options: stdio MCP server over the same Copilot tools ★ · stdio plus HTTP transport · defer
+- Choice: **Defer the MCP server**
+- Revisit: the tool registry in `ai/tools.py` is transport-agnostic; a stdio server is a thin
+  wrapper when wanted.
+
+### 13.2 Agents
+- Options (multi-select): breach investigation ★ · scenario suggestion ★ · model-validation
+  report drafting · ISDA/CSA document ingestion
+- Choice: **All four**. Every agent gathers its evidence deterministically from stored runs
+  and the engine, then drafts text through the provider (Claude when a key exists, templated
+  otherwise); numbers in the drafts come only from the evidence.
+- Where: `ai/agents/`, AI-002 (agents), AI-003 (document ingestion)
+
+### 13.3 Portfolio Lab
+- Options: dashboard page plus CLI ★ · CLI only · defer
+- Choice: **Dashboard page plus CLI** (`novera lab`): pick a template, choose the problems to
+  plant and their size, run into a sandbox database, see what the platform detected.
+- Where: `lab/`, LAB-001
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -342,3 +366,9 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
    normal vol; a SABR-style smile is the obvious upgrade.
 9. **Re-levelling stale data with a proxy family** (12.4): the basis between the stale family
    and its proxy is not measured; a bank would back-test the proxy choice.
+10. **MCP server deferred** (13.1): the tool registry is transport-agnostic; a stdio server is
+    the natural next step once an external client needs it.
+11. **Templated agent drafts** (13.2): with the scripted provider the notes are traceable but
+    flat; the Claude path for `draft` is untested until a key is added (same as item 2).
+12. **Lab uses production limit calibration** (13.3): small sandbox books under-utilise
+    limits, so detection scores depend on the background size chosen.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from novera.api.agents_api import AGENT_METHODS
 from novera.api.service import RiskService, RiskWriteService
 from novera.storage.duckdb_repository import DuckDBRepository
 
@@ -67,6 +68,10 @@ class LocalClient:
             if name == "copilot_history":
                 return c.history(*a, **kw)
             return getattr(c, name)(*a, **kw).to_dict()
+        if name in AGENT_METHODS:
+            from novera.api.agents_api import AgentOps
+
+            return getattr(AgentOps(self.db_path), name)(*a, **kw)
         if name in WRITE_METHODS:
             with DuckDBRepository(self.db_path) as repo:
                 return getattr(RiskWriteService(repo), name)(*a, **kw)
@@ -216,6 +221,47 @@ class HttpClient:
 
     def copilot_provider(self):
         return self._get("/copilot/provider")
+
+    # --- agents and lab (long-running: generous timeouts) ---
+    def _post_long(self, path, **body):
+        r = self.http.post(path, json=body, timeout=1800)
+        r.raise_for_status()
+        return r.json()
+
+    def investigate_breach(self, breach_id, attach=True):
+        return self._post_long("/agents/investigate-breach", breach_id=breach_id, attach=attach)
+
+    def suggest_scenarios(self, run_id=None, n=4):
+        return self._post_long("/agents/suggest-scenarios", run_id=run_id, n=n)
+
+    def draft_validation(self, run_id=None, records=None, run_tests=False):
+        return self._post_long(
+            "/agents/draft-validation", run_id=run_id, records=records, run_tests=run_tests
+        )
+
+    def propose_csa(self, path):
+        return self._post_long("/agents/propose-csa", path=path)
+
+    def approve_csa(self, note_id, actor):
+        return self._post_long("/agents/approve-csa", note_id=note_id, actor=actor)
+
+    def reject_csa(self, note_id, actor, reason=""):
+        return self._post_long("/agents/reject-csa", note_id=note_id, actor=actor, reason=reason)
+
+    def agent_notes(self, kind=None, subject=None, limit=50):
+        return self._get("/agents/notes", kind=kind, subject=subject, limit=limit)
+
+    def problem_catalogue(self):
+        return self._get("/lab/catalogue")
+
+    def run_lab(self, spec):
+        return self._post_long("/lab/run", **spec)
+
+    def labs(self):
+        return self._get("/lab")
+
+    def lab(self, name):
+        return self._get(f"/lab/{name}")
 
     def alerts(self, limit=200, status=None, severity=None):
         return self._get("/alerts", limit=limit, status=status, severity=severity)
