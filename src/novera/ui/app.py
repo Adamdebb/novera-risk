@@ -1893,6 +1893,7 @@ elif page == "Limit management":
                 table,
                 use_container_width=True,
                 hide_index=True,
+                height=min(38 * (len(table) + 1) + 4, 900),
                 on_select="rerun",
                 selection_mode="single-row",
                 key="lm_table",
@@ -1901,8 +1902,9 @@ elif page == "Limit management":
                         "utilisation", min_value=0.0, max_value=1.5, format="percent"
                     ),
                     "warning at": st.column_config.NumberColumn("warning at", format="percent"),
-                    "hierarchy": st.column_config.TextColumn("hierarchy", width="medium"),
-                    "scope": st.column_config.TextColumn("scope", width="small"),
+                    "hierarchy": st.column_config.TextColumn("hierarchy", width="large"),
+                    "scope": st.column_config.TextColumn("scope", width="medium"),
+                    "type": st.column_config.TextColumn("type", width="medium"),
                 },
             )
             picked = getattr(getattr(event, "selection", None), "rows", None) or []
