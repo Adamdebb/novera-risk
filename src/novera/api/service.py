@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from novera.api.errors import InvalidRequestError
 from novera.api.errors import RunNotFoundError as _RunNotFoundError
 from novera.domain.breaches import CloseReason
 from novera.limits import workflow as wf
@@ -15,6 +16,13 @@ from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import RunRecord
 
 HIERARCHY = ["firm_id", "business_id", "desk_id", "book_id", "trader_id", "trade_id"]
+VAR_CONTRIBUTION_FRAMES: dict[str, str] = {
+    "historical_full_revaluation": "var_contributions",
+    "delta_gamma_vega": "var_contributions_challenger",
+    "monte_carlo_delta_gamma_vega": "var_contributions_monte_carlo",
+}
+"""Stored per-trade contribution frame for each VaR method the EOD run writes (MR-002, MR-004, MR-010)."""
+
 DIMENSIONS = HIERARCHY + ["legal_entity_id", "asset_class", "product_type", "currency", "counterparty_id"]
 
 
@@ -114,10 +122,11 @@ class RiskService:
         **filters: str,
     ) -> list[dict[str, Any]]:
         r = self.resolve(run_id)
-        name = (
-            "var_contributions" if method == "historical_full_revaluation" else "var_contributions_challenger"
-        )
-        contrib = self.repo.load_run_frame(r.run_id, name)
+        if method not in VAR_CONTRIBUTION_FRAMES:
+            raise InvalidRequestError(
+                f"unknown VaR method {method!r}; one of {', '.join(VAR_CONTRIBUTION_FRAMES)}"
+            )
+        contrib = self.repo.load_run_frame(r.run_id, VAR_CONTRIBUTION_FRAMES[method])
         v = self.valuation(r.run_id, **filters)
         if contrib.empty or v.empty:
             return []
@@ -335,9 +344,7 @@ class RiskService:
     def trade_extract_options(self, run_id: str | None = None) -> dict[str, Any]:
         r, m = self._extract_frame(run_id)
         dims = {
-            d: sorted(str(x) for x in m[d].dropna().unique())
-            for d in self.EXTRACT_DIMS
-            if d in m.columns
+            d: sorted(str(x) for x in m[d].dropna().unique()) for d in self.EXTRACT_DIMS if d in m.columns
         }
         dates = {}
         for c in ("trade_date", "maturity_date"):
@@ -448,7 +455,9 @@ class RiskService:
                     "node_name": path[-1],
                     "path": " › ".join(path),
                     "filters": ", ".join(f"{k}={v}" for k, v in scope.items()),
-                    "unit": "share" if lim.limit_type.value in share_types else r.reporting_currency
+                    "unit": "share"
+                    if lim.limit_type.value in share_types
+                    else r.reporting_currency
                     if run_ref["run_id"]
                     else "reporting currency",
                     "amount": lim.amount,
