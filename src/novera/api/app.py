@@ -332,6 +332,11 @@ def market_data_sources(svc: RiskService = Depends(service)):
     return svc.market_data_sources()
 
 
+@app.get("/reference/stress-library", response_model=s.StressLibrary)
+def stress_library(svc: RiskService = Depends(service)):
+    return svc.stress_library()
+
+
 @app.get("/reference/counterparties", response_model=s.CounterpartyReference)
 def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()

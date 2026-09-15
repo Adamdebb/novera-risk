@@ -58,7 +58,8 @@ with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
     run_id = st.selectbox("Run", list(labels), format_func=labels.get)
-    pages = ["Overview", "Copilot", "Drill-down", "Trade extract", "VaR", "Stress", "Limit management"]
+    pages = ["Overview", "Copilot", "Drill-down", "Trade extract", "VaR", "Stress", "Stress library"]
+    pages += ["Limit management"]
     pages += ["Breaches"]
     pages += ["Counterparty"]
     pages += ["Fund"] if is_fund else ["Capital"]
@@ -416,6 +417,57 @@ elif page == "Stress":
         row = stt[stt["name"] == pick].iloc[0]
         st.caption(row["description"])
         st.bar_chart(pd.Series({c: row[c] / M for c in cols}, name="loss (m)"))
+
+elif page == "Stress library":
+    header("Stress library")
+    st.caption(
+        "Every stress scenario the platform knows, by category, with the shocks it applies. "
+        "Hypothetical shocks are rules; historical windows show the realised move of headline "
+        "factors in the stored history (MR-005)."
+    )
+
+    @st.cache_data(ttl=60, show_spinner=False)
+    def load_stress_library(firm: str) -> dict:
+        return client.stress_library()
+
+    lib = load_stress_library(firm_name)
+    hist, tot = lib["history"], lib["summary"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Scenarios", tot["scenarios"], f"{tot['in_daily_run']} in the daily run")
+    c2.metric("Stored history", f"{hist['days']:,} days", f"{hist['start']} to {hist['end']}")
+    c3.metric("Real factors in store", f"{hist['real_factors']:,} / {hist['factors']:,}")
+    c4.metric("Real crises replayable", tot["replayable_real"])
+    status_names = {
+        "IN_RUN": "🟢 in the daily run",
+        "REAL": "🟢 replayable on real data",
+        "PARTLY_REAL": "🟡 partly real data",
+        "SYNTHETIC_WINDOW": "⚪ window covered, synthetic data only",
+        "NOT_COVERED": "⚫ outside the stored history",
+    }
+    for cat in lib["categories"]:
+        st.subheader(f"{cat['title']} · {cat['count']}")
+        st.caption(cat["description"])
+        for sc in cat["scenarios"]:
+            window = f" · {sc['window_start']} to {sc['window_end']}" if sc["window_start"] else ""
+            with st.expander(f"{sc['name']} · {status_names.get(sc['status'], sc['status'])}{window}"):
+                st.markdown(sc["description"])
+                if sc.get("note"):
+                    st.caption(sc["note"])
+                shocks = df(sc["shocks"])
+                if shocks.empty:
+                    st.caption("No shocks to show: the window is outside the stored history.")
+                else:
+                    label = (
+                        "Shock rule"
+                        if cat["category"] == "HYPOTHETICAL"
+                        else "Realised move of headline factors"
+                    )
+                    st.markdown(f"**{label}**")
+                    cols = ["family", "target", "size", "unit"]
+                    if cat["category"] == "HYPOTHETICAL":
+                        cols.append("tenors")
+                        shocks["tenors"] = shocks["tenors"].fillna("all")
+                    st.dataframe(shocks[cols].round(1), use_container_width=True, hide_index=True)
 
 elif page == "Counterparty":
     header("Counterparty risk")

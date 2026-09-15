@@ -94,6 +94,7 @@ def app(db_path, monkeypatch):
         "Trade extract",
         "VaR",
         "Stress",
+        "Stress library",
         "Limit management",
         "Breaches",
         "Counterparty",

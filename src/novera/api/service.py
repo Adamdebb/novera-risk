@@ -508,6 +508,17 @@ class RiskService:
 
         return market_data_sources(self.repo.load_risk_factors(), self.repo.load_market_provenance())
 
+    def stress_library(self) -> dict[str, Any]:
+        """The stress library by category with the shocks each scenario applies; historical
+        windows show the realised moves of headline factors in the stored history (MR-005)."""
+        from novera.market_data.history import MarketHistory
+        from novera.risk.stress_catalogue import HEADLINE_FACTORS, stress_library
+
+        universe = self.repo.load_risk_factors()
+        rows = self.repo.load_market_history(factor_ids=[fid for fid, _ in HEADLINE_FACTORS])
+        history = MarketHistory.from_long(rows) if len(rows) else None
+        return stress_library(history, universe, self.repo.load_market_provenance())
+
     def counterparty_reference(self) -> dict[str, Any]:
         """Static counterparty reference data: counterparties, netting sets and CSA terms,
         independent of any run."""

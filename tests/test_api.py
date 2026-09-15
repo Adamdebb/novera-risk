@@ -173,6 +173,25 @@ def test_http_endpoints(client):
     fam = {f["family"]: f for f in srcs["families"]}
     assert fam["CMD:BRENT"]["status"] == "PARTIAL" and fam["CMD:BRENT"]["available"] == 1
     assert fam["SWVOL:USD"]["status"] == "SYNTHETIC"
+    lib = client.get("/reference/stress-library").json()
+    assert lib["record"] == "MR-005" and [c["category"] for c in lib["categories"]] == [
+        "HYPOTHETICAL",
+        "STYLISED_HISTORICAL",
+        "NAMED_CRISIS",
+    ]
+    hyp = {x["scenario_id"]: x for x in lib["categories"][0]["scenarios"]}
+    assert len(hyp) == 12 and hyp["usd_rates_up_100"]["shocks"][0]["size"] == 100.0
+    assert hyp["usd_rates_up_100"]["shocks"][0]["unit"] == "bp" and hyp["usd_rates_up_100"]["in_daily_run"]
+    steep = hyp["usd_steepener"]["shocks"]
+    assert steep[0]["tenors"] == "1M, 3M, 6M, 1Y, 2Y" and steep[0]["size"] == -50.0
+    styl = lib["categories"][1]["scenarios"]
+    assert [x["scenario_id"] for x in styl] == ["stylised_risk_off_crash", "stylised_rates_shock"]
+    spx = next(sh for sh in styl[0]["shocks"] if sh["target"] == "EQIDX:SPX")
+    assert spx["kind"] == "REALISED" and spx["unit"] == "%" and spx["size"] < -15
+    crises = {x["scenario_id"]: x for x in lib["categories"][2]["scenarios"]}
+    assert len(crises) == 7 and not any(x["in_daily_run"] for x in crises.values())
+    assert crises["covid_2020"]["status"] == "NOT_COVERED" and crises["covid_2020"]["shocks"] == []
+    assert lib["summary"]["replayable_real"] == 0 and lib["history"]["days"] > 200
     ref = client.get("/reference/counterparties").json()
     assert ref["counterparties"] and ref["netting_sets"] and ref["csas"]
     assert {n["csa_id"] for n in ref["netting_sets"] if n["csa_id"]} <= {c["csa_id"] for c in ref["csas"]}
@@ -348,6 +367,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.MeasureReference, client.get("/reference/measures").json()),
         (s.RiskFactorReference, client.get("/reference/risk-factors").json()),
         (s.MarketDataSources, client.get("/reference/market-data-sources").json()),
+        (s.StressLibrary, client.get("/reference/stress-library").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))

@@ -9329,6 +9329,85 @@
         "title": "StrategyAttribution",
         "type": "object"
       },
+      "StressCategory": {
+        "additionalProperties": true,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "in_daily_run": {
+            "title": "In Daily Run",
+            "type": "boolean"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenarioSpec"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "title",
+          "description",
+          "in_daily_run",
+          "count",
+          "scenarios"
+        ],
+        "title": "StressCategory",
+        "type": "object"
+      },
+      "StressLibrary": {
+        "additionalProperties": true,
+        "description": "The stress library by category with the shocks each scenario applies, and for\nhistorical windows the realised moves of headline factors. Record MR-005.",
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/StressCategory"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "history": {
+            "additionalProperties": true,
+            "title": "History",
+            "type": "object"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "record",
+          "history",
+          "categories",
+          "summary"
+        ],
+        "title": "StressLibrary",
+        "type": "object"
+      },
       "StressRow": {
         "additionalProperties": true,
         "description": "One scenario; when grouped, each group's P&L is an extra field named after the group.",
@@ -9368,6 +9447,163 @@
           "total"
         ],
         "title": "StressRow",
+        "type": "object"
+      },
+      "StressScenarioSpec": {
+        "additionalProperties": true,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "in_daily_run": {
+            "title": "In Daily Run",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "HYPOTHETICAL or HISTORICAL, as the engine runs it",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "real_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Real Share"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "shock_count": {
+            "title": "Shock Count",
+            "type": "integer"
+          },
+          "shocks": {
+            "items": {
+              "$ref": "#/components/schemas/StressShock"
+            },
+            "title": "Shocks",
+            "type": "array"
+          },
+          "status": {
+            "description": "IN_RUN, NOT_COVERED, SYNTHETIC_WINDOW, PARTLY_REAL or REAL",
+            "title": "Status",
+            "type": "string"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "name",
+          "category",
+          "kind",
+          "description",
+          "in_daily_run",
+          "status",
+          "shocks",
+          "shock_count"
+        ],
+        "title": "StressScenarioSpec",
+        "type": "object"
+      },
+      "StressShock": {
+        "additionalProperties": true,
+        "properties": {
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "kind": {
+            "description": "RULE (hypothetical) or REALISED (observed move in the history)",
+            "title": "Kind",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "number"
+          },
+          "target": {
+            "description": "Factor id or family prefix the shock applies to",
+            "title": "Target",
+            "type": "string"
+          },
+          "tenors": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Curve nodes the rule is limited to",
+            "title": "Tenors"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "unit": {
+            "description": "bp, vol points or %",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "family",
+          "size",
+          "unit",
+          "text",
+          "kind"
+        ],
+        "title": "StressShock",
         "type": "object"
       },
       "StressedExposureRow": {
@@ -13345,6 +13581,54 @@
           }
         },
         "summary": "Risk Factor Reference"
+      }
+    },
+    "/reference/stress-library": {
+      "get": {
+        "operationId": "stress_library_reference_stress_library_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressLibrary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Library"
       }
     },
     "/runs": {

@@ -188,3 +188,25 @@ def test_portfolio_skips_unpriceable(world):
     assert isinstance(pf.pnl_under_shocks({"CRYPTO:BTC": 0.1}), dict)
     assert pf.pnl_under_shocks({"NOPE:X": 0.1}) == {}
     assert isinstance(pd.DataFrame(), pd.DataFrame)
+
+
+def test_stress_library_catalogue(world):
+    from novera.risk.stress_catalogue import HEADLINE_FACTORS, stress_library
+
+    lib = stress_library(world["hist"], list(world["pf"].universe.values()))
+    cats = {c["category"]: c for c in lib["categories"]}
+    assert (
+        cats["HYPOTHETICAL"]["count"] == len(HYPOTHETICAL_LIBRARY)
+        and cats["STYLISED_HISTORICAL"]["count"] == 2
+    )
+    rules = {r["scenario_id"]: r["shocks"] for r in cats["HYPOTHETICAL"]["scenarios"]}
+    assert rules["credit_wider_150"][0]["unit"] == "bp" and rules["credit_wider_150"][0]["size"] == 150.0
+    vol = next(s for s in rules["equity_crash_20_vol_15"] if s["target"] == "VOL:")
+    assert vol["unit"] == "vol points" and vol["size"] == 15.0
+    crash = cats["STYLISED_HISTORICAL"]["scenarios"][0]
+    assert crash["status"] == "IN_RUN" and crash["shock_count"] == len(HEADLINE_FACTORS)
+    usd10 = next(s for s in crash["shocks"] if s["target"] == "IR:USD:10Y")
+    assert usd10["unit"] == "bp" and usd10["size"] < 0  # rates fall in the risk-off crash
+    crises = cats["NAMED_CRISIS"]["scenarios"]
+    assert all(c["status"] == "NOT_COVERED" and not c["in_daily_run"] for c in crises)
+    assert lib["summary"]["scenarios"] == len(HYPOTHETICAL_LIBRARY) + 2 + 7

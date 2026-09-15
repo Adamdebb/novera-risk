@@ -101,6 +101,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Stress",
                 "Stress testing",
+                version="1.1.0",
             ),
             MeasureSpec(
                 "MR-007",
