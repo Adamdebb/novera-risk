@@ -30,6 +30,33 @@ from novera.domain.enums import AssetClass
 BUSINESS_DATE = date(2026, 9, 11)
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_settings_from_dotenv():
+    """Tests never read the developer's ``.env``: it may hold live SMTP or Slack credentials, and
+    every test that runs a full EOD dispatches its alerts through whatever channels settings
+    describe (this flooded a real inbox on 2026-09-15). Environment variables set with
+    ``monkeypatch.setenv`` still apply; only the dotenv file is switched off."""
+    from novera.config import Settings, get_settings
+
+    previous = Settings.model_config.get("env_file")
+    Settings.model_config["env_file"] = None
+    get_settings.cache_clear()
+    yield
+    Settings.model_config["env_file"] = previous
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_smtp(monkeypatch):
+    """Belt and braces: no test may open a real SMTP connection. Tests that exercise the email
+    channel pass their own ``smtp_factory``."""
+
+    def _blocked(*_a, **_k):
+        raise RuntimeError("tests must not open real SMTP connections; pass smtp_factory=")
+
+    monkeypatch.setattr("smtplib.SMTP", _blocked)
+
+
 @pytest.fixture
 def organisation() -> Organisation:
     return Organisation(

@@ -57,6 +57,9 @@ src/novera/
 
 ## Conventions
 - Python 3.12, `uv` for env and deps. `uv run pytest`, `uv run ruff check .`, `uv run mypy src`.
+- Tests never read `.env` (a conftest fixture disables the dotenv source and blocks `smtplib.SMTP`).
+  A full EOD dispatches real alerts through whatever channels `.env` configures, so keep live
+  SMTP/Slack credentials out of `.env` unless you mean to send, and never remove those fixtures.
 - Pydantic v2 models for all domain objects. Frozen where the object is a fact (trade,
   snapshot), mutable only for workflow state (breach, run).
 - Money and notionals are `float` in reporting currency unless the field name says
