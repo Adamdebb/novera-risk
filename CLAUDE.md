@@ -85,6 +85,7 @@ uv run novera report          # daily risk pack (HTML, PDF via Playwright Chromi
 uv run novera agent investigate <breach_id> | scenarios | validation | ingest [doc] --approve <actor>
 uv run novera lab problems / run <name> --problems a,b --scale 2 / list   # Portfolio Lab sandboxes
 uv run novera lab run <name> ...   # sandbox at data/lab/<name>.duckdb; NOVERA_DB_PATH points the dashboard at it
+uv run novera mcp [--fund] [--allow-agents]   # MCP server over stdio (AI-004); register with `claude mcp add novera -- uv run --directory <repo> novera mcp`
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload

@@ -140,8 +140,8 @@ suggestion (proposals sized by the history, run through the engine), model-valid
 report drafting (from the methodology records and live evidence), ISDA/CSA document
 ingestion with a review-and-approve step. Portfolio Lab: choose a template, plant a
 subset of problems at a chosen size, run into a sandbox, see what was detected, from
-the dashboard or `novera lab`. Records AI-002, AI-003, LAB-001. Deferred: the MCP
-server (Round 13).
+the dashboard or `novera lab`. MCP server over stdio exposing the same tools to any MCP
+client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-001.
 
 ## Injected problems in the simulated portfolio
 
