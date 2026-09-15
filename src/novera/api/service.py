@@ -252,6 +252,149 @@ class RiskService:
             firm_id = ids[0]
         return self.repo.load_organisation(firm_id).model_dump(mode="json")
 
+    # --- trade extract ------------------------------------------------------------------------
+    EXTRACT_DIMS = (
+        "business_id",
+        "desk_id",
+        "book_id",
+        "legal_entity_id",
+        "trader_id",
+        "asset_class",
+        "product_type",
+        "currency",
+        "direction",
+        "status",
+        "clearing",
+        "counterparty_id",
+        "netting_set_id",
+    )
+    EXTRACT_LEAD = [
+        "trade_id",
+        "business_id",
+        "desk_id",
+        "book_id",
+        "legal_entity_id",
+        "trader_id",
+        "counterparty_id",
+        "netting_set_id",
+        "clearing",
+        "asset_class",
+        "product_type",
+        "instrument_id",
+        "description",
+        "currency",
+        "direction",
+        "swap_side",
+        "quantity",
+        "trade_price",
+        "trade_date",
+        "settlement_date",
+        "maturity_date",
+        "status",
+        "source_system",
+        "version",
+        "pv_local",
+        "fx_to_reporting",
+        "pv",
+        "model",
+        "model_version",
+        "note",
+        "error",
+    ]
+
+    def _extract_frame(self, run_id: str | None) -> tuple[RunRecord, pd.DataFrame]:
+        """Every trade of the run: valuation row joined with the booked trade and its
+        instrument terms flattened into columns (a term a product lacks is empty)."""
+        r, v = self._frame(run_id, "valuation")
+        snap = self.repo.load_portfolio_snapshot(r.portfolio_snapshot_id)
+        booked = []
+        for tr in snap.trades:
+            d = tr.model_dump(mode="json")
+            ins = d.pop("instrument") or {}
+            d.pop("validation_errors", None)
+            d.pop("booked_at", None)
+            for k in ("book_id", "trader_id", "counterparty_id", "quantity", "direction", "status"):
+                d.pop(k, None)
+            for k, val in ins.items():
+                if k in ("currency", "product_type"):
+                    continue
+                d.setdefault(k, val)
+            d["maturity_date"] = (
+                ins.get("maturity_date")
+                or ins.get("expiry_date")
+                or ins.get("end_date")
+                or d.get("settlement_date")
+            )
+            booked.append(d)
+        b = pd.DataFrame(booked)
+        m = v.merge(b, on="trade_id", how="left") if not b.empty else v
+        lead = [c for c in self.EXTRACT_LEAD if c in m.columns]
+        rest = sorted(c for c in m.columns if c not in lead)
+        return r, m[lead + rest]
+
+    def trade_extract_options(self, run_id: str | None = None) -> dict[str, Any]:
+        r, m = self._extract_frame(run_id)
+        dims = {
+            d: sorted(str(x) for x in m[d].dropna().unique())
+            for d in self.EXTRACT_DIMS
+            if d in m.columns
+        }
+        dates = {}
+        for c in ("trade_date", "maturity_date"):
+            s = m[c].dropna() if c in m.columns else pd.Series(dtype=str)
+            dates[c] = {"min": str(s.min()) if len(s) else None, "max": str(s.max()) if len(s) else None}
+        return {
+            "run_id": r.run_id,
+            "business_date": r.business_date.isoformat(),
+            "dims": dims,
+            "dates": dates,
+        }
+
+    def _extract_filtered(self, run_id: str | None, f: dict[str, Any]) -> tuple[RunRecord, pd.DataFrame]:
+        r, m = self._extract_frame(run_id)
+        for d in self.EXTRACT_DIMS:
+            vals = f.get(d)
+            if vals and d in m.columns:
+                m = m[m[d].astype(str).isin([str(x) for x in vals])]
+        for col, lo, hi in (
+            ("trade_date", f.get("trade_date_from"), f.get("trade_date_to")),
+            ("maturity_date", f.get("maturity_from"), f.get("maturity_to")),
+        ):
+            if col in m.columns:
+                if lo:
+                    m = m[m[col].fillna("") >= str(lo)]
+                if hi:
+                    m = m[m[col].fillna("9999") <= str(hi)]
+        if f.get("min_abs_pv"):
+            m = m[m["pv"].abs() >= float(f["min_abs_pv"])]
+        if f.get("min_abs_quantity"):
+            m = m[m["quantity"].abs() >= float(f["min_abs_quantity"])]
+        if f.get("q"):
+            needle = str(f["q"]).lower()
+            hay = m[[c for c in ("trade_id", "instrument_id", "description") if c in m.columns]].astype(str)
+            m = m[hay.apply(lambda row: needle in " ".join(row).lower(), axis=1)]
+        if f.get("trade_ids"):
+            wanted = {str(x).strip() for x in f["trade_ids"] if str(x).strip()}
+            m = m[m["trade_id"].isin(wanted)]
+        return r, m
+
+    def trade_extract(self, run_id: str | None = None, **filters: Any) -> dict[str, Any]:
+        """Trades of the run matching the filters, with valuation and instrument terms."""
+        r, m = self._extract_filtered(run_id, filters)
+        return {
+            "run_id": r.run_id,
+            "business_date": r.business_date.isoformat(),
+            "reporting_currency": r.reporting_currency,
+            "count": int(len(m)),
+            "pv_total": float(m["pv"].fillna(0).sum()) if len(m) else 0.0,
+            "columns": list(m.columns),
+            "rows": _records(m),
+        }
+
+    def trade_extract_csv(self, run_id: str | None = None, **filters: Any) -> str:
+        _, m = self._extract_filtered(run_id, filters)
+        return m.to_csv(index=False)
+
     # --- limit management ---------------------------------------------------------------------
     LEVEL_RANK = {"firm_id": 0, "business_id": 1, "desk_id": 2, "book_id": 3, "counterparty_id": 4}
 

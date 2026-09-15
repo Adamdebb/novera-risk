@@ -365,6 +365,70 @@ class AuditEvent(ApiModel):
     payload: str | None = None
 
 
+# --- trade extract ------------------------------------------------------------------------
+class TradeExtractRow(Row):
+    """One trade of the run with its valuation; the instrument's terms (issuer, coupon,
+    strike, expiry, pair, ...) arrive as extra columns named after the instrument fields."""
+
+    trade_id: str
+    business_id: str | None = None
+    desk_id: str | None = None
+    book_id: str | None = None
+    legal_entity_id: str | None = None
+    trader_id: str | None = None
+    counterparty_id: str | None = None
+    netting_set_id: str | None = None
+    clearing: str | None = None
+    asset_class: str
+    product_type: str
+    instrument_id: str | None = None
+    description: str | None = None
+    currency: str
+    direction: str
+    swap_side: str | None = None
+    quantity: float
+    trade_price: float | None = None
+    trade_date: str | None = None
+    settlement_date: str | None = None
+    maturity_date: str | None = Field(
+        default=None, description="Maturity, expiry or end date, whichever applies"
+    )
+    status: str
+    source_system: str | None = None
+    version: int | None = None
+    pv_local: float | None = None
+    fx_to_reporting: float | None = None
+    pv: float | None = None
+    model: str | None = None
+    model_version: str | None = None
+    note: str | None = None
+    error: str | None = None
+
+
+class TradeExtract(ApiModel):
+    run_id: str
+    business_date: str
+    reporting_currency: str
+    count: int
+    pv_total: float
+    columns: list[str] = Field(description="Column order of the CSV")
+    rows: list[TradeExtractRow]
+
+
+class DateRange(ApiModel):
+    min: str | None = None
+    max: str | None = None
+
+
+class TradeExtractOptions(ApiModel):
+    """Distinct values per filter dimension in the run, to populate a filter form."""
+
+    run_id: str
+    business_date: str
+    dims: dict[str, list[str]]
+    dates: dict[str, DateRange]
+
+
 # --- limit management ---------------------------------------------------------------------
 class LimitHierarchyRow(ApiModel):
     """A limit definition placed in the firm hierarchy, with the selected run's figures."""

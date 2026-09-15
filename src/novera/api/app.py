@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from novera import __version__
@@ -236,6 +237,61 @@ def dq(run_id: str, svc: RiskService = Depends(service)):
 @app.get("/runs/{run_id}/pnl", response_model=s.PnLExplain)
 def pnl(run_id: str, by: str | None = None, desk_id: str | None = None, svc: RiskService = Depends(service)):
     return svc.pnl(run_id, by, desk_id=desk_id)
+
+
+class ExtractFilters(BaseModel):
+    """Query filters of the trade extract; list filters repeat the parameter."""
+
+    business_id: list[str] | None = None
+    desk_id: list[str] | None = None
+    book_id: list[str] | None = None
+    legal_entity_id: list[str] | None = None
+    trader_id: list[str] | None = None
+    asset_class: list[str] | None = None
+    product_type: list[str] | None = None
+    currency: list[str] | None = None
+    direction: list[str] | None = None
+    status: list[str] | None = None
+    clearing: list[str] | None = None
+    counterparty_id: list[str] | None = None
+    netting_set_id: list[str] | None = None
+    trade_date_from: str | None = None
+    trade_date_to: str | None = None
+    maturity_from: str | None = None
+    maturity_to: str | None = None
+    min_abs_pv: float | None = None
+    min_abs_quantity: float | None = None
+    q: str | None = Field(default=None, description="Matches trade id, instrument id or description")
+    trade_ids: list[str] | None = None
+
+
+@app.get("/runs/{run_id}/trade-extract/options", response_model=s.TradeExtractOptions)
+def trade_extract_options(run_id: str, svc: RiskService = Depends(service)):
+    return svc.trade_extract_options(run_id)
+
+
+@app.get("/runs/{run_id}/trade-extract", response_model=s.TradeExtract)
+def trade_extract(
+    run_id: str, f: Annotated[ExtractFilters, Query()], svc: RiskService = Depends(service)
+):
+    return svc.trade_extract(run_id, **f.model_dump(exclude_none=True))
+
+
+@app.get(
+    "/runs/{run_id}/trade-extract.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}, **PROBLEM_RESPONSES},
+    summary="The same extract as a CSV file",
+)
+def trade_extract_csv(
+    run_id: str, f: Annotated[ExtractFilters, Query()], svc: RiskService = Depends(service)
+):
+    r = svc.resolve(run_id)
+    body = svc.trade_extract_csv(r.run_id, **f.model_dump(exclude_none=True))
+    name = f"trades_{r.business_date.isoformat()}_{r.run_id}.csv"
+    return Response(
+        body, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{name}"'}
+    )
 
 
 @app.get("/runs/{run_id}/trades/{trade_id}", response_model=s.TradeDetail)

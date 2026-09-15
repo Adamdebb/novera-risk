@@ -58,7 +58,8 @@ with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
     run_id = st.selectbox("Run", list(labels), format_func=labels.get)
-    pages = ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limit management", "Breaches"]
+    pages = ["Overview", "Copilot", "Drill-down", "Trade extract", "VaR", "Stress", "Limit management"]
+    pages += ["Breaches"]
     pages += ["Counterparty"]
     pages += ["Fund"] if is_fund else ["Capital"]
     pages += [
@@ -1959,4 +1960,97 @@ elif page == "Limit management":
         st.caption("The breach workflow stays on the Breaches page until it moves into this module.")
     with tab_i:
         st.caption("Temporary limit increases stay on the Breaches page until they move into this module.")
+
+elif page == "Trade extract":
+    header("Trade extract")
+    st.caption(
+        "Every trade of the selected run with its valuation and instrument terms. Filter, preview, "
+        "then download the whole selection as CSV. The file names the run, so it can be reproduced."
+    )
+    opts = load("trade_extract_options", run_id)
+    dims = opts["dims"]
+    dim_labels = {
+        "business_id": "Business",
+        "desk_id": "Desk",
+        "book_id": "Book",
+        "legal_entity_id": "Legal entity",
+        "trader_id": "Trader",
+        "asset_class": "Asset class",
+        "product_type": "Product type",
+        "currency": "Currency",
+        "direction": "Direction",
+        "status": "Status",
+        "clearing": "Clearing",
+        "counterparty_id": "Counterparty",
+        "netting_set_id": "Netting set",
+    }
+    filters: dict = {}
+    with st.expander("Hierarchy and product", expanded=True):
+        cols = st.columns(4)
+        for i, d in enumerate([k for k in dim_labels if k in dims]):
+            pick = cols[i % 4].multiselect(dim_labels[d], dims[d], key=f"tx_{d}")
+            if pick:
+                filters[d] = pick
+    with st.expander("Dates and size", expanded=False):
+        d1, d2, d3, d4, d5, d6 = st.columns(6)
+        td = opts["dates"].get("trade_date", {})
+        md = opts["dates"].get("maturity_date", {})
+        iso = "YYYY-MM-DD"
+        f_from = d1.text_input("Trade date from", value="", placeholder=td.get("min") or iso, key="tx_tdf")
+        f_to = d2.text_input("Trade date to", value="", placeholder=td.get("max") or iso, key="tx_tdt")
+        m_from = d3.text_input("Maturity from", value="", placeholder=md.get("min") or iso, key="tx_mf")
+        m_to = d4.text_input("Maturity to", value="", placeholder=md.get("max") or iso, key="tx_mt")
+        min_pv = d5.number_input(f"Min |PV| ({ccy} m)", min_value=0.0, value=0.0, step=0.5, key="tx_pv")
+        min_qty = d6.number_input("Min |quantity|", min_value=0.0, value=0.0, step=1.0, key="tx_qty")
+        for k, v in (
+            ("trade_date_from", f_from.strip()),
+            ("trade_date_to", f_to.strip()),
+            ("maturity_from", m_from.strip()),
+            ("maturity_to", m_to.strip()),
+        ):
+            if v:
+                filters[k] = v
+        if min_pv:
+            filters["min_abs_pv"] = min_pv * M
+        if min_qty:
+            filters["min_abs_quantity"] = min_qty
+    with st.expander("Text and trade ids", expanded=False):
+        t1, t2 = st.columns([1, 2])
+        q = t1.text_input("Search", placeholder="trade id, instrument id or description", key="tx_q")
+        q = q.strip()
+        ids_text = t2.text_area(
+            "Trade ids (comma, space or line separated)",
+            height=80,
+            placeholder="IRS_000201 IRS_000202",
+            key="tx_ids",
+        )
+        if q:
+            filters["q"] = q
+        ids = [x for x in ids_text.replace(",", " ").split() if x]
+        if ids:
+            filters["trade_ids"] = ids
+
+    hashable = {k: tuple(v) if isinstance(v, list) else v for k, v in filters.items()}
+    ext = load("trade_extract", run_id, **hashable)
+    rows = ext["rows"]
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Trades selected", f"{ext['count']:,}")
+    s2.metric("PV of selection", money(ext["pv_total"], digits=2))
+    s3.metric("Columns", len(ext["columns"]))
+    st.download_button(
+        f"Download {ext['count']:,} trades as CSV",
+        data=client.trade_extract_csv(run_id, **filters),
+        file_name=f"trades_{ext['business_date']}_{ext['run_id']}.csv",
+        mime="text/csv",
+        disabled=ext["count"] == 0,
+        key="tx_download",
+    )
+    if rows:
+        preview = pd.DataFrame(rows, columns=ext["columns"]).head(200)
+        st.caption(f"Preview of the first {len(preview)} rows; the file carries all {ext['count']:,}.")
+        st.dataframe(
+            preview, use_container_width=True, hide_index=True, height=min(38 * (len(preview) + 1) + 4, 700)
+        )
+    else:
+        st.info("No trades match the filters.")
 

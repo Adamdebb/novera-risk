@@ -461,6 +461,31 @@ to grow into the rest of the limit function later.
   (`GET /limits/hierarchy`), so the screen computes nothing.
 - Where: `api/service.py` `limit_hierarchy`, `ui/app.py` page "Limit management"
 
+## Round 17 — Trade extract (2026-09-15)
+
+Context: the owner asked for a page to download all or a filtered set of trades as CSV.
+
+### 17.1 Columns
+- Options (multi-select): trade and valuation ★ · instrument terms · per-trade risk
+- Choice: **Trade and valuation plus instrument terms.** Each row is the run's valuation of
+  the trade joined with the booked trade and its instrument's fields flattened into columns;
+  a term a product lacks is empty. A derived `maturity_date` holds maturity, expiry or end
+  date, whichever applies. Per-trade risk was not chosen; it stays on the trade lookup.
+
+### 17.2 Filters
+- Options (multi-select): hierarchy and product ★ · dates and size · free text and id list
+- Choice: **All three.** Multi-selects on the thirteen dimensions, trade-date and maturity
+  ranges, minimum |PV| and |quantity|, a search over trade id, instrument id and description,
+  and a paste box of trade ids.
+
+### 17.3 Page
+- Options: own page with preview ★ · section on the drill-down page
+- Choice: **Own page "Trade extract"** after Drill-down: filters, count and PV of the
+  selection, a 200-row preview, and the CSV download of the whole selection. The extract is
+  an API endpoint (`GET /runs/{id}/trade-extract`, `.csv` and `/options`), so the same file is
+  available to any client and is named after the run for reproducibility.
+- Where: `api/service.py` `trade_extract*`, `ui/app.py` page "Trade extract"
+
 ---
 
 ## Standing instructions given outside the question rounds
