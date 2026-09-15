@@ -7,18 +7,29 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from novera.domain import (
+    ETF,
+    BarrierType,
+    BasketLeg,
     CashEquity,
     CDSIndex,
+    CDSSingleName,
     CommodityFuture,
+    CommodityOption,
     CryptoSpot,
+    EquityExotic,
     EquityIndexFuture,
     EquityOption,
+    ExoticStyle,
     FXForward,
     FXOption,
     FXSpot,
     GovernmentBond,
+    InterestRateFuture,
     InterestRateSwap,
+    MutualFund,
     OptionType,
+    Repo,
+    Swaption,
 )
 from novera.simulation import reference_levels as ref
 
@@ -194,3 +205,175 @@ def cds_index(family: str, business_date: date) -> CDSIndex:
 def crypto_spot(symbol: str) -> CryptoSpot:
     venue, _, _ = ref.CRYPTO[symbol]
     return CryptoSpot(instrument_id=f"CRYPTO_{symbol}", currency="USD", symbol=symbol, venue_name=venue)
+
+
+# --- Phase 6 breadth -------------------------------------------------------------------------
+
+
+def repo(currency: str, collateral: GovernmentBond, start: date, end: date, rate: float) -> Repo:
+    return Repo(
+        instrument_id=f"REPO_{currency}_{collateral.instrument_id}_{start:%Y%m%d}_{end:%Y%m%d}",
+        currency=currency,
+        collateral_instrument_id=collateral.instrument_id,
+        collateral_issuer=collateral.issuer,
+        start_date=start,
+        end_date=end,
+        repo_rate=rate,
+        haircut=ref.REPO_HAIRCUT.get(currency, 0.03),
+    )
+
+
+def ir_futures(currency: str, business_date: date, count: int = 8) -> list[InterestRateFuture]:
+    """Quarterly IMM strip of three-month money-market futures."""
+    index, exch, notional = ref.IR_FUTURES[currency]
+    return [
+        InterestRateFuture(
+            instrument_id=f"IRF_{currency}_{exp:%Y%m}",
+            currency=currency,
+            index=index,
+            exchange=exch,
+            expiry_date=exp,
+            contract_notional=notional,
+        )
+        for exp in _imm_dates(business_date, count)
+    ]
+
+
+def swaption(currency: str, expiry: date, tenor: str, strike: float, payer: bool) -> Swaption:
+    return Swaption(
+        instrument_id=f"SWPT_{currency}_{'P' if payer else 'R'}_{expiry:%Y%m%d}_{tenor}_{strike * 1e4:.0f}",
+        currency=currency,
+        expiry_date=expiry,
+        swap_tenor=tenor,
+        strike=strike,
+        payer=payer,
+        float_index=ref.FLOAT_INDEX[currency],
+    )
+
+
+def cds_single_name(entity: str, business_date: date) -> CDSSingleName:
+    ccy, name, sector, spread_bp, rec, _ = ref.CDS_SINGLE_NAMES[entity]
+    mat = date(business_date.year + 5, 12, 20)
+    coupon = 0.05 if spread_bp > 200 else 0.01
+    return CDSSingleName(
+        instrument_id=f"CDS_{entity}_5Y",
+        currency=ccy,
+        reference_entity=entity,
+        entity_name=name,
+        sector=sector,
+        maturity_date=mat,
+        fixed_coupon=coupon,
+        recovery_rate=rec,
+    )
+
+
+def commodity_option(code: str, expiry: date, strike: float, kind: OptionType) -> CommodityOption:
+    exch, ccy, _, _, size, unit = ref.COMMODITIES[code]
+    return CommodityOption(
+        instrument_id=f"CMO_{code}_{kind.value[0]}_{strike:.2f}_{expiry:%Y%m%d}",
+        currency=ccy,
+        commodity=code,
+        exchange=exch,
+        option_type=kind,
+        strike=strike,
+        expiry_date=expiry,
+        contract_size=size,
+        unit=unit,
+    )
+
+
+def _leg_reference_price(kind: str, underlying: str) -> tuple[float, str]:
+    if kind == "EQ":
+        return ref.EQUITIES[underlying][4], ref.EQUITIES[underlying][1]
+    if kind == "EQIDX":
+        return ref.EQUITY_INDICES[underlying][2], ref.EQUITY_INDICES[underlying][1]
+    if kind == "CMD":
+        return ref.COMMODITIES[underlying][2], "USD"
+    return ref.CRYPTO[underlying][1], "USD"
+
+
+def _basket(weights: dict[tuple[str, str], float], nav0: float, currency: str) -> tuple[BasketLeg, ...]:
+    """Units per fund share such that the basket is worth ``nav0`` at reference levels
+    (ignoring FX between leg and fund currency, which is close to one at reference)."""
+    legs = []
+    for (kind, u), w in weights.items():
+        price, ccy = _leg_reference_price(kind, u)
+        fx = 1.0 if ccy == currency else ref.FX_SPOT.get(f"{ccy}/{currency}", (1.0,))[0]
+        legs.append(BasketLeg(underlying=u, kind=kind, units_per_share=w * nav0 / (price * fx), currency=ccy))
+    return tuple(legs)
+
+
+def etf(code: str) -> ETF:
+    exch, ccy, name, weights, spread, nav0 = ref.ETFS[code]
+    return ETF(
+        instrument_id=f"ETF_{code}",
+        currency=ccy,
+        description=name,
+        ticker=code,
+        exchange=exch,
+        basket=_basket(weights, nav0, ccy),
+        tracking_spread=spread,
+    )
+
+
+def mutual_fund(code: str) -> MutualFund:
+    manager, ccy, name, weights, cash_share, nav0, notice = ref.MUTUAL_FUNDS[code]
+    return MutualFund(
+        instrument_id=f"MF_{code}",
+        currency=ccy,
+        description=name,
+        fund_code=code,
+        manager=manager,
+        basket=_basket(weights, nav0 * (1 - cash_share), ccy),
+        cash_per_share=nav0 * cash_share,
+        notice_days=notice,
+    )
+
+
+def equity_barrier(
+    underlying: str,
+    expiry: date,
+    strike: float,
+    barrier: float,
+    barrier_type: BarrierType,
+    kind: OptionType,
+    currency: str,
+    multiplier: float = 100.0,
+    rebate: float = 0.0,
+) -> EquityExotic:
+    tag = "".join(w[0] for w in barrier_type.value.split("_"))  # UAO, DAI, ...
+    return EquityExotic(
+        instrument_id=f"EXO_{underlying}_{tag}_{kind.value[0]}_{strike:.0f}_{barrier:.0f}_{expiry:%Y%m%d}",
+        currency=currency,
+        underlying=underlying,
+        style=ExoticStyle.BARRIER,
+        option_type=kind,
+        strike=strike,
+        expiry_date=expiry,
+        barrier=barrier,
+        barrier_type=barrier_type,
+        rebate=rebate,
+        contract_multiplier=multiplier,
+    )
+
+
+def equity_digital(
+    underlying: str,
+    expiry: date,
+    strike: float,
+    payout: float,
+    kind: OptionType,
+    currency: str,
+    multiplier: float = 100.0,
+) -> EquityExotic:
+    return EquityExotic(
+        instrument_id=f"EXO_{underlying}_DIG_{kind.value[0]}_{strike:.0f}_{expiry:%Y%m%d}",
+        currency=currency,
+        underlying=underlying,
+        style=ExoticStyle.DIGITAL,
+        option_type=kind,
+        strike=strike,
+        expiry_date=expiry,
+        cash_payout=payout,
+        contract_multiplier=multiplier,
+    )

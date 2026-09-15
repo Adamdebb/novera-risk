@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from novera.simulation import reference_levels as _ref
+
 MODEL_VERSION = "1.0.0"
 
 # --- GIRR ----------------------------------------------------------------------------------
@@ -58,7 +60,11 @@ CSR_BUCKETS = {
     "ITRAXX.EUR.MAIN": ("IG", 0.05),
     "CDX.NA.HY": ("HY", 0.12),
     "ITRAXX.EUR.XOVER": ("HY", 0.12),
+    # Single names by rating bucket (reference data of the simulated universe).
+    **{e: (v[5], 0.05 if v[5] == "IG" else 0.12) for e, v in _ref.CDS_SINGLE_NAMES.items()},
 }
+COMMODITY_CODES = ("BRENT", "WTI", "NATGAS", "GOLD", "SILVER", "COPPER", "ALUMINIUM")
+RRAO_RW = 0.001  # residual risk add-on: 0.1% of gross notional for barrier and digital options
 CSR_RHO_SAME_BUCKET = 0.35
 CSR_GAMMA = 0.05  # across buckets of different quality (IG vs HY)
 
@@ -241,21 +247,42 @@ def _curvature(sens: pd.DataFrame, measure: str, rw_of) -> float:
     return float(charge)
 
 
-def _charges(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, float]) -> FRTBSAResult:
+def _charges(
+    sens: pd.DataFrame,
+    valuation: pd.DataFrame,
+    base_vols: dict[str, float],
+    exotic_notional: pd.Series | None = None,
+) -> FRTBSAResult:
     """All charges for one sensitivity set, no attribution."""
     classes, detail = [], []
     is_fx = lambda u: u.endswith("USD") or u.startswith("USD")  # noqa: E731
     is_index = lambda u: u in ("SPX", "NDX", "SX5E", "DAX", "FTSE", "NKY")  # noqa: E731
+    is_cmd = lambda u: u in COMMODITY_CODES  # noqa: E731
 
-    def vega_ws_for(pred, rw: float) -> dict[str, dict[str, float]]:
-        vg = sens[(sens["measure"] == "VEGA") & sens["underlying"].map(pred)]
+    def vega_ws_for(pred, rw: float, prefix: str = "VOL:") -> dict[str, dict[str, float]]:
+        """Vega rows of one family. Weighted sensitivity = vega × implied vol × RW; surfaces are
+        per vol point (×100 to per unit vol), swaption cubes per normal bp (× cube level in bp)."""
+        vg = sens[(sens["measure"] == "VEGA") & sens["factor_id"].str.startswith(prefix)]
+        vg = vg[vg["underlying"].map(pred).astype(bool)]
         out: dict[str, dict[str, float]] = {}
         for u, v in vg.groupby("underlying")["value"].sum().items():
-            out.setdefault("all", {})[u] = v * 100 * base_vols.get(u, 0.2) * rw
+            if prefix == "SWVOL:":
+                out.setdefault("all", {})[u] = v * base_vols.get(f"SWVOL:{u}", 80.0) * rw
+            else:
+                out.setdefault("all", {})[u] = v * 100 * base_vols.get(u, 0.2) * rw
         return out
 
-    # GIRR (no vega: the platform carries no swaption book yet).
-    classes.append(_class_charge("GIRR", _girr_ws(sens), _girr_rho, GIRR_GAMMA, {}, 0.0))
+    # GIRR: delta ladder plus swaption vega.
+    classes.append(
+        _class_charge(
+            "GIRR",
+            _girr_ws(sens),
+            _girr_rho,
+            GIRR_GAMMA,
+            vega_ws_for(lambda u: True, VEGA_RW["GIRR"], "SWVOL:"),
+            0.0,
+        )
+    )
 
     # CSR non-securitisation.
     cs = sens[sens["measure"] == "CS01"]
@@ -272,7 +299,7 @@ def _charges(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, f
         bucket = "index_developed" if is_index(u) else "large_cap_developed"
         eqws.setdefault(bucket, {})[u] = (v * 100) * EQ_RW[bucket]
     eq_curv = _curvature(
-        sens[~sens["underlying"].map(is_fx)],
+        sens[~sens["underlying"].map(is_fx) & ~sens["underlying"].map(is_cmd)],
         "GAMMA",
         lambda u: EQ_RW["index_developed" if is_index(u) else "large_cap_developed"],
     )
@@ -282,7 +309,7 @@ def _charges(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, f
             eqws,
             lambda b, a, c: EQ_RHO[b],
             EQ_GAMMA,
-            vega_ws_for(lambda u: not is_fx(u), VEGA_RW["EQ"]),
+            vega_ws_for(lambda u: not is_fx(u) and not is_cmd(u), VEGA_RW["EQ"]),
             eq_curv,
         )
     )
@@ -305,7 +332,14 @@ def _charges(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, f
     for u, v in cm.groupby("underlying")["value"].sum().items():
         bucket, rw = CMD_BUCKET.get(u, ("base", 0.20))
         cmws.setdefault(bucket, {})[u] = (v * 100) * rw
-    classes.append(_class_charge("CMD", cmws, lambda b, a, c: CMD_RHO[b], CMD_GAMMA, {}, 0.0))
+    cmd_curv = _curvature(
+        sens[sens["underlying"].map(is_cmd)], "GAMMA", lambda u: CMD_BUCKET.get(u, ("base", 0.20))[1]
+    )
+    classes.append(
+        _class_charge(
+            "CMD", cmws, lambda b, a, c: CMD_RHO[b], CMD_GAMMA, vega_ws_for(is_cmd, VEGA_RW["CMD"]), cmd_curv
+        )
+    )
 
     # Default risk charge on index protection: JTD from CS01 (5y duration 4.5), hedge benefit ratio.
     drc = 0.0
@@ -323,30 +357,38 @@ def _charges(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, f
 
     live = valuation[valuation["status"] == "LIVE"]
     crypto = CRYPTO_RW * float(live[live["product_type"] == "CRYPTO_SPOT"]["pv"].abs().sum())
+    rrao = 0.0
+    if exotic_notional is not None and len(exotic_notional):
+        rrao = RRAO_RW * float(exotic_notional.reindex(live["trade_id"]).fillna(0.0).sum())
     for name, ws in (("GIRR", _girr_ws(sens)), ("CSR", csr), ("EQ", eqws), ("FX", fxws), ("CMD", cmws)):
         for b, items in ws.items():
             for f, v in items.items():
                 detail.append({"risk_class": name, "bucket": b, "factor": f, "weighted_sensitivity": v})
-    return FRTBSAResult(classes, drc, 0.0, crypto, detail=pd.DataFrame(detail))
+    return FRTBSAResult(classes, drc, rrao, crypto, detail=pd.DataFrame(detail))
 
 
 def frtb_sa(
-    sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, float] | None = None
+    sens: pd.DataFrame,
+    valuation: pd.DataFrame,
+    base_vols: dict[str, float] | None = None,
+    exotic_notional: pd.Series | None = None,
 ) -> FRTBSAResult:
-    """Firm charge plus attribution by desk (standalone charges scaled to the total)."""
+    """Firm charge plus attribution by desk (standalone charges scaled to the total).
+    ``exotic_notional`` is gross notional by trade id for the residual risk add-on."""
     base_vols = base_vols or {}
-    res = _charges(sens, valuation, base_vols)
+    res = _charges(sens, valuation, base_vols, exotic_notional)
     keys = valuation[["trade_id", "desk_id"]].drop_duplicates("trade_id")
     s2 = sens.merge(keys, on="trade_id", how="left")
     rows = []
     for desk, g in s2.groupby("desk_id", dropna=False):
-        r = _charges(g, valuation[valuation["desk_id"] == desk], base_vols)
+        r = _charges(g, valuation[valuation["desk_id"] == desk], base_vols, exotic_notional)
         rows.append(
             {
                 "desk_id": desk,
                 "standalone": r.total,
                 "sbm": r.sbm,
                 "drc": r.drc,
+                "rrao": r.rrao,
                 "crypto": r.crypto,
                 **{f"{c.risk_class}": c.total for c in r.classes},
             }

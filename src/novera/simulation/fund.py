@@ -28,6 +28,7 @@ from novera.domain import (
     Organisation,
     Trader,
 )
+from novera.simulation import reference_levels as ref
 from novera.simulation.organisation import CounterpartyUniverse
 from novera.simulation.trades import Template
 
@@ -159,14 +160,14 @@ _BUSINESSES = [
 FUND_TEMPLATE = Template(
     name="hedge_fund",
     desk_mix={
-        "GLOBAL_MACRO": {"govt_bond": 0.4, "swap": 0.6},
+        "GLOBAL_MACRO": {"govt_bond": 0.35, "swap": 0.45, "swaption": 0.12, "ir_future": 0.08},
         "EM_MACRO": {"govt_bond": 0.3, "swap": 0.3, "fx_forward": 0.4},
         "FX_CARRY": {"fx_spot": 0.2, "fx_forward": 0.5, "fx_option": 0.3},
-        "EQ_LS_US": {"cash_equity": 0.85, "equity_option": 0.15},
-        "EQ_LS_EU": {"cash_equity": 1.0},
-        "INDEX_VOL_ARB": {"index_option": 0.7, "index_future": 0.3},
-        "CREDIT_LS": {"cds_index": 1.0},
-        "COMMODITY_TREND": {"commodity_future": 1.0},
+        "EQ_LS_US": {"cash_equity": 0.75, "equity_option": 0.15, "etf": 0.10},
+        "EQ_LS_EU": {"cash_equity": 0.9, "etf": 0.1},
+        "INDEX_VOL_ARB": {"index_option": 0.6, "index_future": 0.25, "equity_exotic": 0.15},
+        "CREDIT_LS": {"cds_index": 0.7, "cds_single_name": 0.3},
+        "COMMODITY_TREND": {"commodity_future": 0.8, "commodity_option": 0.2},
         "CRYPTO_BASIS": {"crypto_spot": 1.0},
     },
     desk_weight={
@@ -204,6 +205,26 @@ FUND_TEMPLATE = Template(
     injector="fund",
     preferred_counterparty="PB_GS",
     nav=2.0e9,
+    # Breadth products sit in existing strategy books (no reserved books at the fund).
+    recipe_books={
+        "swaption": ["GM_USD", "GM_EUR_GBP"],
+        "ir_future": ["GM_USD", "GM_EUR_GBP"],
+        "cds_single_name": ["IG_LS", "HY_LS"],
+        "commodity_option": ["ENERGY_TREND", "METALS_TREND"],
+        "etf": ["US_CORE_LS", "EU_LS"],
+        "equity_exotic": ["VOL_ARB"],
+    },
+    book_cds_names={
+        "IG_LS": [e for e, v in ref.CDS_SINGLE_NAMES.items() if v[5] == "IG"],
+        "HY_LS": [e for e, v in ref.CDS_SINGLE_NAMES.items() if v[5] == "HY"],
+    },
+    book_commodity_options={
+        "ENERGY_TREND": ["BRENT", "WTI", "NATGAS"],
+        "METALS_TREND": ["GOLD", "SILVER", "COPPER"],
+    },
+    book_funds={"US_CORE_LS": ["USTECH", "SPXTR", "GLBNRG"], "EU_LS": ["EUBLUE"]},
+    book_exotics={"VOL_ARB": ["SPX", "NDX", "SX5E"]},
+    reserve_books=False,
 )
 
 

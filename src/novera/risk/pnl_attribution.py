@@ -48,11 +48,13 @@ def inception_cash(trade: Trade) -> float:
         return q * p / 100.0
     if pt in (ProductType.CASH_EQUITY, ProductType.CRYPTO_SPOT):
         return q * p
-    if pt is ProductType.EQUITY_OPTION:
+    if pt in (ProductType.EQUITY_OPTION, ProductType.EQUITY_EXOTIC):
         return q * ins.contract_multiplier * p  # type: ignore[attr-defined]
-    if pt is ProductType.FX_OPTION:
+    if pt is ProductType.COMMODITY_OPTION:
+        return q * ins.contract_size * p  # type: ignore[attr-defined]
+    if pt in (ProductType.FX_OPTION, ProductType.SWAPTION, ProductType.ETF, ProductType.MUTUAL_FUND):
         return q * p
-    return 0.0  # swaps, forwards, futures, CDS, FX spot: PV already measures P&L
+    return 0.0  # swaps, forwards, futures, CDS, repos, FX spot: PV already measures P&L
 
 
 @dataclass
@@ -209,8 +211,8 @@ def _challenger(
             members = [f for f in prev_v if f.startswith(fid) and f in today_v]
             if not members:
                 return None
-            if fid.startswith("VOL:"):
-                return float(np.mean([today_v[f] - prev_v[f] for f in members]))  # vol points
+            if fid.startswith(("VOL:", "SWVOL:")):
+                return float(np.mean([today_v[f] - prev_v[f] for f in members]))  # vol points / bp
             return float(np.mean([today_v[f] / prev_v[f] - 1.0 for f in members]))
         if fid not in today_v or fid not in prev_v:
             return None
@@ -228,7 +230,7 @@ def _challenger(
         x = move(fid)
         if x is None:
             continue
-        units = x / BUMPS.get(measure, 1.0)
+        units = x / (float(grp["bump"].iloc[0]) if measure == "VEGA" else BUMPS.get(measure, 1.0))
         for _, r in grp.iterrows():
             tid = r["trade_id"]
             if tid not in predicted:

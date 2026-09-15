@@ -35,7 +35,12 @@ def test_organisation_shape(org) -> None:
     assert len(org.books) >= 25
     assert len(org.traders) == 28
     assert {d.asset_class for d in org.desks} == {
-        "RATES", "FX", "EQUITY", "CREDIT", "COMMODITY", "DIGITAL_ASSET"
+        "RATES",
+        "FX",
+        "EQUITY",
+        "CREDIT",
+        "COMMODITY",
+        "DIGITAL_ASSET",
     }
 
 
@@ -63,8 +68,9 @@ def test_portfolio_covers_all_products_and_desks(generated, org) -> None:
     snap = generated.snapshot
     products = {t.product_type for t in snap.trades}
     assert products == set(ProductType), set(ProductType) - products
-    desks_used = {org.desk(org.book(t.book_id).desk_id).desk_id
-                  for t in snap.trades if t.book_id != "GHOST_BOOK"}
+    desks_used = {
+        org.desk(org.book(t.book_id).desk_id).desk_id for t in snap.trades if t.book_id != "GHOST_BOOK"
+    }
     assert desks_used == {d.desk_id for d in org.desks}
     assert 600 <= len(snap) <= 640
 
@@ -84,27 +90,38 @@ def test_referential_integrity_except_injected(generated, org, cp) -> None:
             assert t.netting_set_id in ns_ids, t.trade_id
             ns = next(n for n in cp.netting_sets if n.netting_set_id == t.netting_set_id)
             assert ns.legal_entity_id == org.book(t.book_id).legal_entity_id
-        if t.venue is Venue.LISTED:
+        if t.venue is Venue.LISTED and t.product_type is not ProductType.MUTUAL_FUND:
             assert t.clearing is ClearingType.EXCHANGE
+        if t.product_type is ProductType.MUTUAL_FUND:
+            # Dealt at NAV with the manager's transfer agent: bilateral settlement, no netting set.
+            assert t.clearing is ClearingType.BILATERAL and t.netting_set_id is None
         assert t.status is TradeStatus.LIVE
 
 
 def test_injections_present(generated) -> None:
     names = {i.name for i in generated.injections}
-    assert names == {"usd_10y_concentration", "illiquid_brent", "btc_exposure",
-                     "wrong_way_sovereign", "wrong_way_credit", "invalid_trades"}
+    assert names == {
+        "usd_10y_concentration",
+        "illiquid_brent",
+        "btc_exposure",
+        "wrong_way_sovereign",
+        "wrong_way_credit",
+        "invalid_trades",
+    }
     by_id = {t.trade_id: t for t in generated.snapshot.trades}
     conc = next(i for i in generated.injections if i.name == "usd_10y_concentration")
     for tid in conc.trade_ids:
         t = by_id[tid]
         assert t.counterparty_id == "BANK_A" and t.quantity == 400e6
         assert t.instrument.maturity_date.year - t.instrument.effective_date.year == 10
-    cpty_counts = Counter(t.counterparty_id for t in generated.snapshot.trades
-                          if t.clearing is ClearingType.BILATERAL)
+    cpty_counts = Counter(
+        t.counterparty_id for t in generated.snapshot.trades if t.clearing is ClearingType.BILATERAL
+    )
     assert cpty_counts.most_common(1)[0][0] == "BANK_A"
 
 
 def test_no_injection_option(org, cp) -> None:
-    g = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=BD, n_trades=50, seed=1,
-                                                         inject_problems=False))
+    g = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=BD, n_trades=50, seed=1, inject_problems=False)
+    )
     assert g.injections == [] and len(g.snapshot) == 50

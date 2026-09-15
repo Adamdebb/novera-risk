@@ -992,9 +992,56 @@ elif page == "Concentration & liquidity":
             use_container_width=True,
             hide_index=True,
         )
+    st.subheader("Fund look-through")
+    lt = client.lookthrough(run_id)
+    if not lt["fund_trades"]:
+        st.caption("No ETF or mutual-fund positions in this run.")
+    else:
+        for fl in lt["flags"]:
+            st.warning(fl)
+        bf = df(lt["by_fund"])
+        if not bf.empty:
+            bf["exposure"] = bf["exposure"] / M
+            st.dataframe(
+                bf.round(2).rename(columns={"exposure": "exposure (m)"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+        cons = df(lt["constituents"])
+        if not cons.empty:
+            for c in ("direct", "via_funds", "total"):
+                cons[c] = cons[c] / M
+            cons["via_funds_share"] = (cons["via_funds_share"] * 100).round(0)
+            st.dataframe(
+                cons.head(25)
+                .round(2)
+                .rename(
+                    columns={
+                        "direct": "direct (m)",
+                        "via_funds": "via funds (m)",
+                        "total": "total (m)",
+                        "via_funds_share": "via funds %",
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        with st.expander("Holdings by fund trade"):
+            h = df(lt["holdings"])
+            if not h.empty:
+                h["exposure"] = h["exposure"] / M
+                h["share_of_fund"] = (h["share_of_fund"] * 100).round(1)
+                st.dataframe(
+                    h.round(2).rename(
+                        columns={"exposure": "exposure (m)", "share_of_fund": "share of fund %"}
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
     st.caption(
         "Volume and bid-ask assumptions are synthetic (MR-013). Concentration uses component VaR "
-        "where available (MR-012)."
+        "where available (MR-012). Look-through per MR-014: pricing and sensitivities already see "
+        "through funds; this table shows how much of each constituent comes via funds."
     )
 
 elif page == "Risk pack":
@@ -1092,6 +1139,22 @@ elif page == "Data quality":
         ids = [x for x in str(row.get("affected_trade_ids", "")).split(",") if x]
         st.write(
             f"{row['message']} — {len(ids)} affected trades" + (": " + ", ".join(ids[:25]) if ids else "")
+        )
+    st.subheader("Market-data proxies applied before pricing")
+    px = client.market_data_proxies(run_id)
+    if not px["actions"]:
+        st.caption("No proxies were needed: every factor was present and current.")
+    else:
+        st.write(
+            f"{px['applied']} factor values proxied, {px['kept_stale']} stale values kept as observed. "
+            f"The raw snapshot {px['raw_market_snapshot_id']} is unchanged; the run priced off the "
+            "proxied copy (MD-002)."
+        )
+        pa = df(px["actions"])
+        st.dataframe(
+            pa[["factor_id", "kind", "source", "original", "value", "reason"]],
+            use_container_width=True,
+            hide_index=True,
         )
 
 elif page == "Challenger":

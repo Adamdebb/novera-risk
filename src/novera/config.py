@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     exposure_paths: int = 1000
     exposure_enabled: bool = True
     regulatory_enabled: bool = True
+    proxies_enabled: bool = True
+    """Proxy missing and stale market data before pricing (MD-002); the raw snapshot is kept."""
 
     # Scheduler.
     eod_time: str = Field(

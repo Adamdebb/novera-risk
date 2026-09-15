@@ -1,6 +1,6 @@
 """Seeded limit hierarchy for Global Macro Bank.
 
-Calibrated once by hand against the risk run of 2026-09-11 (seed 42) so that the planted
+Calibrated by hand against the risk run of 2026-09-11 (seed 42, Phase 6 book) so that the planted
 problems breach and a few other limits sit in warning. Amounts are USD unless the limit is
 a CONCENTRATION share.
 """
@@ -41,49 +41,49 @@ def _lim(
 
 _DESK_VAR: dict[str, float] = {
     "USD_RATES": 45e6,
-    "EUR_RATES": 15e6,
+    "EUR_RATES": 40e6,
     "GBP_RATES": 15e6,
     "JPY_RATES": 5e6,
     "EM_RATES": 5e6,
     "G10_FX": 15e6,
-    "EM_FX": 15e6,
+    "EM_FX": 35e6,
     "INDEX_EQ": 55e6,
     "SINGLE_NAME_EQ": 25e6,
     "IG_CREDIT": 8e6,
     "HY_CREDIT": 8e6,
-    "ENERGY": 35e6,
-    "METALS": 20e6,
-    "DIGITAL": 15e6,
+    "ENERGY": 45e6,
+    "METALS": 35e6,
+    "DIGITAL": 20e6,
 }
 _DESK_STRESS: dict[str, float] = {
     "USD_RATES": 350e6,
-    "EUR_RATES": 60e6,
+    "EUR_RATES": 75e6,
     "GBP_RATES": 60e6,
     "JPY_RATES": 20e6,
     "EM_RATES": 15e6,
     "G10_FX": 40e6,
-    "EM_FX": 65e6,
+    "EM_FX": 125e6,
     "INDEX_EQ": 260e6,
     "SINGLE_NAME_EQ": 120e6,
     "IG_CREDIT": 30e6,
     "HY_CREDIT": 30e6,
     "ENERGY": 250e6,
-    "METALS": 60e6,
+    "METALS": 80e6,
     "DIGITAL": 50e6,
 }
 _BUSINESS_VAR: dict[str, float] = {
     "MACRO": 60e6,
     "EQUITIES": 65e6,
     "CREDIT": 10e6,
-    "COMMODITIES": 35e6,
-    "DIGITAL_ASSETS": 15e6,
+    "COMMODITIES": 55e6,
+    "DIGITAL_ASSETS": 20e6,
 }
 _CPTY_LIMIT: dict[CounterpartyType, float] = {
     CounterpartyType.BANK: 150e6,
     CounterpartyType.BROKER_DEALER: 75e6,
     CounterpartyType.HEDGE_FUND: 100e6,
     CounterpartyType.ASSET_MANAGER: 100e6,
-    CounterpartyType.CORPORATE: 25e6,
+    CounterpartyType.CORPORATE: 50e6,
     CounterpartyType.SOVEREIGN: 50e6,
 }
 
@@ -118,8 +118,8 @@ def build_limits(
     # Rates: parallel DV01 per currency, a 10Y bucket limit and a curve-concentration limit on USD.
     dv01 = {
         "USD_RATES": ("USD", 3.0e6),
-        "EUR_RATES": ("EUR", 600e3),
-        "GBP_RATES": ("GBP", 400e3),
+        "EUR_RATES": ("EUR", 3.5e6),
+        "GBP_RATES": ("GBP", 450e3),
         "JPY_RATES": ("JPY", 100e3),
     }
     for d, (ccy, amt) in dv01.items():
@@ -167,10 +167,10 @@ def build_limits(
 
     # Credit.
     out.append(
-        _lim("IG_CREDIT_CS01", LimitType.CS01, HierarchyLevel.DESK, "IG_CREDIT", 400e3, heads["IG_CREDIT"])
+        _lim("IG_CREDIT_CS01", LimitType.CS01, HierarchyLevel.DESK, "IG_CREDIT", 800e3, heads["IG_CREDIT"])
     )
     out.append(
-        _lim("HY_CREDIT_CS01", LimitType.CS01, HierarchyLevel.DESK, "HY_CREDIT", 100e3, heads["HY_CREDIT"])
+        _lim("HY_CREDIT_CS01", LimitType.CS01, HierarchyLevel.DESK, "HY_CREDIT", 120e3, heads["HY_CREDIT"])
     )
 
     # Equity, FX, vega.
@@ -190,8 +190,8 @@ def build_limits(
         )
     )
     out.append(_lim("G10_FX_DELTA", LimitType.FX_DELTA, HierarchyLevel.DESK, "G10_FX", 6e6, heads["G10_FX"]))
-    out.append(_lim("EM_FX_DELTA", LimitType.FX_DELTA, HierarchyLevel.DESK, "EM_FX", 5e6, heads["EM_FX"]))
-    out.append(_lim("G10_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "G10_FX", 400e3, heads["G10_FX"]))
+    out.append(_lim("EM_FX_DELTA", LimitType.FX_DELTA, HierarchyLevel.DESK, "EM_FX", 7.5e6, heads["EM_FX"]))
+    out.append(_lim("G10_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "G10_FX", 450e3, heads["G10_FX"]))
     out.append(_lim("EM_FX_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "EM_FX", 900e3, heads["EM_FX"]))
     out.append(
         _lim("INDEX_EQ_VEGA", LimitType.VEGA, HierarchyLevel.DESK, "INDEX_EQ", 500e3, heads["INDEX_EQ"])
@@ -202,7 +202,7 @@ def build_limits(
             LimitType.VEGA,
             HierarchyLevel.DESK,
             "SINGLE_NAME_EQ",
-            150e3,
+            135e3,
             heads["SINGLE_NAME_EQ"],
         )
     )
@@ -210,12 +210,22 @@ def build_limits(
     # Commodities: net delta per desk and Brent concentration within Energy.
     out.append(
         _lim(
-            "ENERGY_CMD_DELTA", LimitType.COMMODITY_DELTA, HierarchyLevel.DESK, "ENERGY", 4e6, heads["ENERGY"]
+            "ENERGY_CMD_DELTA",
+            LimitType.COMMODITY_DELTA,
+            HierarchyLevel.DESK,
+            "ENERGY",
+            6.5e6,
+            heads["ENERGY"],
         )
     )
     out.append(
         _lim(
-            "METALS_CMD_DELTA", LimitType.COMMODITY_DELTA, HierarchyLevel.DESK, "METALS", 3e6, heads["METALS"]
+            "METALS_CMD_DELTA",
+            LimitType.COMMODITY_DELTA,
+            HierarchyLevel.DESK,
+            "METALS",
+            12e6,
+            heads["METALS"],
         )
     )
     out.append(
@@ -238,7 +248,7 @@ def build_limits(
             LimitType.COMMODITY_DELTA,
             HierarchyLevel.DESK,
             "DIGITAL",
-            1.5e6,
+            1.8e6,
             heads["DIGITAL"],
             risk_factor="BTC",
         )

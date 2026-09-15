@@ -77,7 +77,7 @@ def run_counterparty(
     cfg = cfg or ExposureSimConfig(paths=settings.exposure_paths)
     run = repo.load_run(run_id)
     snap = repo.load_portfolio_snapshot(run.portfolio_snapshot_id)
-    market = repo.load_market_snapshot(run.market_snapshot_id)
+    market = repo.load_run_market(run.run_id)
     universe = {f.factor_id: f for f in repo.load_risk_factors()}
     history = MarketHistory.from_long(repo.load_market_history())
     netting_sets, csas = repo.load_netting_sets()

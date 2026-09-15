@@ -504,6 +504,18 @@ class DuckDBRepository:
             raise RuntimeError(f"market snapshot {snapshot_id} failed integrity check on load")
         return snap
 
+    def load_run_market(self, run_id: str) -> MarketSnapshot:
+        """The snapshot a run priced with: the raw snapshot plus any stored proxies (MD-002)."""
+        from novera.market_data.proxies import apply_stored_proxies
+
+        run = self.load_run(run_id)
+        market = self.load_market_snapshot(run.market_snapshot_id)
+        try:
+            actions = self.load_run_frame(run_id, "md_proxies")
+        except Exception:  # noqa: BLE001 - frame absent on runs made before proxies existed
+            return market
+        return apply_stored_proxies(market, actions)
+
     def list_market_snapshots(self) -> list[tuple[str, date, int]]:
         rows = self._conn.execute(
             "SELECT snapshot_id, as_of, factor_count FROM market_snapshot ORDER BY as_of, created_at"

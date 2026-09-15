@@ -105,6 +105,42 @@ def check_market_data(
     return out
 
 
+def proxy_findings(proxies, index: DependencyIndex) -> list[Finding]:
+    """One INFO finding per proxied family (MD-002), listing the trades priced off the proxy.
+    Families kept stale without a usable proxy are reported as MINOR so they stay visible."""
+    out: list[Finding] = []
+    groups: dict[tuple[str, str, str], list] = {}
+    for a in proxies.actions:
+        key = ":".join(a.factor_id.split(":")[:2]) + ":" if a.factor_id.count(":") >= 2 else a.factor_id
+        groups.setdefault((key, a.kind, a.source), []).append(a)
+    for (key, kind, source), acts in groups.items():
+        affected = tuple(sorted(index.trades_for([a.factor_id for a in acts])))
+        if kind == "KEPT_STALE":
+            out.append(
+                Finding(
+                    "MD_PROXY_UNAVAILABLE",
+                    "MINOR",
+                    f"{len(acts)} stale nodes of {key} kept as observed: {acts[0].reason}",
+                    key,
+                    affected,
+                )
+            )
+            continue
+        verb = {"INTERPOLATED": "interpolated", "ROLLED": "rolled from", "RELEVELLED": "re-levelled with"}[
+            kind
+        ]
+        out.append(
+            Finding(
+                "MD_PROXY_APPLIED",
+                "INFO",
+                f"{len(acts)} nodes of {key} {verb} {source}; {len(affected)} trades priced off the proxy",
+                key,
+                affected,
+            )
+        )
+    return out
+
+
 def check_trades(
     trades: list[Trade], org: Organisation, counterparty_ids: set[str], netting_set_ids: set[str], as_of: date
 ) -> list[Finding]:

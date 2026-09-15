@@ -28,6 +28,15 @@ class ProductType(StrEnum):
     COMMODITY_FUTURE = "COMMODITY_FUTURE"
     CDS_INDEX = "CDS_INDEX"
     CRYPTO_SPOT = "CRYPTO_SPOT"
+    # Phase 6 breadth
+    REPO = "REPO"
+    INTEREST_RATE_FUTURE = "INTEREST_RATE_FUTURE"
+    SWAPTION = "SWAPTION"
+    CDS_SINGLE_NAME = "CDS_SINGLE_NAME"
+    COMMODITY_OPTION = "COMMODITY_OPTION"
+    ETF = "ETF"
+    MUTUAL_FUND = "MUTUAL_FUND"
+    EQUITY_EXOTIC = "EQUITY_EXOTIC"
 
 
 PRODUCT_ASSET_CLASS: dict[ProductType, AssetClass] = {
@@ -42,6 +51,14 @@ PRODUCT_ASSET_CLASS: dict[ProductType, AssetClass] = {
     ProductType.COMMODITY_FUTURE: AssetClass.COMMODITY,
     ProductType.CDS_INDEX: AssetClass.CREDIT,
     ProductType.CRYPTO_SPOT: AssetClass.DIGITAL_ASSET,
+    ProductType.REPO: AssetClass.RATES,
+    ProductType.INTEREST_RATE_FUTURE: AssetClass.RATES,
+    ProductType.SWAPTION: AssetClass.RATES,
+    ProductType.CDS_SINGLE_NAME: AssetClass.CREDIT,
+    ProductType.COMMODITY_OPTION: AssetClass.COMMODITY,
+    ProductType.ETF: AssetClass.EQUITY,
+    ProductType.MUTUAL_FUND: AssetClass.EQUITY,
+    ProductType.EQUITY_EXOTIC: AssetClass.EQUITY,
 }
 
 
@@ -69,6 +86,18 @@ class SwapSide(StrEnum):
 class OptionType(StrEnum):
     CALL = "CALL"
     PUT = "PUT"
+
+
+class BarrierType(StrEnum):
+    UP_AND_OUT = "UP_AND_OUT"
+    DOWN_AND_OUT = "DOWN_AND_OUT"
+    UP_AND_IN = "UP_AND_IN"
+    DOWN_AND_IN = "DOWN_AND_IN"
+
+
+class ExoticStyle(StrEnum):
+    BARRIER = "BARRIER"
+    DIGITAL = "DIGITAL"  # cash-or-nothing
 
 
 class DayCount(StrEnum):

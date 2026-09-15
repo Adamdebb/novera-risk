@@ -15,8 +15,10 @@ from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel, ConfigDict
 
 from novera.domain import (
+    BarrierType,
     BuySell,
     ClearingType,
+    CounterpartyType,
     OptionType,
     Organisation,
     PortfolioSnapshot,
@@ -69,21 +71,43 @@ class TradeGeneratorConfig:
 
 # Desk -> product recipe weights. Keys are recipe names implemented in _Recipes.
 _DESK_MIX: dict[str, dict[str, float]] = {
-    "USD_RATES": {"govt_bond": 0.4, "swap": 0.6},
-    "EUR_RATES": {"govt_bond": 0.5, "swap": 0.5},
+    "USD_RATES": {"govt_bond": 0.30, "swap": 0.42, "repo": 0.12, "ir_future": 0.08, "swaption": 0.08},
+    "EUR_RATES": {"govt_bond": 0.40, "swap": 0.40, "ir_future": 0.10, "swaption": 0.10},
     "GBP_RATES": {"govt_bond": 0.5, "swap": 0.5},
     "JPY_RATES": {"govt_bond": 0.5, "swap": 0.5},
     "EM_RATES": {"govt_bond": 0.6, "swap": 0.4},
     "G10_FX": {"fx_spot": 0.2, "fx_forward": 0.5, "fx_option": 0.3},
     "EM_FX": {"fx_forward": 0.7, "fx_option": 0.3},
-    "INDEX_EQ": {"index_future": 0.6, "index_option": 0.4},
-    "SINGLE_NAME_EQ": {"cash_equity": 0.7, "equity_option": 0.3},
-    "IG_CREDIT": {"cds_index": 1.0},
-    "HY_CREDIT": {"cds_index": 1.0},
-    "ENERGY": {"commodity_future": 1.0},
-    "METALS": {"commodity_future": 1.0},
+    "INDEX_EQ": {"index_future": 0.50, "index_option": 0.35, "equity_exotic": 0.15},
+    "SINGLE_NAME_EQ": {"cash_equity": 0.55, "equity_option": 0.25, "etf": 0.12, "mutual_fund": 0.08},
+    "IG_CREDIT": {"cds_index": 0.7, "cds_single_name": 0.3},
+    "HY_CREDIT": {"cds_index": 0.7, "cds_single_name": 0.3},
+    "ENERGY": {"commodity_future": 0.75, "commodity_option": 0.25},
+    "METALS": {"commodity_future": 0.75, "commodity_option": 0.25},
     "DIGITAL": {"crypto_spot": 1.0},
 }
+# Phase 6 books: recipe -> books that hold it (one per desk), and each book's universe.
+_RECIPE_BOOKS: dict[str, list[str]] = {
+    "repo": ["USD_REPO"],
+    "ir_future": ["USD_STIR", "EUR_STIR"],
+    "swaption": ["USD_STIR", "EUR_STIR"],
+    "cds_single_name": ["SN_CDS_IG", "SN_CDS_HY"],
+    "commodity_option": ["ENERGY_OPTIONS", "METALS_OPTIONS"],
+    "etf": ["FUNDS_ETF"],
+    "mutual_fund": ["FUNDS_ETF"],
+    "equity_exotic": ["EQ_EXOTICS"],
+}
+_BOOK_CDS_NAMES: dict[str, list[str]] = {
+    "SN_CDS_IG": [e for e, v in ref.CDS_SINGLE_NAMES.items() if v[5] == "IG"],
+    "SN_CDS_HY": [e for e, v in ref.CDS_SINGLE_NAMES.items() if v[5] == "HY"],
+}
+_BOOK_COMMODITY_OPTIONS: dict[str, list[str]] = {
+    "ENERGY_OPTIONS": ["BRENT", "WTI", "NATGAS"],
+    "METALS_OPTIONS": ["GOLD", "SILVER", "COPPER"],
+}
+_BOOK_FUNDS: dict[str, list[str]] = {"FUNDS_ETF": list(ref.ETFS)}
+_BOOK_MUTUAL_FUNDS: dict[str, list[str]] = {"FUNDS_ETF": list(ref.MUTUAL_FUNDS)}
+_BOOK_EXOTICS: dict[str, list[str]] = {"EQ_EXOTICS": ["SPX", "SX5E", "NDX", "AAPL", "NVDA", "TSLA"]}
 # Relative desk activity (share of trades).
 _DESK_WEIGHT: dict[str, float] = {
     "USD_RATES": 0.16,
@@ -170,6 +194,15 @@ class Template:
     injector: str = "bank"
     preferred_counterparty: str | None = "BANK_A"  # over-weighted in bilateral allocation
     nav: float | None = None  # fund templates: sizes planted problems relative to NAV
+    # Phase 6 breadth. Recipes pick the book for their desk from ``recipe_books``; a book that
+    # appears there is reserved and never receives the generic recipes.
+    recipe_books: dict[str, list[str]] = field(default_factory=dict)
+    book_cds_names: dict[str, list[str]] = field(default_factory=dict)
+    book_commodity_options: dict[str, list[str]] = field(default_factory=dict)
+    book_funds: dict[str, list[str]] = field(default_factory=dict)
+    book_mutual_funds: dict[str, list[str]] = field(default_factory=dict)
+    book_exotics: dict[str, list[str]] = field(default_factory=dict)
+    reserve_books: bool = True
 
 
 BANK_TEMPLATE = Template(
@@ -186,6 +219,12 @@ BANK_TEMPLATE = Template(
     "INDEX_VOL",
     "US_CASH_EQ",
     "SN_OPTIONS",
+    recipe_books=_RECIPE_BOOKS,
+    book_cds_names=_BOOK_CDS_NAMES,
+    book_commodity_options=_BOOK_COMMODITY_OPTIONS,
+    book_funds=_BOOK_FUNDS,
+    book_mutual_funds=_BOOK_MUTUAL_FUNDS,
+    book_exotics=_BOOK_EXOTICS,
 )
 
 
@@ -202,6 +241,12 @@ class _Gen:
         w = np.array([4.0 if c.counterparty_id == self.t.preferred_counterparty else 1.0 for c in bilateral])
         self._bilateral_ids = [c.counterparty_id for c in bilateral]
         self._bilateral_w = w / w.sum()
+        self._reserved = (
+            {b for books in self.t.recipe_books.values() for b in books} if self.t.reserve_books else set()
+        )
+        self._asset_managers = [
+            c.counterparty_id for c in bilateral if c.counterparty_type is CounterpartyType.ASSET_MANAGER
+        ] or self._bilateral_ids
 
     # --- helpers ---------------------------------------------------------------------
     def _id(self, prefix: str) -> str:
@@ -224,7 +269,7 @@ class _Gen:
         return BuySell.BUY if self.rng.random() < 0.5 else BuySell.SELL
 
     def _book_and_trader(self, desk_id: str) -> tuple[str, str]:
-        books = [b for b in self.org.books if b.desk_id == desk_id]
+        books = [b for b in self.org.books if b.desk_id == desk_id and b.book_id not in self._reserved]
         traders = [t for t in self.org.traders if t.desk_id == desk_id]
         return (
             books[int(self.rng.integers(len(books)))].book_id,
@@ -252,6 +297,16 @@ class _Gen:
             "netting_set_id": None,
         }
 
+    def _recipe_book(self, desk_id: str, recipe: str) -> tuple[str, str]:
+        """Book reserved for ``recipe`` on this desk (falls back to any desk book) and a trader."""
+        desk_books = {b.book_id for b in self.org.books if b.desk_id == desk_id}
+        candidates = [b for b in self.t.recipe_books.get(recipe, []) if b in desk_books]
+        traders = [t for t in self.org.traders if t.desk_id == desk_id]
+        trader = traders[int(self.rng.integers(len(traders)))].trader_id
+        if candidates:
+            return str(self.rng.choice(candidates)), trader
+        return self._book_and_trader(desk_id)[0], trader
+
     @staticmethod
     def _restrike(trade: Trade, snap: MarketSnapshot) -> Trade:
         """Option strikes were drawn around reference levels; move them to the same relative
@@ -271,6 +326,50 @@ class _Gen:
                 ref_spot, spot = ref.EQUITIES[u][4], snap.equity_spot(u)
                 step = 5 if spot > 50 else 1
             strike = max(step, round(ins.strike * spot / ref_spot / step) * step)
+        elif pt is ProductType.SWAPTION:
+            from novera.pricing.breadth import forward_swap
+
+            fwd, _, _ = forward_swap(snap, ins, snap.as_of)
+            ref_rate = ref.SWAP_CURVES[ins.currency][ins.swap_tenor]
+            strike = round(fwd + (ins.strike - ref_rate), 5)
+            new_ins = ins.model_copy(update={"strike": strike})
+            new_ins = new_ins.model_copy(
+                update={
+                    "instrument_id": ins.instrument_id.replace(
+                        f"{ins.strike * 1e4:.0f}", f"{strike * 1e4:.0f}"
+                    )
+                }
+            )
+            return trade.model_copy(update={"instrument": new_ins})
+        elif pt is ProductType.COMMODITY_OPTION:
+            ref_spot = ref.COMMODITIES[ins.commodity][2]
+            t = max((ins.expiry_date - snap.as_of).days / 365.0, 1 / 365)
+            spot = float(snap.commodity_curve(ins.commodity).price(t))
+            strike = round(ins.strike * spot / ref_spot, 2)
+            new_ins = ins.model_copy(update={"strike": strike})
+            new_ins = new_ins.model_copy(
+                update={"instrument_id": ins.instrument_id.replace(f"{ins.strike:.2f}", f"{strike:.2f}")}
+            )
+            return trade.model_copy(update={"instrument": new_ins})
+        elif pt is ProductType.EQUITY_EXOTIC:
+            u = ins.underlying
+            if u in ref.EQUITY_INDICES:
+                ref_spot, spot = ref.EQUITY_INDICES[u][2], snap.index_level(u)
+            else:
+                ref_spot, spot = ref.EQUITIES[u][4], snap.equity_spot(u)
+            k = spot / ref_spot
+            upd = {"strike": round(ins.strike * k, 2)}
+            if ins.barrier is not None:
+                upd["barrier"] = round(ins.barrier * k, 2)
+            if ins.cash_payout is not None:
+                upd["cash_payout"] = round(ins.cash_payout * k, 2)
+            new_ins = ins.model_copy(update=upd)
+            parts = ins.instrument_id.split("_")
+            parts[-3 if ins.barrier is None else -3] = f"{upd['strike']:.0f}"
+            if ins.barrier is not None:
+                parts[-2] = f"{upd['barrier']:.0f}"
+            new_ins = new_ins.model_copy(update={"instrument_id": "_".join(parts)})
+            return trade.model_copy(update={"instrument": new_ins})
         else:
             return trade
         new_ins = ins.model_copy(update={"strike": strike})
@@ -317,14 +416,31 @@ class _Gen:
             )
         elif pt is ProductType.FX_SPOT:
             fair = d["spot"]
-        elif pt in (ProductType.FX_OPTION, ProductType.EQUITY_OPTION):
+        elif pt in (
+            ProductType.FX_OPTION,
+            ProductType.EQUITY_OPTION,
+            ProductType.SWAPTION,
+            ProductType.COMMODITY_OPTION,
+            ProductType.EQUITY_EXOTIC,
+        ):
             fair = d["unit_price"]
-        elif pt in (ProductType.EQUITY_INDEX_FUTURE, ProductType.COMMODITY_FUTURE):
+        elif pt in (
+            ProductType.EQUITY_INDEX_FUTURE,
+            ProductType.COMMODITY_FUTURE,
+            ProductType.INTEREST_RATE_FUTURE,
+        ):
             fair = d["forward"]
-        elif pt is ProductType.CDS_INDEX:
+        elif pt in (ProductType.CDS_INDEX, ProductType.CDS_SINGLE_NAME):
             fair = d["spread_bp"] / 1e4
-        else:  # cash equity, crypto
+        elif pt is ProductType.REPO:
+            fair = d["fair_rate"]
+            trade = trade.model_copy(
+                update={"instrument": trade.instrument.model_copy(update={"repo_rate": round(fair, 5)})}
+            )
+        else:  # cash equity, crypto, ETF, mutual fund
             fair = d["spot"]
+        if pt is ProductType.INTEREST_RATE_FUTURE:
+            noise_bp = 0.1  # quoted near 96: 5bp of the price would be 5bp of rate, a tick is half a bp
         noise = 1.0 + float(self.rng.normal(0, noise_bp / 1e4))
         return trade.model_copy(update={"trade_price": float(fair * noise)})
 
@@ -563,6 +679,10 @@ class _Gen:
     ) -> Trade:
         book, trader = self._book_and_trader(desk_id)
         book = book_id or book
+        if book not in self.t.book_cds:
+            book = str(
+                self.rng.choice([b for b in self.t.book_cds if b in {x.book_id for x in self.org.books}])
+            )
         family = self.t.book_cds[book]
         _, _, _, spread_bp, _ = ref.CDS_INDICES[family]
         td = self._trade_date(300)
@@ -640,6 +760,186 @@ class _Gen:
         )
 
     # --- injected problems -------------------------------------------------------------
+    # --- Phase 6 recipes ---------------------------------------------------------------
+    def repo(self, desk_id: str) -> Trade:
+        ccy = str(self.rng.choice([c for c in self.t.desk_currency[desk_id] if c in ref.REPO_HAIRCUT]))
+        bond = self.bonds[ccy][int(self.rng.integers(4))]
+        book, trader = self._recipe_book(desk_id, "repo")
+        td = self._trade_date(90)
+        start = td + relativedelta(days=1)
+        months = int(self.rng.choice([1, 1, 3, 3, 6, 12]))
+        end = max(start + relativedelta(months=months), self.bd + relativedelta(days=7))
+        rate = round(ref.SWAP_CURVES[ccy]["3M"] + float(self.rng.normal(0, 0.001)), 5)
+        return Trade(
+            trade_id=self._id("REPO"),
+            instrument=inst.repo(ccy, bond, start, end, rate),
+            direction=self._direction(),  # BUY = reverse repo (cash lent)
+            quantity=self._round(self._lognormal(50e6, 1_000e6), 5e6),
+            trade_price=rate,
+            trade_date=td,
+            settlement_date=start,
+            book_id=book,
+            trader_id=trader,
+            **self._otc(book, None, 0.0),
+        )
+
+    def ir_future(self, desk_id: str) -> Trade:
+        ccy = str(self.rng.choice([c for c in self.t.desk_currency[desk_id] if c in ref.IR_FUTURES]))
+        fut = inst.ir_futures(ccy, self.bd)[int(self.rng.choice([0, 1, 1, 2, 2, 3, 4, 5, 6, 7]))]
+        _, exch, _ = ref.IR_FUTURES[ccy]
+        book, trader = self._recipe_book(desk_id, "ir_future")
+        td = self._trade_date(90)
+        return Trade(
+            trade_id=self._id("IRF"),
+            instrument=fut,
+            direction=self._direction(),
+            quantity=self._round(self._lognormal(50, 1000), 10),
+            trade_price=round(100.0 - 100.0 * ref.SWAP_CURVES[ccy]["1Y"], 3),
+            trade_date=td,
+            settlement_date=td,
+            book_id=book,
+            trader_id=trader,
+            **self._listed(exch),
+        )
+
+    def swaption(self, desk_id: str) -> Trade:
+        ccy = str(self.rng.choice([c for c in self.t.desk_currency[desk_id] if c in ref.SWAPTION_CURRENCIES]))
+        book, trader = self._recipe_book(desk_id, "swaption")
+        td = self._trade_date(200)
+        months = int(self.rng.choice([3, 6, 12, 24]))
+        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=30))
+        tenor = str(self.rng.choice(["2Y", "5Y", "10Y"], p=[0.3, 0.4, 0.3]))
+        strike = round(ref.SWAP_CURVES[ccy][tenor] + float(self.rng.normal(0, 0.004)), 5)
+        payer = bool(self.rng.random() < 0.5)
+        return Trade(
+            trade_id=self._id("SWPT"),
+            instrument=inst.swaption(ccy, expiry, tenor, strike, payer),
+            direction=self._direction(),
+            quantity=self._round(self._lognormal(10e6, 150e6), 5e6),
+            trade_price=0.01,
+            trade_date=td,
+            settlement_date=td + relativedelta(days=2),
+            book_id=book,
+            trader_id=trader,
+            **self._otc(book, None, 0.0),
+        )
+
+    def cds_single_name(self, desk_id: str) -> Trade:
+        book, trader = self._recipe_book(desk_id, "cds_single_name")
+        names = self.t.book_cds_names.get(book) or list(ref.CDS_SINGLE_NAMES)
+        entity = str(self.rng.choice(names))
+        _, _, _, spread_bp, _, _ = ref.CDS_SINGLE_NAMES[entity]
+        td = self._trade_date(300)
+        return Trade(
+            trade_id=self._id("SNCDS"),
+            instrument=inst.cds_single_name(entity, self.bd),
+            direction=self._direction(),  # BUY = buy protection
+            quantity=self._round(self._lognormal(2e6, 25e6), 1e6),
+            trade_price=round((spread_bp + float(self.rng.normal(0, spread_bp * 0.08))) / 1e4, 6),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=1),
+            book_id=book,
+            trader_id=trader,
+            **self._otc(book, "CCP_ICE", cleared_share=0.3),
+        )
+
+    def commodity_option(self, desk_id: str) -> Trade:
+        book, trader = self._recipe_book(desk_id, "commodity_option")
+        codes = self.t.book_commodity_options.get(book) or list(ref.COMMODITY_VOL_CODES)
+        code = str(self.rng.choice(codes))
+        exch, _, price, vol, _, _ = ref.COMMODITIES[code]
+        td = self._trade_date(90)
+        months = int(self.rng.choice([1, 2, 3, 6]))
+        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=20))
+        kind = OptionType.CALL if self.rng.random() < 0.5 else OptionType.PUT
+        strike = round(price * float(np.exp(self.rng.normal(0, vol * 0.4))), 2)
+        return Trade(
+            trade_id=self._id("CMO"),
+            instrument=inst.commodity_option(code, expiry, strike, kind),
+            direction=self._direction(),
+            quantity=self._round(self._lognormal(10, 150), 10),
+            trade_price=round(price * vol * np.sqrt(months / 12) * 0.4, 3),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=1),
+            book_id=book,
+            trader_id=trader,
+            **self._listed(exch),
+        )
+
+    def etf(self, desk_id: str) -> Trade:
+        book, trader = self._recipe_book(desk_id, "etf")
+        code = str(self.rng.choice(self.t.book_funds.get(book) or list(ref.ETFS)))
+        exch, _, _, _, _, nav0 = ref.ETFS[code]
+        td = self._trade_date(400)
+        return Trade(
+            trade_id=self._id("ETF"),
+            instrument=inst.etf(code),
+            direction=self._direction(),
+            quantity=self._round(self._lognormal(5_000, 400_000), 100),
+            trade_price=round(nav0 * (1 + float(self.rng.normal(0, 0.05))), 2),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=2),
+            book_id=book,
+            trader_id=trader,
+            **self._listed(exch),
+        )
+
+    def mutual_fund(self, desk_id: str) -> Trade:
+        book, trader = self._recipe_book(desk_id, "mutual_fund")
+        code = str(self.rng.choice(self.t.book_mutual_funds.get(book) or list(ref.MUTUAL_FUNDS)))
+        _, _, _, _, _, nav0, notice = ref.MUTUAL_FUNDS[code]
+        td = self._trade_date(400)
+        # Dealt with the transfer agent: an asset-manager counterparty, no exchange, no netting set.
+        return Trade(
+            trade_id=self._id("MF"),
+            instrument=inst.mutual_fund(code),
+            direction=BuySell.BUY if self.rng.random() < 0.85 else BuySell.SELL,
+            quantity=self._round(self._lognormal(20_000, 2_000_000), 1000),
+            trade_price=round(nav0 * (1 + float(self.rng.normal(0, 0.05))), 2),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=notice + 1),
+            book_id=book,
+            trader_id=trader,
+            counterparty_id=str(self.rng.choice(self._asset_managers)),
+            clearing=ClearingType.BILATERAL,
+            netting_set_id=None,
+        )
+
+    def equity_exotic(self, desk_id: str) -> Trade:
+        book, trader = self._recipe_book(desk_id, "equity_exotic")
+        u = str(self.rng.choice(self.t.book_exotics.get(book) or ["SPX"]))
+        if u in ref.EQUITY_INDICES:
+            _, ccy, spot, vol, _ = ref.EQUITY_INDICES[u]
+        else:
+            _, ccy, _, _, spot, vol = ref.EQUITIES[u]
+        td = self._trade_date(120)
+        months = int(self.rng.choice([3, 6, 12]))
+        expiry = max(td + relativedelta(months=months), self.bd + relativedelta(days=30))
+        kind = OptionType.CALL if self.rng.random() < 0.5 else OptionType.PUT
+        strike = round(spot * float(np.exp(self.rng.normal(0, vol * 0.3))), 2)
+        mult = 100.0 if u in ref.EQUITY_INDICES else 100.0
+        if self.rng.random() < 0.7:
+            bt = BarrierType(str(self.rng.choice([b.value for b in BarrierType])))
+            up = bt in (BarrierType.UP_AND_IN, BarrierType.UP_AND_OUT)
+            barrier = round(
+                spot * float(self.rng.uniform(1.08, 1.25) if up else self.rng.uniform(0.75, 0.92)), 2
+            )
+            ins_ = inst.equity_barrier(u, expiry, strike, barrier, bt, kind, ccy, mult)
+        else:
+            ins_ = inst.equity_digital(u, expiry, strike, round(spot * 0.10, 2), kind, ccy, mult)
+        return Trade(
+            trade_id=self._id("EXO"),
+            instrument=ins_,
+            direction=self._direction(),
+            quantity=self._round(self._lognormal(10, 250), 10),
+            trade_price=round(spot * vol * np.sqrt(months / 12) * 0.2, 2),
+            trade_date=td,
+            settlement_date=td + relativedelta(days=2),
+            book_id=book,
+            trader_id=trader,
+            **self._otc(book, None, 0.0),
+        )
+
     def inject(self) -> tuple[list[Trade], list[Injection]]:
         trades: list[Trade] = []
         inj: list[Injection] = []

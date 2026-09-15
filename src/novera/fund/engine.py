@@ -52,20 +52,32 @@ def delta_equivalent(
         t = snapshot_trades.get(tid)
         if t is None:
             continue
-        if r["product_type"] in ("GOVERNMENT_BOND", "INTEREST_RATE_SWAP"):
+        if r["product_type"] in ("GOVERNMENT_BOND", "INTEREST_RATE_SWAP", "REPO", "INTEREST_RATE_FUTURE"):
             fx = float(r["fx_to_reporting"] or 1.0)
             sign = 1.0
             if r["product_type"] == "INTEREST_RATE_SWAP":
                 sign = 1.0 if t.swap_side.value == "RECEIVE_FIXED" else -1.0
-            else:
+            else:  # bond bought, cash lent (reverse repo) and long futures are long rates
                 sign = 1.0 if t.direction.value == "BUY" else -1.0
-            exposure[tid] = sign * t.quantity * fx
+            size = t.quantity * (
+                t.instrument.contract_notional if r["product_type"] == "INTEREST_RATE_FUTURE" else 1.0
+            )
+            exposure[tid] = sign * size * fx
             underlying[tid] = t.currency
-        elif r["product_type"] == "CDS_INDEX":
+        elif r["product_type"] == "SWAPTION":
+            fx = float(r["fx_to_reporting"] or 1.0)
+            # Rate delta (per unit rate, in notional units) as the delta-equivalent swap notional.
+            d = float(r.get("rate_delta", 0.0) or 0.0) if "rate_delta" in r else 0.0
+            long_rates = (t.instrument.payer and t.direction.value == "SELL") or (
+                not t.instrument.payer and t.direction.value == "BUY"
+            )
+            exposure[tid] = (1.0 if long_rates else -1.0) * abs(d if d else 0.5 * t.quantity) * fx
+            underlying[tid] = t.currency
+        elif r["product_type"] in ("CDS_INDEX", "CDS_SINGLE_NAME"):
             fx = float(r["fx_to_reporting"] or 1.0)
             sign = -1.0 if t.direction.value == "BUY" else 1.0  # bought protection is short credit
             exposure[tid] = sign * t.quantity * fx
-            underlying[tid] = t.instrument.index_family
+            underlying[tid] = getattr(t.instrument, "index_family", None) or t.instrument.reference_entity
         elif tid not in underlying:
             ins = t.instrument
             underlying[tid] = (

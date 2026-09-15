@@ -28,8 +28,9 @@ def db_path(tmp_path_factory):
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=1.0, seed=5))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=120, seed=5,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=120, seed=5, market_history=hist)
+    )
     with DuckDBRepository(path) as repo:
         repo.init_schema()
         repo.save_organisation(org)
@@ -41,12 +42,17 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
-                      runs_dir=tmp_path_factory.mktemp("runs"))
+        res = run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
+            runs_dir=tmp_path_factory.mktemp("runs"),
+        )
         from novera.counterparty_risk import ExposureSimConfig, run_counterparty
 
         data_dir = path.parent / "data"
-        run_counterparty(repo, res.run.run_id, ExposureSimConfig(paths=20), runs_dir=data_dir / "runs", workers=1)
+        run_counterparty(
+            repo, res.run.run_id, ExposureSimConfig(paths=20), runs_dir=data_dir / "runs", workers=1
+        )
     return path
 
 
@@ -126,22 +132,36 @@ def test_breach_endpoints_round_trip(client):
     assert r.status_code == 409
     lid = breaches[0]["limit_id"]
     lim = next(x for x in client.get("/runs/latest/limits").json() if x["limit_id"] == lid)
-    r = client.post("/increases", json={"limit_id": lid, "new_amount": lim["base_amount"] * 1.1,
-                                        "expires_on": "2026-10-10", "requested_by": "Head of Desk",
-                                        "rationale": "unwind scheduled", "effective_from": "2026-09-11",
-                                        "breach_id": bid})
+    r = client.post(
+        "/increases",
+        json={
+            "limit_id": lid,
+            "new_amount": lim["base_amount"] * 1.1,
+            "expires_on": "2026-10-10",
+            "requested_by": "Head of Desk",
+            "rationale": "unwind scheduled",
+            "effective_from": "2026-09-11",
+            "breach_id": bid,
+        },
+    )
     assert r.status_code == 200, r.text
     iid = r.json()["increase_id"]
     inc = next(i for i in client.get("/increases").json() if i["increase_id"] == iid)
     assert inc["allowed_approvers"]
     r = client.post(f"/increases/{iid}/decide", json={"approver": "Head of Desk", "approve": True})
     assert r.status_code == 409
-    r = client.post(f"/increases/{iid}/decide", json={"approver": inc["allowed_approvers"][0], "approve": True})
+    r = client.post(
+        f"/increases/{iid}/decide", json={"approver": inc["allowed_approvers"][0], "approve": True}
+    )
     assert r.status_code == 200 and r.json()["status"] == "APPROVED"
-    r = client.post(f"/breaches/{bid}/close", json={"actor": "Head of Desk", "reason": "TEMPORARY_INCREASE_APPROVED"})
+    r = client.post(
+        f"/breaches/{bid}/close", json={"actor": "Head of Desk", "reason": "TEMPORARY_INCREASE_APPROVED"}
+    )
     assert r.status_code == 200 and r.json()["status"] == "CLOSED"
     rid = client.get("/runs").json()[0]["run_id"]
-    assert client.get("/compare", params={"run_a": rid, "run_b": rid}).json()["headline"]["var"]["change"] == 0
+    assert (
+        client.get("/compare", params={"run_a": rid, "run_b": rid}).json()["headline"]["var"]["change"] == 0
+    )
 
 
 def test_copilot_endpoints(client, monkeypatch):
@@ -180,7 +200,9 @@ def test_counterparty_endpoints(client):
     assert d["profile"] and d["netting_sets"]
     ns = d["netting_sets"][0]["netting_set_id"]
     r = client.post("/runs/latest/csa-what-if", json={"netting_set_id": ns, "uncollateralised": True})
-    assert r.status_code == 200 and r.json()["what_if_csa"] is None and r.json()["after"] and r.json()["before"]
+    assert (
+        r.status_code == 200 and r.json()["what_if_csa"] is None and r.json()["after"] and r.json()["before"]
+    )
     assert client.get("/runs/latest/counterparties/NOPE").status_code == 404
 
 

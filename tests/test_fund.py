@@ -1,4 +1,5 @@
 """Hedge-fund face: template, modules and the fund EOD branch."""
+
 from datetime import date
 
 import pandas as pd
@@ -53,15 +54,29 @@ def fund_db(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(firm_id="MSF", counterparty=True, exposure_paths=20, regulatory=True,
-                                      var=VaRConfig(window_days=150), workers=1), runs_dir=runs_dir)
+        res = run_eod(
+            repo,
+            EODConfig(
+                firm_id="MSF",
+                counterparty=True,
+                exposure_paths=20,
+                regulatory=True,
+                var=VaRConfig(window_days=150),
+                workers=1,
+            ),
+            runs_dir=runs_dir,
+        )
     return {"path": str(path), "run_id": res.run.run_id, "runs_dir": runs_dir, "gen": gen, "fund": fund}
 
 
 def test_fund_template_and_injections(fund_db):
     gen, fund = fund_db["gen"], fund_db["fund"]
-    assert {i.name for i in gen.injections} == {"crowded_single_name", "pb_concentration", "illiquid_vs_redemptions",
-                                                "short_vol"}
+    assert {i.name for i in gen.injections} == {
+        "crowded_single_name",
+        "pb_concentration",
+        "illiquid_vs_redemptions",
+        "short_vol",
+    }
     assert abs(fund.share_check - 1.0) < 1e-9 and len(fund.prime_brokers) == 4
     bil = [t for t in gen.snapshot.trades if t.clearing.value == "BILATERAL"]
     assert all(t.counterparty_id.startswith("PB_") for t in bil)
@@ -73,7 +88,9 @@ def test_fund_template_and_injections(fund_db):
 def test_dealing_dates_and_redemptions(fund_db):
     assert _next_dealing(date(2026, 9, 11), DealingFrequency.MONTHLY, 30) == date(2026, 10, 31)
     assert _next_dealing(date(2026, 9, 11), DealingFrequency.QUARTERLY, 90) == date(2026, 12, 31)
-    liq = pd.DataFrame({"trade_id": ["a", "b", "c"], "pv": [1e9, 5e8, 5e8], "days_to_liquidate": [1.0, 3.0, 40.0]})
+    liq = pd.DataFrame(
+        {"trade_id": ["a", "b", "c"], "pv": [1e9, 5e8, 5e8], "days_to_liquidate": [1.0, 3.0, 40.0]}
+    )
     out = redemption_stress(fund_db["fund"], AS_OF, liq, DEFAULT_REDEMPTION_SCENARIOS)
     assert set(out["scenario"]) == {s.name for s in DEFAULT_REDEMPTION_SCENARIOS}
     assert (out["coverage"].dropna() > 0).all() and (out["gated"] >= 0).all()
@@ -85,6 +102,7 @@ def test_factor_betas_recover_a_known_loading():
     idx = pd.bdate_range("2025-01-01", periods=300).date
     rng = pd.Series(range(300))
     import numpy as np
+
     r = np.random.default_rng(0)
     f1, f2 = r.standard_normal(300), r.standard_normal(300)
     moves = pd.DataFrame({"EQIDX:SPX": f1 * 0.01, "IR:USD:10Y": f2 * 0.0005}, index=idx)
@@ -111,5 +129,7 @@ def test_fund_run_outputs(fund_db):
         assert any("NVDA" in f for f in fr.crowding["flags"]), fr.crowding["flags"]
         lt = repo.load_run_frame(fund_db["run_id"], "limits")
         assert {"LEVERAGE", "MARGIN_USAGE", "PB_CONCENTRATION"} <= set(lt["limit_type"])
-        assert lt[lt["limit_type"] == "LEVERAGE"]["current"].iloc[0] == pytest.approx(t["gross_leverage"], rel=1e-6)
+        assert lt[lt["limit_type"] == "LEVERAGE"]["current"].iloc[0] == pytest.approx(
+            t["gross_leverage"], rel=1e-6
+        )
         assert not repo.load_run_frame(fund_db["run_id"], "fund_summary").empty

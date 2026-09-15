@@ -12,6 +12,7 @@ Factor id conventions:
     CDS:{FAMILY}                 index spread in basis points
     CRYPTO:{SYMBOL}              price in USD
     VOL:{UNDERLYING}:{EXPIRY}:{MONEYNESS}   implied vol, decimal, K/F moneyness
+    SWVOL:{CCY}:{EXPIRY}:{TENOR}   swaption normal (Bachelier) vol in basis points per year
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ class RiskFactorType(StrEnum):
     CREDIT_SPREAD = "CREDIT_SPREAD"
     CRYPTO_SPOT = "CRYPTO_SPOT"
     IMPLIED_VOL = "IMPLIED_VOL"
+    SWAPTION_VOL = "SWAPTION_VOL"
 
 
 class RiskFactor(BaseModel):
@@ -98,3 +100,7 @@ def crypto_id(symbol: str) -> str:
 
 def vol_id(underlying: str, expiry: str, moneyness: float) -> str:
     return f"VOL:{underlying.replace('/', '')}:{expiry}:{moneyness:.2f}"
+
+
+def swvol_id(ccy: str, expiry: str, tenor: str) -> str:
+    return f"SWVOL:{ccy}:{expiry}:{tenor}"

@@ -1,4 +1,5 @@
 """Phase 3 operations: alerts, scheduler, day advance, challenger reconciliation, adapters."""
+
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -43,8 +44,9 @@ def db_path(tmp_path_factory):
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=D1, years=1.0, seed=17))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=D1, n_trades=120, seed=17,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=D1, n_trades=120, seed=17, market_history=hist)
+    )
     with DuckDBRepository(path) as repo:
         repo.init_schema()
         repo.save_organisation(org)
@@ -72,6 +74,7 @@ class FakeChannel:
 def test_alerts_from_run_and_dedupe(db_path, tmp_path, monkeypatch):
     monkeypatch.setenv("NOVERA_ALERTS_ENABLED", "false")
     from novera.config import get_settings
+
     get_settings.cache_clear()
     with DuckDBRepository(db_path) as repo:
         res = run_eod(repo, CFG, D1, runs_dir=tmp_path)
@@ -105,6 +108,7 @@ def test_scheduler_advances_and_runs(db_path, tmp_path, monkeypatch):
     monkeypatch.setenv("NOVERA_ALERTS_ENABLED", "false")
     monkeypatch.setenv("NOVERA_DATA_DIR", str(tmp_path))
     from novera.config import get_settings
+
     get_settings.cache_clear()
     with DuckDBRepository(db_path) as repo:
         before = repo.list_market_snapshots()[-1][1]
@@ -121,8 +125,17 @@ def test_scheduler_advances_and_runs(db_path, tmp_path, monkeypatch):
         assert hist.dates[-1] == date(2026, 9, 14) and hist.dates[-2] == D1
         assert "IR:USD:7Y" in repo.load_market_snapshot(repo.list_market_snapshots()[-1][0]).values
     slept = []
-    jobs = list(serve(db_path, "18:30", advance=False, cfg=CFG, iterations=1, sleep=slept.append,
-                      clock=lambda: datetime(2026, 9, 14, 18, 0)))
+    jobs = list(
+        serve(
+            db_path,
+            "18:30",
+            advance=False,
+            cfg=CFG,
+            iterations=1,
+            sleep=slept.append,
+            clock=lambda: datetime(2026, 9, 14, 18, 0),
+        )
+    )
     assert slept == [1800.0] and jobs[0].status == "SKIPPED"
     get_settings.cache_clear()
 
@@ -159,22 +172,48 @@ def _mock_transport():
         if "stlouisfed" in url:
             sid = request.url.params["series_id"]
             base = {"DGS10": 4.1, "DGS20": 4.4}.get(sid, 4.0)
-            return httpx.Response(200, json={"observations": [
-                {"date": "2020-03-02", "value": str(base)}, {"date": "2020-03-03", "value": "."},
-                {"date": "2020-03-04", "value": str(base + 0.1)}]})
+            return httpx.Response(
+                200,
+                json={
+                    "observations": [
+                        {"date": "2020-03-02", "value": str(base)},
+                        {"date": "2020-03-03", "value": "."},
+                        {"date": "2020-03-04", "value": str(base + 0.1)},
+                    ]
+                },
+            )
         if "finance.yahoo" in url:
-            return httpx.Response(200, json={"chart": {"result": [{
-                "timestamp": [1583107200, 1583193600], "indicators": {"quote": [{"close": [3000.0, None]}]}}]}})
+            return httpx.Response(
+                200,
+                json={
+                    "chart": {
+                        "result": [
+                            {
+                                "timestamp": [1583107200, 1583193600],
+                                "indicators": {"quote": [{"close": [3000.0, None]}]},
+                            }
+                        ]
+                    }
+                },
+            )
         if "coinbase" in url:
             return httpx.Response(200, json=[[1583107200, 8500, 8900, 8600, 8800.5, 10.0]])
         return httpx.Response(404)
+
     return httpx.MockTransport(handler)
 
 
 def test_adapters_with_recorded_responses(db_path):
     client = httpx.Client(transport=_mock_transport())
-    results = fetch_all([FredAdapter("key", client=client), YahooAdapter(client=client, symbols={"^GSPC": "EQIDX:SPX"}),
-                         CoinbaseAdapter(client=client)], date(2020, 3, 1), date(2020, 3, 5))
+    results = fetch_all(
+        [
+            FredAdapter("key", client=client),
+            YahooAdapter(client=client, symbols={"^GSPC": "EQIDX:SPX"}),
+            CoinbaseAdapter(client=client),
+        ],
+        date(2020, 3, 1),
+        date(2020, 3, 5),
+    )
     fred, yahoo, cb = results
     assert fred.fetched["IR:USD:10Y"] == 2 and fred.fetched["IR:USD:15Y"] == 2 and not fred.errors
     ten = fred.frame[fred.frame.factor_id == "IR:USD:10Y"]["value"].tolist()
@@ -194,12 +233,14 @@ def test_adapters_with_recorded_responses(db_path):
 
 
 def test_named_crises_require_coverage():
-    long = MarketHistory(pd.DataFrame({"EQIDX:SPX": range(6000)},
-                                      index=pd.bdate_range("2005-01-03", periods=6000).date))
+    long = MarketHistory(
+        pd.DataFrame({"EQIDX:SPX": range(6000)}, index=pd.bdate_range("2005-01-03", periods=6000).date)
+    )
     names = {s.scenario_id for s in named_crisis_scenarios(long)}
     assert {"gfc_2008", "covid_2020", "rates_2022", "banks_2023"} <= names
-    short = MarketHistory(pd.DataFrame({"EQIDX:SPX": range(300)},
-                                       index=pd.bdate_range("2025-01-01", periods=300).date))
+    short = MarketHistory(
+        pd.DataFrame({"EQIDX:SPX": range(300)}, index=pd.bdate_range("2025-01-01", periods=300).date)
+    )
     assert named_crisis_scenarios(short) == []
 
 

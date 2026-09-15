@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from novera.config import Settings, get_settings
 from novera.market_data.history import MarketHistory
+from novera.pricing.valuation import fx_to_reporting
 from novera.regulatory.cash_ladder import cash_ladder
 from novera.regulatory.cva_capital import ba_cva
 from novera.regulatory.frtb_ima import IMAResult, frtb_ima
@@ -56,6 +58,19 @@ class RegulatoryRun:
         }
 
 
+def exotic_gross_notional(trades, market, reporting: str) -> pd.Series:
+    """Gross notional (contracts × multiplier × strike, in reporting currency) of barrier and
+    digital options, the products that attract the residual risk add-on (REG-001)."""
+    out: dict[str, float] = {}
+    for t in trades:
+        if t.product_type.value != "EQUITY_EXOTIC" or t.status.value != "LIVE":
+            continue
+        ins = t.instrument
+        fx = fx_to_reporting(market, t.currency, reporting)
+        out[t.trade_id] = abs(t.quantity * ins.contract_multiplier * ins.strike * fx)
+    return pd.Series(out, dtype=float)
+
+
 def run_regulatory(
     repo: DuckDBRepository,
     run_id: str,
@@ -66,7 +81,7 @@ def run_regulatory(
     settings = settings or get_settings()
     run = repo.load_run(run_id)
     snap = repo.load_portfolio_snapshot(run.portfolio_snapshot_id)
-    market = repo.load_market_snapshot(run.market_snapshot_id)
+    market = repo.load_run_market(run.run_id)
     universe = {f.factor_id: f for f in repo.load_risk_factors()}
     history = MarketHistory.from_long(repo.load_market_history())
     val = repo.load_run_frame(run_id, "valuation")
@@ -78,11 +93,16 @@ def run_regulatory(
         u: market.vol_surface(u).atm(0.25)
         for u in {f.split(":")[1] for f in market.factors_with_prefix("VOL:")}
     }
+    for ccy in {f.split(":")[1] for f in market.factors_with_prefix("SWVOL:")}:
+        base_vols[f"SWVOL:{ccy}"] = float(
+            np.mean([market.values[f] for f in market.factors_with_prefix(f"SWVOL:{ccy}:")])
+        )
+    exotic_notional = exotic_gross_notional(snap.trades, market, reporting)
     # Valuation lacks netting_set_id; add it from the snapshot for SIMM.
     ns_by_trade = {t.trade_id: t.netting_set_id for t in snap.trades}
     val = val.assign(netting_set_id=val["trade_id"].map(ns_by_trade))
 
-    sa = frtb_sa(sens, val, base_vols)
+    sa = frtb_sa(sens, val, base_vols, exotic_notional)
     # IMA needs the full-revaluation scenario P&L (hypothetical P&L) per trade.
     base = Path(runs_dir or settings.data_dir / "runs") / run_id
     hpl_path = base / "var_pnl_full_revaluation.parquet"

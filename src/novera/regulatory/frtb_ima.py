@@ -64,7 +64,11 @@ def liquidity_horizon(factor_id: str) -> int:
         return 120
     if factor_id.startswith("VOL:"):
         u = factor_id.split(":")[1]
+        if u in ("BRENT", "WTI", "NATGAS", "GOLD", "SILVER", "COPPER", "ALUMINIUM"):
+            return 60
         return 40 if (u.endswith("USD") or u.startswith("USD")) else 20
+    if factor_id.startswith("SWVOL:"):
+        return 60
     return 120
 
 

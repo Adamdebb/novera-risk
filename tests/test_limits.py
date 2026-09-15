@@ -32,8 +32,9 @@ def inputs():
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=1.5, seed=31))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=31,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=31, market_history=hist)
+    )
     universe = {f.factor_id: f for f in md.universe}
     val = value_portfolio(gen.snapshot, md.previous_snapshot, org, "USD").table
     pf = Portfolio(gen.snapshot.trades, md.previous_snapshot, "USD", universe=universe)
@@ -44,8 +45,14 @@ def inputs():
 
 
 def _limit(lid, lt, level, entity, amount, **filters):
-    return Limit(limit_id=lid, limit_type=lt, scope=LimitScope(level=level, entity_id=entity, **filters),
-                 amount=amount, owner="Test", effective_from=date(2026, 1, 1))
+    return Limit(
+        limit_id=lid,
+        limit_type=lt,
+        scope=LimitScope(level=level, entity_id=entity, **filters),
+        amount=amount,
+        owner="Test",
+        effective_from=date(2026, 1, 1),
+    )
 
 
 def test_status_thresholds():
@@ -70,7 +77,9 @@ def test_desk_dv01_and_tenor_filter(inputs):
     total = abs(usd["value"].sum())
     ten = abs(usd[usd.bucket == "10Y"]["value"].sum())
     lim_all = _limit("D1", LimitType.DV01, HierarchyLevel.DESK, "USD_RATES", 1e9, currency="USD")
-    lim_10y = _limit("D2", LimitType.DV01, HierarchyLevel.DESK, "USD_RATES", 1e9, currency="USD", tenor_bucket="10Y")
+    lim_10y = _limit(
+        "D2", LimitType.DV01, HierarchyLevel.DESK, "USD_RATES", 1e9, currency="USD", tenor_bucket="10Y"
+    )
     out = monitor([lim_all, lim_10y], inputs, AS_OF).set_index("limit_id")
     assert out.loc["D1", "current"] == pytest.approx(total)
     assert out.loc["D2", "current"] == pytest.approx(ten)
@@ -84,8 +93,15 @@ def test_stress_loss_is_worst_case(inputs):
 
 
 def test_concentration_is_a_share(inputs):
-    lim = _limit("C1", LimitType.CONCENTRATION, HierarchyLevel.DESK, "USD_RATES", 0.5, currency="USD",
-                 tenor_bucket="10Y")
+    lim = _limit(
+        "C1",
+        LimitType.CONCENTRATION,
+        HierarchyLevel.DESK,
+        "USD_RATES",
+        0.5,
+        currency="USD",
+        tenor_bucket="10Y",
+    )
     out = monitor([lim], inputs, AS_OF)
     assert 0.0 <= out.loc[0, "current"] <= 1.0
 
@@ -97,7 +113,14 @@ def test_counterparty_exposure_non_negative(inputs):
 
 
 def test_expired_limits_are_skipped(inputs):
-    lim = Limit(limit_id="E", limit_type=LimitType.VAR, scope=LimitScope(level=HierarchyLevel.FIRM, entity_id="GMB"),
-                amount=1.0, owner="x", effective_from=date(2020, 1, 1), effective_to=date(2020, 12, 31))
+    lim = Limit(
+        limit_id="E",
+        limit_type=LimitType.VAR,
+        scope=LimitScope(level=HierarchyLevel.FIRM, entity_id="GMB"),
+        amount=1.0,
+        owner="x",
+        effective_from=date(2020, 1, 1),
+        effective_to=date(2020, 12, 31),
+    )
     assert monitor([lim], inputs, AS_OF).empty
     assert isinstance(pd.DataFrame(), pd.DataFrame)

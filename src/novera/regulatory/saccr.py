@@ -21,6 +21,7 @@ from novera.domain.enums import ClearingType, ProductType, Venue
 from novera.domain.trades import Trade
 from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing.valuation import fx_to_reporting, value_trade
+from novera.simulation import reference_levels as _ref
 
 MODEL_VERSION = "1.0.0"
 ALPHA = 1.4
@@ -136,6 +137,37 @@ def _trade_addon(
         return TradeAddOn(
             t.trade_id, cls, ins.index_family, "", delta, notional, maturity_factor(e, margined), 0.0
         )
+    if pt is ProductType.CDS_SINGLE_NAME:
+        s, e = 0.0, _years(as_of, ins.maturity_date)
+        notional = t.quantity * fx * _supervisory_duration(s, e)
+        delta = 1.0 if sign < 0 else -1.0
+        cls = (
+            "CREDIT_IG"
+            if _ref.CDS_SINGLE_NAMES.get(ins.reference_entity, ("",) * 6)[5] == "IG"
+            else "CREDIT_HY"
+        )
+        return TradeAddOn(
+            t.trade_id, cls, ins.reference_entity, "", delta, notional, maturity_factor(e, margined), 0.0
+        )
+    if pt is ProductType.SWAPTION:
+        # Underlying swap starts at expiry; supervisory delta from the Bachelier rate delta.
+        s = _years(as_of, ins.expiry_date)
+        e = s + float(ins.swap_tenor.rstrip("Y"))
+        notional = t.quantity * fx * _supervisory_duration(s, e)
+        d = r.details.get("rate_delta", 0.0) / max(t.quantity * r.details.get("annuity", 1.0), 1e-9)
+        delta = -float(np.clip(d, -1, 1))  # payer gains when rates rise = same sign as pay-fixed
+        bucket = "<1y" if e < 1 else ("1-5y" if e <= 5 else ">5y")
+        return TradeAddOn(
+            t.trade_id, "IR", ins.currency, bucket, delta, notional, maturity_factor(e, margined), 0.0
+        )
+    if pt is ProductType.EQUITY_EXOTIC:
+        m = _years(as_of, ins.expiry_date)
+        spot = r.details.get("spot", ins.strike)
+        notional = t.quantity * ins.contract_multiplier * spot * fx
+        # Exotics: supervisory delta ±1 by direction and payoff sign (barrier deltas are not monotone).
+        d = sign * (1.0 if ins.option_type.value == "CALL" else -1.0)
+        cls = "EQ_INDEX" if ins.underlying in ("SPX", "NDX", "SX5E", "DAX", "FTSE", "NKY") else "EQ_SINGLE"
+        return TradeAddOn(t.trade_id, cls, ins.underlying, "", d, notional, maturity_factor(m, margined), 0.0)
     return None
 
 
@@ -182,9 +214,19 @@ def _aggregate_addons(addons: list[TradeAddOn]) -> dict[str, float]:
         if c.empty:
             continue
         per_index = c.groupby("hedging_set")["effective"].sum() * SF[cls]
-        rho = 0.8
-        agg = np.sqrt(max((rho * per_index.sum()) ** 2 + (1 - rho**2) * (per_index**2).sum(), 0.0))
-        out[cls] = float(agg)
+        # Entity-level correlation: 80% for indices, 50% for single names (MAR/CRE52).
+        rhos = np.array([0.8 if ("." in str(h)) else 0.5 for h in per_index.index])
+        sys = (rhos * per_index.to_numpy()).sum()
+        idio = ((1 - rhos**2) * per_index.to_numpy() ** 2).sum()
+        out[cls] = float(np.sqrt(max(sys**2 + idio, 0.0)))
+    # Equity: per entity, 80% correlation for indices and 50% for single names.
+    for cls in ("EQ_INDEX", "EQ_SINGLE"):
+        c = df[df["asset_class"] == cls]
+        if c.empty:
+            continue
+        per = c.groupby("hedging_set")["effective"].sum() * SF[cls]
+        rho = 0.8 if cls == "EQ_INDEX" else 0.5
+        out[cls] = float(np.sqrt(max((rho * per.sum()) ** 2 + (1 - rho**2) * (per**2).sum(), 0.0)))
     return out
 
 

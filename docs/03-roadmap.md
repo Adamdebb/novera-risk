@@ -111,11 +111,25 @@ measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
 - Not done: IPV as a separate module (covered by the challenger), ICAAP and ILAAP
   document generation, CCP exposure.
 
-## Phase 6 — Instrument breadth
+## Phase 6 — Instrument breadth (delivered 2026-09-14)
 
-Repos and securities financing, swaptions and IR futures, commodity options, single-name
-CDS, ETFs and mutual funds with look-through, exotics (barriers, digitals), strike
-concentration reporting, volatility calibration tools.
+Repos and reverse repos, interest-rate futures, European swaptions (Bachelier on a normal
+vol cube), single-name CDS, commodity options (Black 76 on commodity vol surfaces), ETFs
+and mutual funds priced by look-through with a direct-versus-via-fund report, equity
+barrier and digital options (closed form, QuantLib-benchmarked), and market-data proxies
+with an audit trail (interpolate, roll, re-level). Nine new bank books; the fund holds
+the new products in its strategies. Records PR-010 to PR-016, MR-014, MD-002. Deferred:
+strike concentration reporting and volatility calibration tools.
+
+| Asset class | Product | Listed/OTC | Pricer | Record |
+|---|---|---|---|---|
+| Rates | Repo / reverse repo | OTC | Cash leg off the zero curve | PR-010 |
+| Rates | Interest-rate future | Listed | Curve forward, no convexity | PR-011 |
+| Rates | European swaption | OTC | Bachelier on a normal vol cube | PR-012 |
+| Credit | Single-name CDS | OTC | Flat hazard (shared with PR-008) | PR-013 |
+| Commodities | Commodity option | Listed | Black 76 on the curve price | PR-014 |
+| Equity | ETF, mutual fund | Listed / transfer agent | NAV by look-through | PR-015 |
+| Equity | Barrier and digital options | OTC | Reiner–Rubinstein, cash-or-nothing | PR-016 |
 
 ## Phase 7 — AI and automation
 

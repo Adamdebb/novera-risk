@@ -8,14 +8,24 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    new trades versus model or data. Click USD Rates.
 3. **Drill down** (1 min). Firm to asset class to desk to book to trader to trade. Show the
    USD 10Y DV01 concentration and the curve ladder.
-4. **Can I trust it** (1 min). Data-quality verdict for today's run: one stale EUR vol
-   surface, four trades unpriced, all flagged with owners.
-4b. **Breach workflow** (1 min). Day 2: three breaches auto-escalated to Head of Market
-   Risk because nobody acknowledged them; the Brent breach was acknowledged and stays with
-   its owner. Request a temporary increase, show the approval matrix reject the desk head
-   and accept Head of Market Risk, close the breach against it.
-4c. **Compare runs** (1 min). Day 1 versus day 2: VaR down 2m, three new EM FX breaches
-   driven by one 230m USD/ZAR forward booked that day, one Bank A swap unwound.
+4. **Can I trust it** (1 min). Data-quality verdict for today's run: one stale EUR/USD vol
+   surface and a missing USD 7Y node (MAJOR, owners named), three invalid trades. Scroll to
+   the proxies panel: the run re-levelled the stale surface with GBP/USD and interpolated
+   the 7Y node before pricing, every touched factor listed with its source (MD-002); the raw
+   snapshot is untouched.
+4b. **Breach workflow** (1 min). Day 1 shows exactly the four planted breaches (USD 10Y
+   DV01 and concentration, Brent concentration, digital-asset stress). Day 2 adds two: the
+   single-name equity vega limit after new options were booked, and Northsea Energy's PFE
+   limit. Day 3: the unacknowledged breaches are auto-escalated to Head of Market Risk; the
+   Brent breach was acknowledged and escalates only after three breaching runs. Request a
+   temporary increase, show the approval matrix reject the desk head and accept Head of
+   Market Risk, close the breach against it.
+4c. **Compare runs** (1 min). Day 1 versus day 2: VaR up 0.5m, one Bank A swap unwound, 45
+   new trades; day 3 a EUR DV01 breach from new business.
+4d. **Breadth** (1 min). Drill-down by product: repos, rates futures, swaptions,
+   single-name CDS, commodity options, ETFs and mutual funds, barrier and digital options
+   all priced by benchmarked closed forms. Concentration & liquidity page, fund look-through:
+   how much NVDA or gold exposure arrives via funds rather than directly.
 5. **Stress** (2 min). Run "Global risk-off". Losses by desk and asset class, top
    contributors, new breaches raised, escalation routed.
 6. **Counterparty** (2 min). Counterparty page: Bank A largest PFE, the uncollateralised

@@ -65,7 +65,36 @@ def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
         out += [f"CDS:{ins.index_family}", f"IR:{ccy}:"]  # type: ignore[attr-defined]
     elif pt is ProductType.CRYPTO_SPOT:
         out.append(f"CRYPTO:{ins.symbol}")  # type: ignore[attr-defined]
+    elif pt in (ProductType.REPO, ProductType.INTEREST_RATE_FUTURE):
+        out.append(f"IR:{ccy}:")
+    elif pt is ProductType.SWAPTION:
+        out += [f"IR:{ccy}:", f"SWVOL:{ccy}:"]
+    elif pt is ProductType.CDS_SINGLE_NAME:
+        out += [f"CDS:{ins.reference_entity}", f"IR:{ccy}:"]  # type: ignore[attr-defined]
+    elif pt is ProductType.COMMODITY_OPTION:
+        out += [f"CMD:{ins.commodity}:", f"VOL:{ins.commodity}:", f"IR:{ccy}:"]  # type: ignore[attr-defined]
+    elif pt in (ProductType.ETF, ProductType.MUTUAL_FUND):
+        for leg in ins.basket:  # type: ignore[attr-defined]
+            out += leg_prefixes(leg.kind, leg.underlying)
+            if leg.currency != ccy:
+                out += _pair_prefixes(f"{leg.currency}/{ccy}")
+    elif pt is ProductType.EQUITY_EXOTIC:
+        u = ins.underlying  # type: ignore[attr-defined]
+        out += [f"EQ:{u}", f"EQIDX:{u}", f"IR:{ccy}:", f"VOL:{u}:"]
     return tuple(dict.fromkeys(out))
+
+
+def leg_prefixes(kind: str, underlying: str) -> list[str]:
+    """Factor prefixes for one look-through constituent of a fund."""
+    if kind == "EQ":
+        return [f"EQ:{underlying}"]
+    if kind == "EQIDX":
+        return [f"EQIDX:{underlying}"]
+    if kind == "CMD":
+        return [f"CMD:{underlying}:"]
+    if kind == "CRYPTO":
+        return [f"CRYPTO:{underlying}"]
+    return []
 
 
 def matches(prefix: str, factor_id: str) -> bool:

@@ -1,4 +1,5 @@
 """Risk Copilot: tool loop, scripted planner, what-if engine, governance record."""
+
 import json
 from datetime import date
 
@@ -30,10 +31,13 @@ def db_path(tmp_path_factory):
     path = tmp_path_factory.mktemp("copilot") / "c.duckdb"
     org = build_global_macro_bank()
     cp = build_counterparty_universe(org)
-    md = generate_market_data(MarketSimConfig(end_date=D2, years=1.0, seed=13, problem_date=D1, snapshot_days=3))
+    md = generate_market_data(
+        MarketSimConfig(end_date=D2, years=1.0, seed=13, problem_date=D1, snapshot_days=3)
+    )
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=D1, n_trades=120, seed=13,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=D1, n_trades=120, seed=13, market_history=hist)
+    )
     day2, _ = evolve_portfolio(gen.snapshot, D2, org, cp, gen.injections, hist)
     with DuckDBRepository(path) as repo:
         repo.init_schema()
@@ -48,8 +52,18 @@ def db_path(tmp_path_factory):
         for m in md.snapshots.values():
             repo.save_market_snapshot(m)
         runs_dir = tmp_path_factory.mktemp("runs")
-        run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=120), workers=1), D1, runs_dir=runs_dir)
-        run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=120), workers=1), D2, runs_dir=runs_dir)
+        run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=120), workers=1),
+            D1,
+            runs_dir=runs_dir,
+        )
+        run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=120), workers=1),
+            D2,
+            runs_dir=runs_dir,
+        )
     return str(path)
 
 
@@ -66,13 +80,21 @@ class FakeProvider:
         self.calls += 1
         assert "Every number you state must come from a tool result" in system
         if self.calls == 1:
-            return ProviderResponse([TextBlock("Let me check."), ToolUseBlock("t1", "run_summary", {})],
-                                    "tool_use", self.model, {"input_tokens": 10, "output_tokens": 5})
+            return ProviderResponse(
+                [TextBlock("Let me check."), ToolUseBlock("t1", "run_summary", {})],
+                "tool_use",
+                self.model,
+                {"input_tokens": 10, "output_tokens": 5},
+            )
         last = messages[-1]["content"][0]
         assert last["type"] == "tool_result" and last["tool_use_id"] == "t1"
         payload = json.loads(last["content"])
-        return ProviderResponse([TextBlock(f"VaR is {payload['var_99_1d_m']}m (run {payload['run_id']}).")],
-                                "end_turn", self.model, {"input_tokens": 20, "output_tokens": 8})
+        return ProviderResponse(
+            [TextBlock(f"VaR is {payload['var_99_1d_m']}m (run {payload['run_id']}).")],
+            "end_turn",
+            self.model,
+            {"input_tokens": 20, "output_tokens": 8},
+        )
 
 
 def test_loop_feeds_tool_results_and_stores_answer(db_path):
@@ -91,8 +113,20 @@ def test_loop_feeds_tool_results_and_stores_answer(db_path):
 def test_tools_execute_and_errors_are_returned_not_raised(db_path):
     tools = build_tools(db_path)
     names = {t.name for t in tools}
-    assert {"run_summary", "var_by", "sensitivities", "stress", "limits", "breaches", "pnl", "data_quality",
-            "trade", "positions", "compare_runs", "what_if"} <= names
+    assert {
+        "run_summary",
+        "var_by",
+        "sensitivities",
+        "stress",
+        "limits",
+        "breaches",
+        "pnl",
+        "data_quality",
+        "trade",
+        "positions",
+        "compare_runs",
+        "what_if",
+    } <= names
     out, err = execute(tools, "run_summary", {})
     assert not err and json.loads(out)["var_99_1d_m"] > 0
     out, err = execute(tools, "trade", {"trade_id": "NOPE"})
@@ -101,7 +135,11 @@ def test_tools_execute_and_errors_are_returned_not_raised(db_path):
     assert err
     out, err = execute(tools, "compare_runs", {})
     d = json.loads(out)
-    assert not err and d["run_a"]["business_date"] == "2026-09-11" and d["run_b"]["business_date"] == "2026-09-14"
+    assert (
+        not err
+        and d["run_a"]["business_date"] == "2026-09-11"
+        and d["run_b"]["business_date"] == "2026-09-14"
+    )
     out, err = execute(tools, "limits", {"status": "BREACH"})
     assert not err and all(x["status"] == "BREACH" for x in json.loads(out)["limits"])
 
@@ -131,9 +169,15 @@ def test_scripted_planner_and_answers(db_path):
     assert _plan("which desks are closest to limits")[0][0] == "limits"
     assert _plan("show me IRS_000201")[0] == ("trade", {"trade_id": "IRS_000201"})
     c = Copilot(db_path, provider=ScriptedProvider())
-    for q in ["Why did VaR change since yesterday?", "Which books are closest to their limits?",
-              "What happens if equities fall 20% and BTC falls 40%?", "Can I trust today's run?",
-              "Draft the morning commentary", "Explain today's P&L", "What is the DV01 by desk?"]:
+    for q in [
+        "Why did VaR change since yesterday?",
+        "Which books are closest to their limits?",
+        "What happens if equities fall 20% and BTC falls 40%?",
+        "Can I trust today's run?",
+        "Draft the morning commentary",
+        "Explain today's P&L",
+        "What is the DV01 by desk?",
+    ]:
         a = c.ask(q, persist=False)
         assert a.answer and "Source: run" in a.answer, q
         assert a.tool_calls and not any(t.is_error for t in a.tool_calls), q

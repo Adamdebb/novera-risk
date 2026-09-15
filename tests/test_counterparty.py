@@ -1,4 +1,5 @@
 """Counterparty risk: path simulation, collateral, exposure metrics, CVA, wrong-way, what-if."""
+
 from datetime import date
 
 import numpy as np
@@ -34,8 +35,9 @@ def db(tmp_path_factory):
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=1.0, seed=29))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=29,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=29, market_history=hist)
+    )
     runs_dir = tmp_path_factory.mktemp("runs")
     with DuckDBRepository(path) as repo:
         repo.init_schema()
@@ -48,8 +50,11 @@ def db(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
-                      runs_dir=runs_dir)
+        res = run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
+            runs_dir=runs_dir,
+        )
     return {"path": str(path), "run_id": res.run.run_id, "runs_dir": runs_dir, "md": md, "gen": gen}
 
 
@@ -74,8 +79,16 @@ def test_grid_and_paths_are_seeded_and_bounded(db):
 def test_collateral_balance_rules():
     years = np.array([0.02, 0.04, 0.25, 1.0])
     v = np.array([[10e6, 10e6], [12e6, -12e6], [30e6, -30e6], [30e6, -30e6]])
-    csa = CSA(csa_id="x", collateral_currency="USD", threshold_they_post=5e6, threshold_we_post=0.0,
-              minimum_transfer_amount=1e6, independent_amount=0.0, rounding=0.0, haircut=0.0)
+    csa = CSA(
+        csa_id="x",
+        collateral_currency="USD",
+        threshold_they_post=5e6,
+        threshold_we_post=0.0,
+        minimum_transfer_amount=1e6,
+        independent_amount=0.0,
+        rounding=0.0,
+        haircut=0.0,
+    )
     bal = collateral_balance(v, years, csa, 10)
     assert bal.shape == v.shape
     # Long horizon, positive value: they post value minus threshold (lag negligible at 1y).
@@ -114,7 +127,10 @@ def test_run_counterparty_end_to_end(db):
         assert len(owed) and (owed["ee"] <= owed["ee_gross"] + 1e-6).mean() > 0.9
         uncoll = prof[~prof["collateralised"]]
         assert np.allclose(uncoll["ee"], uncoll["ee_gross"]) and set(uncoll["counterparty_id"]) <= {
-            "CORP_ENERGY", "CORP_AIR", "SOV_EM"}
+            "CORP_ENERGY",
+            "CORP_AIR",
+            "SOV_EM",
+        }
         assert (cva["cva"] >= 0).all() and (cva["dva"] >= 0).all()
         assert (cva["cva"] <= cva["cva_gross"] + 1e-6).mean() > 0.8  # our posted collateral can raise it
         assert {"BANK_A", "SOV_EM", "CORP_AIR"} <= set(cps["counterparty_id"])
@@ -127,18 +143,26 @@ def test_run_counterparty_end_to_end(db):
         assert res is not None and res.paths == SMALL.paths
         ns = next(k for k in res.netting_values if res.netting_sets[k].counterparty_id == "BANK_A")
         base_csa = res.csas[res.netting_sets[ns].csa_id]
-        loose = base_csa.model_copy(update={"threshold_they_post": 1e9})
+        loose = base_csa.model_copy(
+            update={"threshold_they_post": 1e9, "threshold_we_post": 1e9, "independent_amount": 0.0}
+        )
         tight = csa_what_if(res, ns, base_csa)
         none = csa_what_if(res, ns, None)
         looser = csa_what_if(res, ns, loose)
-        assert tight["pfe95"].max() <= none["pfe95"].max() + 1e-6
+        # A CSA cuts exposure where the counterparty owes us; where we owe, our posted collateral
+        # is at risk over the margin period. Either way EE(CSA) <= EE(none) + collateral we posted.
+        posted = (-tight["mean_collateral"]).clip(lower=0.0)
+        assert (tight["ee"] <= none["ee"] + posted + 1e-6).mean() > 0.9
         assert looser["pfe95"].max() == pytest.approx(none["pfe95"].max())
 
 
 def test_eod_with_counterparty_updates_limits(db, tmp_path):
     with DuckDBRepository(db["path"]) as repo:
-        res = run_eod(repo, EODConfig(counterparty=True, exposure_paths=30, var=VaRConfig(window_days=150),
-                                      workers=1), runs_dir=tmp_path)
+        res = run_eod(
+            repo,
+            EODConfig(counterparty=True, exposure_paths=30, var=VaRConfig(window_days=150), workers=1),
+            runs_dir=tmp_path,
+        )
         assert "counterparty" in res.run.summary and res.run.summary["counterparty"]["counterparties"] > 5
         lt = repo.load_run_frame(res.run.run_id, "limits")
         cp_rows = lt[lt["limit_type"] == "COUNTERPARTY_EXPOSURE"].set_index("entity_id")

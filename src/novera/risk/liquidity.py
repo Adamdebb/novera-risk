@@ -30,6 +30,15 @@ ADV: dict[str, tuple[float, float]] = {
     "COMMODITY_FUTURE": (100_000, 0.0003),  # contracts
     "CDS_INDEX": (1_000e6, 0.0005),
     "CRYPTO_SPOT": (20_000, 0.0010),  # units
+    # Phase 6 breadth
+    "REPO": (5_000e6, 0.00002),  # cash notional; overnight-to-term repo is deep
+    "INTEREST_RATE_FUTURE": (300_000, 0.00005),  # contracts, half a tick
+    "SWAPTION": (500e6, 0.0200),  # notional, spread on premium
+    "CDS_SINGLE_NAME": (50e6, 0.0020),  # notional, 2bp running is thin
+    "COMMODITY_OPTION": (10_000, 0.0300),  # contracts, spread on premium
+    "ETF": (5_000_000, 0.0003),  # shares; look-through liquidity is the constituents'
+    "MUTUAL_FUND": (2_000_000, 0.0000),  # units per dealing day at NAV; notice period applies
+    "EQUITY_EXOTIC": (500, 0.0500),  # contracts; unwind is a bilateral negotiation
 }
 # Overrides for known illiquid pockets in the simulated book.
 ADV_OVERRIDES: dict[str, tuple[float, float]] = {
@@ -78,7 +87,16 @@ def liquidity(
     v["days_to_liquidate"] = v["position"] / (participation * v["adv"])
     # Bid-ask cost: half spread on |PV| for cash-like products, on notional for OTC linear ones.
     notional_like = v["product_type"].isin(
-        ["GOVERNMENT_BOND", "INTEREST_RATE_SWAP", "FX_SPOT", "FX_FORWARD", "CDS_INDEX"]
+        [
+            "GOVERNMENT_BOND",
+            "INTEREST_RATE_SWAP",
+            "FX_SPOT",
+            "FX_FORWARD",
+            "CDS_INDEX",
+            "CDS_SINGLE_NAME",
+            "REPO",
+            "SWAPTION",
+        ]
     )
     base = np.where(notional_like, v["position"] * v["fx_to_reporting"].fillna(1.0), v["pv"].abs())
     v["bidask_cost"] = 0.5 * v["spread"] * base

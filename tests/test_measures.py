@@ -1,4 +1,5 @@
 """Monte Carlo VaR, backtesting, concentration, liquidity and the risk pack."""
+
 from datetime import date
 
 import numpy as np
@@ -41,23 +42,36 @@ def world():
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=2.2, seed=23))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=23,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=23, market_history=hist)
+    )
     universe = {f.factor_id: f for f in md.universe}
     from novera.pricing.valuation import value_portfolio
+
     val = value_portfolio(gen.snapshot, md.snapshot, org, "USD").table
     pf = Portfolio(gen.snapshot.trades, md.snapshot, "USD", universe=universe)
     sens = compute_sensitivities(pf)
     hs = historical_var(pf, hist, VaRConfig(window_days=500))
-    return {"pf": pf, "sens": sens, "hist": hist, "hs": hs, "val": val, "org": org, "cp": cp, "md": md,
-            "gen": gen}
+    return {
+        "pf": pf,
+        "sens": sens,
+        "hist": hist,
+        "hs": hs,
+        "val": val,
+        "org": org,
+        "cp": cp,
+        "md": md,
+        "gen": gen,
+    }
 
 
 def test_monte_carlo_reproduces_sample_covariance_and_is_seeded(world):
     from novera.risk.scenarios import historical_shocks
+
     pf, hist = world["pf"], world["hist"]
-    shocks = historical_shocks(hist, pf.as_of, 500, 1, pf.universe, factor_ids=["EQIDX:SPX", "IR:USD:10Y",
-                                                                                    "FX:EURUSD"])
+    shocks = historical_shocks(
+        hist, pf.as_of, 500, 1, pf.universe, factor_ids=["EQIDX:SPX", "IR:USD:10Y", "FX:EURUSD"]
+    )
     sims = simulate_factor_moves(shocks, MonteCarloConfig(paths=50_000, seed=1))
     assert sims.shape == (50_000, 3)
     np.testing.assert_allclose(sims.cov().to_numpy(), shocks.cov().to_numpy(), rtol=0.08, atol=1e-9)
@@ -82,7 +96,11 @@ def test_backtest_statistics():
     spread[[10, 80, 150, 220]] = True
     _, p_s = christoffersen_independence(spread)
     assert p_s > 0.5
-    assert traffic_light(4, 250) == "GREEN" and traffic_light(7, 250) == "AMBER" and traffic_light(10, 250) == "RED"
+    assert (
+        traffic_light(4, 250) == "GREEN"
+        and traffic_light(7, 250) == "AMBER"
+        and traffic_light(10, 250) == "RED"
+    )
     assert traffic_light(2, 125) == "GREEN" and traffic_light(5, 125) == "RED"
 
 
@@ -111,13 +129,21 @@ def test_concentration_measures(world):
 
 
 def test_liquidity_measures(world):
-    far = {t.trade_id for t in world["gen"].snapshot.trades if t.product_type.value == "COMMODITY_FUTURE"
-           and (t.instrument.expiry_date - AS_OF).days > 300}
+    far = {
+        t.trade_id
+        for t in world["gen"].snapshot.trades
+        if t.product_type.value == "COMMODITY_FUTURE" and (t.instrument.expiry_date - AS_OF).days > 300
+    }
     rep = liquidity(world["val"], world["hs"].var, far)
     assert rep.liquidity_adjusted_var >= rep.var and rep.bidask_cost > 0
     assert rep.by_bucket["share_of_abs_pv"].sum() == pytest.approx(1.0)
     assert (rep.by_trade["days_to_liquidate"] >= 0).all()
-    assert set(rep.by_bucket["horizon_bucket"].astype(str)) == {"<= 1 day", "1-5 days", "5-10 days", "> 10 days"}
+    assert set(rep.by_bucket["horizon_bucket"].astype(str)) == {
+        "<= 1 day",
+        "1-5 days",
+        "5-10 days",
+        "> 10 days",
+    }
     brent = rep.by_trade[rep.by_trade["trade_id"].isin(far)]
     if len(brent):
         assert brent["days_to_liquidate"].max() > 1
@@ -137,7 +163,11 @@ def test_risk_pack_builds(world, tmp_path):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=300), workers=1), runs_dir=tmp_path / "runs")
+        res = run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=300), workers=1),
+            runs_dir=tmp_path / "runs",
+        )
         files = build_pack(repo, res.run.run_id, tmp_path / "reports", pdf=False)
     assert files.html.exists() and files.xlsx.exists() and files.pdf is None
     html = files.html.read_text()
