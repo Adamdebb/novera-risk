@@ -710,6 +710,23 @@ if __name__ == "__main__":
     app()
 
 
+@app.command()
+def mcp(
+    fund: bool = typer.Option(False, help="Serve the fund database"),
+    db: str = typer.Option(None, help="Database path (overrides --fund)"),
+    allow_agents: bool = typer.Option(False, help="Expose the agent tool, which writes notes to breaches"),
+    transport: str = typer.Option("stdio", help="stdio (default, one process per client) or streamable-http"),
+) -> None:
+    """MCP server exposing the Copilot's read-only tools and the what-if engine (AI-004).
+
+    Register it with an MCP client, e.g. for Claude Code:
+    claude mcp add novera -- uv run --directory <repo> novera mcp
+    """
+    from novera.mcp_server import build_server
+
+    build_server(db or _db(fund), allow_agents).run(transport=transport)
+
+
 # --- agents -----------------------------------------------------------------------------------
 @agent_app.command("investigate")
 def agent_investigate(

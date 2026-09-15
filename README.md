@@ -60,7 +60,8 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
   breach), scenario suggestion (sized by the history, run through the engine), model
   validation drafting from the methodology records, and CSA term-sheet ingestion with a
   review step. Portfolio Lab: plant problems at a chosen size in a sandbox and see what
-  the platform detects.
+  the platform detects. An MCP server exposes the same tools to Claude Desktop, Claude
+  Code or any MCP client, read-only by default, every call audited.
 - Operations: a scheduler that advances the simulated world and runs EOD with retries,
   alerts to Slack or email, an independent-challenger reconciliation that attributes the
   gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).

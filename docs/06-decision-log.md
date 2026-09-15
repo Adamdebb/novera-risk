@@ -322,9 +322,10 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 
 ### 13.1 MCP server
 - Options: stdio MCP server over the same Copilot tools ★ · stdio plus HTTP transport · defer
-- Choice: **Defer the MCP server**
-- Revisit: the tool registry in `ai/tools.py` is transport-agnostic; a stdio server is a thin
-  wrapper when wanted.
+- Choice: **Deferred at first, then built the same day** after discussing confidentiality and
+  cost: stdio server over the Copilot tools, read-only by default, agents behind a flag, every
+  call audited; the model runs wherever the client points it (AI-004).
+- Where: `novera mcp`, `mcp_server.py`, AI-004
 
 ### 13.2 Agents
 - Options (multi-select): breach investigation ★ · scenario suggestion ★ · model-validation
@@ -366,8 +367,8 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
    normal vol; a SABR-style smile is the obvious upgrade.
 9. **Re-levelling stale data with a proxy family** (12.4): the basis between the stale family
    and its proxy is not measured; a bank would back-test the proxy choice.
-10. **MCP server deferred** (13.1): the tool registry is transport-agnostic; a stdio server is
-    the natural next step once an external client needs it.
+10. **MCP over HTTP has no authentication of its own** (13.1): the stdio default needs none;
+    the streamable-http transport must sit behind the firm's gateway.
 11. **Templated agent drafts** (13.2): with the scripted provider the notes are traceable but
     flat; the Claude path for `draft` is untested until a key is added (same as item 2).
 12. **Lab uses production limit calibration** (13.3): small sandbox books under-utilise
