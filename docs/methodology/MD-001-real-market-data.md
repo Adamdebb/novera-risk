@@ -46,7 +46,7 @@ Statuses are never set by hand; adding a symbol to an adapter changes the page.
 Each factor group also carries a free and a paid candidate source, maintained in the same
 module. They are reference text, reviewed 2026-09-15, not a claim that the source was
 tested. Summary of the gaps: no free daily history exists for OTC FX vol surfaces,
-swaption cubes, CDS indices or single-name CDS; equity and commodity vol have free
+swaption cubes and their SABR smiles, CDS indices or single-name CDS; equity and commodity vol have free
 at-the-money indices (VIX, VSTOXX, OVX, GVZ) but no free surface history; non-USD rate
 curves have free government or OIS curves from central banks but no free swap curve.
 

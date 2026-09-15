@@ -38,7 +38,7 @@ src/novera/
   config.py            Settings (pydantic-settings, NOVERA_* env vars)
   domain/              Pure data models: instruments, trades, organisation, counterparties, limits
   simulation/          Organisation, trade, market-data and scenario generators
-  market_data/         Snapshots, curves, surfaces, swaption cubes, risk-factor universe, proxies (MD-002)
+  market_data/         Snapshots, curves, surfaces, swaption cubes with a normal SABR smile (sabr.py), risk-factor universe, proxies (MD-002)
   pricing/             One pricer per product (breadth.py holds the Phase 6 eight); returns PV and cashflows only
   risk/                sensitivities, var, stress, pnl_attribution, concentration, liquidity, lookthrough
   counterparty_risk/   netting, collateral, exposure (EE/PFE), cva, wrong-way risk

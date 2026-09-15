@@ -8176,7 +8176,8 @@
           "CREDIT_SPREAD",
           "CRYPTO_SPOT",
           "IMPLIED_VOL",
-          "SWAPTION_VOL"
+          "SWAPTION_VOL",
+          "SWAPTION_SMILE"
         ],
         "title": "RiskFactorType",
         "type": "string"

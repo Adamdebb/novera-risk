@@ -27,6 +27,7 @@ from novera.domain import (
 )
 from novera.market_data import MarketSnapshot
 from novera.market_data.proxies import apply_proxies, apply_stored_proxies
+from novera.market_data.sabr import alpha_from_atm, normal_sabr_vol
 from novera.pricing import PRICERS
 from novera.pricing.black import black_price
 from novera.pricing.breadth import forward_swap
@@ -540,3 +541,72 @@ def test_proxies_interpolate_roll_and_relevel(sim) -> None:
     # A clean snapshot is returned untouched.
     clean = apply_proxies(prev, md.universe, None)
     assert clean.market is prev and not clean.actions
+
+
+def test_normal_sabr_matches_quantlib() -> None:
+    fwd, t, alpha, rho, nu = 0.035, 2.0, 0.0090, -0.25, 0.45
+    section = ql.SabrSmileSection(t, fwd, [alpha, 0.0, nu, rho], 0.0, ql.Normal)
+    for k in (0.015, 0.025, 0.035, 0.045, 0.055):
+        assert normal_sabr_vol(fwd, k, t, alpha, rho, nu) == pytest.approx(
+            section.volatility(k, ql.Normal), rel=1e-2
+        )
+    atm = normal_sabr_vol(fwd, fwd, t, alpha, rho, nu)
+    assert alpha_from_atm(atm, t, rho, nu) == pytest.approx(alpha, rel=1e-12)
+    # rho = 0 gives a symmetric smile; negative rho makes low strikes richer than high strikes.
+    lo, hi = (
+        normal_sabr_vol(fwd, fwd - 0.01, t, alpha, 0.0, nu),
+        normal_sabr_vol(fwd, fwd + 0.01, t, alpha, 0.0, nu),
+    )
+    assert lo == pytest.approx(hi, rel=1e-9) and lo > atm
+    assert normal_sabr_vol(fwd, fwd - 0.01, t, alpha, -0.3, nu) > normal_sabr_vol(
+        fwd, fwd + 0.01, t, alpha, -0.3, nu
+    )
+
+
+def test_swaption_prices_off_the_sabr_smile(market: MarketSnapshot) -> None:
+    values = dict(market.values)
+    for e in ["3M", "1Y", "2Y", "5Y"]:
+        for tn in ["2Y", "5Y", "10Y", "30Y"]:
+            values[f"SWRHO:USD:{e}:{tn}"] = -0.25
+            values[f"SWNU:USD:{e}:{tn}"] = 0.45
+    smiled = MarketSnapshot(as_of=AS_OF, values=values)
+    expiry = AS_OF + relativedelta(years=1)
+
+    def trade(strike: float) -> Trade:
+        return Trade(
+            trade_id="S2",
+            instrument=inst.swaption("USD", expiry, "5Y", strike, payer=True),
+            direction=BuySell.BUY,
+            quantity=100e6,
+            trade_price=0.01,
+            trade_date=AS_OF,
+            book_id="USD_STIR",
+            trader_id="T1",
+            **_bilateral(),
+        )
+
+    low = trade(0.025)
+    flat, smile = (
+        PRICERS[low.instrument.product_type](low, market, AS_OF),
+        PRICERS[low.instrument.product_type](low, smiled, AS_OF),
+    )
+    assert flat.details["normal_vol_bp"] == pytest.approx(90.0) and "sabr_rho" not in flat.details
+    fwd, annuity, _ = forward_swap(smiled, low.instrument, AS_OF)
+    t = smile.details["years_to_expiry"]
+    alpha = alpha_from_atm(0.0090, t, -0.25, 0.45)
+    expected = normal_sabr_vol(fwd, 0.025, t, alpha, -0.25, 0.45)
+    assert smile.details["normal_vol_bp"] == pytest.approx(expected * 1e4, rel=1e-9)
+    assert smile.details["atm_vol_bp"] == pytest.approx(90.0) and smile.details["sabr_rho"] == -0.25
+    assert smile.details["normal_vol_bp"] > 90.0  # a low strike under negative rho is richer than ATM
+    assert smile.pv_local == pytest.approx(
+        100e6 * annuity * bachelier_price(True, fwd, 0.025, expected, t), rel=1e-9
+    )
+    assert smile.model_version == "1.1.0"
+    # At the money the smile vol is the cube quote, so the two snapshots agree.
+    atm = trade(round(fwd, 8))
+    a, b = (
+        PRICERS[atm.instrument.product_type](atm, market, AS_OF),
+        PRICERS[atm.instrument.product_type](atm, smiled, AS_OF),
+    )
+    assert b.details["normal_vol_bp"] == pytest.approx(a.details["normal_vol_bp"], rel=1e-6)
+    assert b.pv_local == pytest.approx(a.pv_local, rel=1e-6)

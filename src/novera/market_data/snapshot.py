@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field
 from novera.domain.snapshots import content_hash
 from novera.market_data.curves import CommodityCurve, ZeroCurve
 from novera.market_data.risk_factors import TENOR_YEARS
+from novera.market_data.sabr import alpha_from_atm, normal_sabr_vol
 from novera.market_data.vol_surface import VolSurface
 
 
@@ -142,21 +143,27 @@ class MarketSnapshot(BaseModel):
         self._cache[ck] = surface
         return surface
 
-    def swaption_normal_vol_bp(self, currency: str, expiry_years: float, tenor_years: float) -> float:
-        """Bachelier vol in bp/yr, bilinear in (expiry, tenor) on the SWVOL cube, flat outside."""
-        ck = f"swv:{currency}"
+    def _swaption_grid(self, prefix: str, currency: str) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """(expiries, tenors, values) for one ``prefix`` cube (SWVOL, SWRHO or SWNU); None if absent."""
+        ck = f"{prefix}{currency}"
         grid = self._cache.get(ck)
         if grid is None:
             pts: dict[tuple[float, float], float] = {}
-            for k in self.factors_with_prefix(f"SWVOL:{currency}:"):
+            for k in self.factors_with_prefix(f"{prefix}{currency}:"):
                 _, _, e, t = k.split(":")
                 pts[(TENOR_YEARS[e], TENOR_YEARS[t])] = self.values[k]
             if not pts:
-                raise KeyError(f"no swaption vol cube for {currency}")
+                return None
             es = np.array(sorted({e for e, _ in pts}))
             ts = np.array(sorted({t for _, t in pts}))
             grid = (es, ts, np.array([[pts[(e, t)] for t in ts] for e in es]))
             self._cache[ck] = grid
+        return grid
+
+    @staticmethod
+    def _bilinear(
+        grid: tuple[np.ndarray, np.ndarray, np.ndarray], expiry_years: float, tenor_years: float
+    ) -> float:
         es, ts, vals = grid
         x = float(np.clip(expiry_years, es[0], es[-1]))
         y = float(np.clip(tenor_years, ts[0], ts[-1]))
@@ -172,6 +179,43 @@ class MarketSnapshot(BaseModel):
             + vals[i2, j2] * wx * wy
         )
         return float(v)
+
+    def swaption_normal_vol_bp(
+        self,
+        currency: str,
+        expiry_years: float,
+        tenor_years: float,
+        forward: float | None = None,
+        strike: float | None = None,
+    ) -> float:
+        """Bachelier vol in bp/yr: at the money, bilinear in (expiry, tenor) on the SWVOL cube and
+        flat outside. Given ``forward`` and ``strike`` and a stored smile (SWRHO and SWNU
+        cubes), the normal SABR vol at that strike; without a smile the ATM vol."""
+        grid = self._swaption_grid("SWVOL:", currency)
+        if grid is None:
+            raise KeyError(f"no swaption vol cube for {currency}")
+        atm = self._bilinear(grid, expiry_years, tenor_years)
+        if forward is None or strike is None:
+            return atm
+        smile = self.swaption_smile(currency, expiry_years, tenor_years)
+        if smile is None:
+            return atm
+        rho, nu = smile
+        alpha = alpha_from_atm(atm / 1e4, expiry_years, rho, nu)
+        return normal_sabr_vol(forward, strike, expiry_years, alpha, rho, nu) * 1e4
+
+    def swaption_smile(
+        self, currency: str, expiry_years: float, tenor_years: float
+    ) -> tuple[float, float] | None:
+        """(rho, nu) of the normal SABR smile, bilinear on the SWRHO and SWNU cubes; None when the
+        snapshot carries no smile for the currency."""
+        g_rho = self._swaption_grid("SWRHO:", currency)
+        g_nu = self._swaption_grid("SWNU:", currency)
+        if g_rho is None or g_nu is None:
+            return None
+        return self._bilinear(g_rho, expiry_years, tenor_years), self._bilinear(
+            g_nu, expiry_years, tenor_years
+        )
 
     def with_values(self, updates: dict[str, float]) -> MarketSnapshot:
         """Return a new snapshot with some factor values replaced (used by stress and bumping).

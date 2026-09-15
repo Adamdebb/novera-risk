@@ -173,6 +173,13 @@ _SPECS: dict[str, SourceSpec] = {
         "Bloomberg VCUB, LSEG, TP ICAP and Tradition broker cubes",
         "Normal vol cube is broker data; the simulator is the only history",
     ),
+    "SWSMILE": SourceSpec(
+        "Swaption SABR smiles",
+        "None; broker risk-reversal and butterfly quotes are not public",
+        "Bloomberg VCUB SABR parameters, LSEG, TP ICAP and Tradition smile cubes",
+        "rho and nu per expiry and tenor with beta fixed at zero (normal SABR); alpha is implied "
+        "from the at-the-money cube, so it is not a stored factor",
+    ),
 }
 ENERGY = {"BRENT", "WTI", "NATGAS"}
 
@@ -200,6 +207,8 @@ def _spec_key(f: RiskFactor, underlying_kind: dict[str, str]) -> str:
         return "VOL:" + underlying_kind.get(f.underlying, "EQ")
     if kind == "SWVOL":
         return "SWVOL"
+    if kind in ("SWRHO", "SWNU"):
+        return "SWSMILE"
     return kind
 
 

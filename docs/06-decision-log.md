@@ -599,6 +599,43 @@ round (non-interactive session); the choices below are defaults to confirm.
 
 ---
 
+## Round 21 — Swaption smile (2026-09-15)
+
+Context: the owner asked which vols carry a smile (equity, FX and commodity surfaces do;
+the swaption cube did not, item 8 below) and then asked for SABR smile parameters. Built
+without a question round (non-interactive session); the choices below are defaults to confirm.
+
+### 21.1 Smile model
+- Options: normal SABR with beta fixed at zero ★ · shifted lognormal SABR with beta 0.5 ·
+  a moneyness grid like the equity and FX surfaces
+- Choice (default): **Normal SABR, beta 0.** Hagan's normal-vol expansion handles low and
+  negative forwards without choosing a shift, and the cube stays in normal vol as brokers
+  quote it. Rho and nu are risk factors per cube node (`SWRHO:`, `SWNU:`, 96 factors); alpha
+  is implied from the ATM cube so the existing `SWVOL:` quote remains the vega instrument.
+- Where: `market_data/sabr.py`, `MarketSnapshot.swaption_normal_vol_bp(forward, strike)`,
+  `pricing/breadth.py` (swaption model 1.1.0), PR-012 v1.1.0, SIM-001 v1.2.0, MV-001.
+- Reversal: drop the two cubes from the universe; a snapshot without them prices flat at
+  the ATM vol, as before.
+
+### 21.2 Risk treatment of rho and nu
+- Options: full revaluation only, sensitivities unchanged ★ · add rho and nu bump rows ·
+  bump rho and nu inside the VEGA row
+- Choice (default): **Full revaluation only.** Historical VaR shocks rho absolutely and nu
+  relatively; the VEGA row bumps the ATM cube with rho and nu held, so the challenger and the
+  FRTB and SIMM vega inputs are unchanged. FRTB IMA gives the smile factors the cube's
+  60-day liquidity horizon.
+- Reversal: add `SMILE_RHO` and `SMILE_NU` measures in `risk/sensitivities.py` and MR-001.
+
+### 21.3 Simulated smile dynamics
+- Options: per-currency mean-reverting paths tied to the episodes ★ · static parameters ·
+  a path per node
+- Choice (default): **Per-currency paths.** Rho steepens with the crash skew multiplier and nu
+  rises with the episode vol multiplier; both are drawn after every earlier family so the
+  five-year history of the other 1,398 factors is unchanged and the limit calibration holds.
+- Reversal: none needed; the reference levels are in `simulation/reference_levels.py`.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -621,8 +658,9 @@ round (non-interactive session); the choices below are defaults to confirm.
    the natural next steps.
 7. **Synthetic parameters** (9.3, 11.2, HF-002, HF-006): volume, spread, margin schedules,
    crowding scores and capital risk weights are assumptions; each record says so.
-8. **Swaption cube without a strike smile** (12.1): every strike prices off the at-the-money
-   normal vol; a SABR-style smile is the obvious upgrade.
+8. **Swaption smile with beta fixed at zero and no rho or nu sensitivities** (21.1, 21.2):
+   the smile is simulated, not calibrated to broker quotes, and its risk shows only in
+   full-revaluation VaR; the earlier gap (no smile at all, 12.1) is closed.
 9. **Re-levelling stale data with a proxy family** (12.4): the basis between the stale family
    and its proxy is not measured; a bank would back-test the proxy choice.
 10. **MCP over HTTP has no authentication of its own** (13.1): the stdio default needs none;

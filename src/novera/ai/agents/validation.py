@@ -36,7 +36,11 @@ def parse_record(path: Path) -> dict[str, Any]:
     title = text.splitlines()[0].lstrip("# ").strip()
     m = re.search(r"\(ID:\s*([A-Z]+-\d+)\)", title)
     rid = m.group(1) if m else path.stem.split("-")[0] + "-" + path.stem.split("-")[1]
-    meta = dict(re.findall(r"^\| ([A-Za-z ]+) \| (.+?) \|$", text, flags=re.M))
+    meta: dict[str, str] = {}
+    for key, value in re.findall(r"^\| ([A-Za-z ]+) \| (.+?) \|$", text, flags=re.M):
+        meta.setdefault(
+            key, value
+        )  # the header table comes first; a change-history header must not override it
     sections: dict[str, str] = {}
     cur = None
     for line in text.splitlines():

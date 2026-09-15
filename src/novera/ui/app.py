@@ -1896,6 +1896,7 @@ elif page == "Reference data":
             "CRYPTO_SPOT": "Crypto spot",
             "IMPLIED_VOL": "Implied vol surfaces",
             "SWAPTION_VOL": "Swaption vol cubes",
+            "SWAPTION_SMILE": "Swaption SABR smiles",
         }
         ac_names = {
             "RATES": "Rates",
@@ -1933,13 +1934,18 @@ elif page == "Reference data":
                     f"- **{underlying}** · {len(fs)} points · expiries {', '.join(exp)} × moneyness "
                     f"{', '.join(f'{m:.2f}' for m in mny)} · {first['unit']} · {shock} shocks"
                 )
-            if kind == "SWAPTION_VOL":
+            if kind in ("SWAPTION_VOL", "SWAPTION_SMILE"):
                 exp = sorted({f["expiry_years"] for f in fs})
                 years = {f["tenor"]: f["tenor_years"] for f in fs}
                 ten = sorted(years, key=years.get)
+                what = (
+                    f"{first['unit']} · {shock} shocks"
+                    if kind == "SWAPTION_VOL"
+                    else "normal SABR rho (absolute shocks) and nu (relative shocks), beta 0"
+                )
                 return (
                     f"- **{underlying}** · {len(fs)} points · expiries {', '.join(f'{e:g}Y' for e in exp)} × "
-                    f"tenors {', '.join(ten)} · {first['unit']} · {shock} shocks"
+                    f"tenors {', '.join(ten)} · {what}"
                 )
             nodes = sorted(fs, key=lambda f: f["tenor_years"] or 0)
             return (

@@ -4,7 +4,7 @@ The raw snapshot is never changed. ``apply_proxies`` returns a new snapshot for 
 one ``ProxyAction`` per factor it touched, so a run can store what was proxied, from what,
 and why. Rules, in order:
 
-1. Missing curve or surface nodes (IR, CMD, VOL, SWVOL families) are interpolated linearly
+1. Missing curve or surface nodes (IR, CMD, VOL, SWVOL, SWRHO, SWNU families) are interpolated linearly
    in tenor from the neighbouring nodes of the same family, flat beyond the ends.
 2. Missing single factors (FX, EQ, EQIDX, CDS, CRYPTO) are carried from the previous
    snapshot when one is available.
@@ -32,7 +32,7 @@ from novera.market_data.snapshot import MarketSnapshot
 
 MODEL_VERSION = "1.0.0"
 
-CURVE_PREFIXES = ("IR:", "CMD:", "VOL:", "SWVOL:")
+CURVE_PREFIXES = ("IR:", "CMD:", "VOL:", "SWVOL:", "SWRHO:", "SWNU:")
 # Preferred proxy family per stale family (same type, most correlated in the simulated market).
 PROXY_PREFERENCE: dict[str, list[str]] = {
     "VOL:EURUSD:": ["VOL:GBPUSD:", "VOL:USDCHF:", "VOL:AUDUSD:"],
@@ -50,6 +50,12 @@ PROXY_PREFERENCE: dict[str, list[str]] = {
     "SWVOL:EUR:": ["SWVOL:GBP:", "SWVOL:USD:"],
     "SWVOL:GBP:": ["SWVOL:EUR:", "SWVOL:USD:"],
     "SWVOL:USD:": ["SWVOL:GBP:", "SWVOL:EUR:"],
+    "SWRHO:EUR:": ["SWRHO:GBP:", "SWRHO:USD:"],
+    "SWRHO:GBP:": ["SWRHO:EUR:", "SWRHO:USD:"],
+    "SWRHO:USD:": ["SWRHO:GBP:", "SWRHO:EUR:"],
+    "SWNU:EUR:": ["SWNU:GBP:", "SWNU:USD:"],
+    "SWNU:GBP:": ["SWNU:EUR:", "SWNU:USD:"],
+    "SWNU:USD:": ["SWNU:GBP:", "SWNU:EUR:"],
 }
 COLUMNS = ["factor_id", "kind", "source", "original", "value", "reason"]
 
@@ -87,7 +93,7 @@ def _tenor_years(factor_id: str) -> float | None:
     parts = factor_id.split(":")
     if factor_id.startswith(("IR:", "CMD:")) and len(parts) == 3:
         return TENOR_YEARS.get(parts[2])
-    if factor_id.startswith(("VOL:", "SWVOL:")) and len(parts) == 4:
+    if factor_id.startswith(("VOL:", "SWVOL:", "SWRHO:", "SWNU:")) and len(parts) == 4:
         return TENOR_YEARS.get(parts[2])  # expiry axis
     return None
 
@@ -208,7 +214,7 @@ def _relevel_stale(
         pfids = [k for k in market.factors_with_prefix(proxy) if k in ref.values]
         if not pfids:
             continue
-        relative = fam.startswith(("VOL:", "SWVOL:", "CMD:"))
+        relative = fam.startswith(("VOL:", "SWVOL:", "SWNU:", "CMD:"))
         if relative:
             move = float(np.mean([market.values[k] / ref.values[k] - 1.0 for k in pfids]))
         else:

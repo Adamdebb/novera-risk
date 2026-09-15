@@ -396,6 +396,12 @@ SWAPTION_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "GBP")
 SWAPTION_EXPIRIES: tuple[str, ...] = ("3M", "1Y", "2Y", "5Y")
 SWAPTION_TENORS: tuple[str, ...] = ("2Y", "5Y", "10Y", "30Y")
 SWAPTION_NORMAL_VOL_BP: dict[str, float] = {"USD": 95.0, "EUR": 78.0, "GBP": 92.0}
+# Swaption smile (normal SABR, beta = 0): rho by currency plus an expiry adjustment (short
+# expiries skew more), nu by expiry (vol of vol falls with expiry) with a tenor tilt.
+SWAPTION_SABR_RHO: dict[str, float] = {"USD": -0.25, "EUR": -0.15, "GBP": -0.20}
+SWAPTION_SABR_RHO_BY_EXPIRY: dict[str, float] = {"3M": -0.05, "1Y": 0.0, "2Y": 0.03, "5Y": 0.06}
+SWAPTION_SABR_NU_BY_EXPIRY: dict[str, float] = {"3M": 0.60, "1Y": 0.45, "2Y": 0.38, "5Y": 0.28}
+SWAPTION_SABR_NU_BY_TENOR: dict[str, float] = {"2Y": 1.10, "5Y": 1.00, "10Y": 0.92, "30Y": 0.85}
 
 # Commodity vol surfaces are built for these codes (moneyness grid shared with equities).
 COMMODITY_VOL_CODES: tuple[str, ...] = ("BRENT", "WTI", "NATGAS", "GOLD", "SILVER", "COPPER")
