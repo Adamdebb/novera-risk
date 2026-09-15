@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -214,6 +214,28 @@ CREATE TABLE IF NOT EXISTS fund (
     firm_id VARCHAR PRIMARY KEY,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS lab (
+    name VARCHAR PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    spec JSON NOT NULL,
+    injections JSON NOT NULL,
+    planted_market JSON NOT NULL,
+    run_id VARCHAR,
+    detections JSON,
+    summary JSON
+);
+CREATE TABLE IF NOT EXISTS agent_note (
+    note_id VARCHAR PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    kind VARCHAR NOT NULL,
+    subject VARCHAR NOT NULL,
+    run_id VARCHAR,
+    provider VARCHAR NOT NULL,
+    model VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    text VARCHAR NOT NULL,
+    payload JSON NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_value (
     snapshot_id VARCHAR NOT NULL,
     factor_id VARCHAR NOT NULL,
@@ -271,6 +293,12 @@ class DuckDBRepository:
             )
         self._conn.execute("DELETE FROM organisation_entity WHERE firm_id = ?", [org.firm.firm_id])
         self._conn.executemany("INSERT INTO organisation_entity VALUES (?, ?, ?, ?, ?)", rows)
+
+    def list_firm_ids(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT firm_id FROM organisation_entity ORDER BY firm_id"
+        ).fetchall()
+        return [r[0] for r in rows]
 
     def load_organisation(self, firm_id: str) -> Organisation:
         rows = self._conn.execute(
@@ -729,6 +757,94 @@ class DuckDBRepository:
         )
         params = ([session_id] if session_id else []) + [limit]
         return [json.loads(r[0]) for r in self._conn.execute(q, params).fetchall()]
+
+    # --- portfolio lab ---------------------------------------------------------------
+    def save_lab_spec(self, name: str, spec: dict, injections: list[dict], planted_market: list[str]) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO lab VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)",
+            [
+                name,
+                datetime.now(UTC),
+                json.dumps(spec, default=str),
+                json.dumps(injections, default=str),
+                json.dumps(planted_market),
+            ],
+        )
+
+    def save_lab_result(self, name: str, run_id: str, detections: list[dict], summary: dict) -> None:
+        self._conn.execute(
+            "UPDATE lab SET run_id = ?, detections = ?, summary = ? WHERE name = ?",
+            [run_id, json.dumps(detections, default=str), json.dumps(summary, default=str), name],
+        )
+
+    def load_lab(self, name: str) -> dict | None:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'lab'"
+        ).fetchone():
+            return None
+        row = self._conn.execute(
+            "SELECT created_at, spec, injections, planted_market, run_id, detections, summary FROM lab "
+            "WHERE name = ?",
+            [name],
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "created_at": row[0].isoformat() if row[0] else None,
+            "spec": json.loads(row[1]),
+            "injections": json.loads(row[2]),
+            "planted_market": json.loads(row[3]),
+            "run_id": row[4],
+            "detections": json.loads(row[5]) if row[5] else [],
+            "summary": json.loads(row[6]) if row[6] else {},
+        }
+
+    # --- agent notes -----------------------------------------------------------------
+    def save_agent_note(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO agent_note VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                d["note_id"],
+                d["at"],
+                d["kind"],
+                d["subject"],
+                d.get("run_id"),
+                d["provider"],
+                d["model"],
+                d.get("status", "DRAFT"),
+                d["text"],
+                json.dumps(d, default=str),
+            ],
+        )
+
+    def load_agent_notes(
+        self, kind: str | None = None, subject: str | None = None, limit: int = 50
+    ) -> list[dict]:
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'agent_note'"
+        ).fetchone():
+            return []
+        where, params = [], []
+        if kind:
+            where.append("kind = ?")
+            params.append(kind)
+        if subject:
+            where.append("subject = ?")
+            params.append(subject)
+        q = "SELECT payload FROM agent_note" + (" WHERE " + " AND ".join(where) if where else "")
+        q += " ORDER BY created_at DESC LIMIT ?"
+        return [json.loads(r[0]) for r in self._conn.execute(q, [*params, limit]).fetchall()]
+
+    def update_agent_note_status(self, note_id: str, status: str) -> None:
+        row = self._conn.execute("SELECT payload FROM agent_note WHERE note_id = ?", [note_id]).fetchone()
+        if row is None:
+            raise KeyError(f"agent note {note_id} not found")
+        payload = json.loads(row[0])
+        payload["status"] = status
+        self._conn.execute(
+            "UPDATE agent_note SET status = ?, payload = ? WHERE note_id = ?",
+            [status, json.dumps(payload, default=str), note_id],
+        )
 
     # --- alerts ---------------------------------------------------------------------
     def save_alert(self, d: dict) -> None:

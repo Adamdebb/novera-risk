@@ -47,7 +47,8 @@ src/novera/
   storage/             Repository layer. All SQL lives here.
   reporting/           Risk packs, tables, exports
   api/                 FastAPI app and typed schemas
-  ai/                  Risk Copilot: tools, prompts, provider adapter. Never computes.
+  ai/                  Risk Copilot: tools, prompts, provider adapter, agents/ (AI-002/003). Never computes.
+  lab/                 Portfolio Lab: sandbox organisations with chosen planted problems (LAB-001)
   ui/                  Streamlit thin client
 ```
 
@@ -81,6 +82,9 @@ uv run novera run counterparty # exposure engine on a stored run (EOD does this 
 uv run novera run regulatory  # FRTB SA/IMA, SA-CCR, SIMM, BA-CVA, cash ladder (bank face; EOD runs it too)
 uv run novera simulate --template hedge_fund   # fund face into NOVERA_FUND_DB_PATH; `run eod --fund`
 uv run novera report          # daily risk pack (HTML, PDF via Playwright Chromium, Excel)
+uv run novera agent investigate <breach_id> | scenarios | validation | ingest [doc] --approve <actor>
+uv run novera lab problems / run <name> --problems a,b --scale 2 / list   # Portfolio Lab sandboxes
+uv run novera lab run <name> ...   # sandbox at data/lab/<name>.duckdb; NOVERA_DB_PATH points the dashboard at it
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload

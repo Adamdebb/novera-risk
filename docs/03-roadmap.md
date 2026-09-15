@@ -131,12 +131,17 @@ strike concentration reporting and volatility calibration tools.
 | Equity | ETF, mutual fund | Listed / transfer agent | NAV by look-through | PR-015 |
 | Equity | Barrier and digital options | OTC | Reiner–Rubinstein, cash-or-nothing | PR-016 |
 
-## Phase 7 — AI and automation
+## Phase 7 — AI and automation (delivered 2026-09-15)
 
-Risk Copilot with tool calling over the API, daily commentary drafting, breach
-investigation agent, scenario suggestion, document ingestion (ISDA/CSA to netting
-sets), model-validation report drafting, MCP server exposing the same tools,
-"Portfolio Lab" (choose an organisation template, inject problems, run, watch detection).
+Risk Copilot with tool calling and commentary (Phase 3), plus four agents that gather
+evidence deterministically and draft from it: breach investigation (note attached to
+the breach with contributors, changes and an engine-sized remediation), scenario
+suggestion (proposals sized by the history, run through the engine), model-validation
+report drafting (from the methodology records and live evidence), ISDA/CSA document
+ingestion with a review-and-approve step. Portfolio Lab: choose a template, plant a
+subset of problems at a chosen size, run into a sandbox, see what was detected, from
+the dashboard or `novera lab`. Records AI-002, AI-003, LAB-001. Deferred: the MCP
+server (Round 13).
 
 ## Injected problems in the simulated portfolio
 

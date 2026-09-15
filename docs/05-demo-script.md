@@ -48,6 +48,12 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    Multi-Strategy: NAV, leverage, VaR as % of NAV, the crowded NVDA position, broker
    concentration in warning, redemption coverage by scenario, strategy attribution and
    factor betas.
+8a. **Agents and the Lab** (2 min). Breaches page: "Investigate with the agent" on the USD
+   10Y breach: contributors, what changed, the engine-sized unwind, note attached to the
+   breach. Agents page: suggest scenarios (sized from the history, run through the
+   engine), draft the validation report, ingest the demo CSA term sheet and approve it.
+   Portfolio Lab page: plant two problems at twice the size in a sandbox, run, see which
+   were detected and which limits stayed inside.
 8b. **Risk pack** (30 s). Build the pack from the Risk pack page and open the PDF: the same
    numbers, stamped with the run id, ready for the risk committee.
 9. **Close** (30 s). "This is a prototype of the layer above today's risk stack, not a

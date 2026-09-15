@@ -264,6 +264,11 @@ class MarketSimConfig:
     """Business date that carries the planted data-quality problems (default: end_date)."""
     snapshot_days: int = 2
     """How many trailing daily snapshots to return in ``snapshots`` (at least 2)."""
+    market_problems: tuple[str, ...] | None = None
+    """Which planted data problems to include (names in MARKET_PROBLEMS); None = all."""
+
+
+MARKET_PROBLEMS: tuple[str, ...] = ("stale_eurusd_vol_surface", "missing_usd_7y_node")
 
 
 @dataclass
@@ -590,15 +595,20 @@ class _Sim:
             vals = {i: float(matrix[k, j]) for j, i in enumerate(ids)}
             observed: dict[str, date] = {}
             if k == pi and self.cfg.plant_data_quality_problems:
-                prev_vals = {i: float(matrix[k - 1, j]) for j, i in enumerate(ids)}
-                for i in [x for x in ids if x.startswith("VOL:EURUSD:")]:
-                    vals[i] = prev_vals[i]
-                    observed[i] = self.dates[k - 1]
-                planted.append(
-                    "stale_eurusd_vol_surface: EUR/USD vol surface not updated on the business date"
+                wanted = set(
+                    self.cfg.market_problems if self.cfg.market_problems is not None else MARKET_PROBLEMS
                 )
-                del vals[ir_id("USD", "7Y")]
-                planted.append("missing_usd_7y_node: USD zero curve is missing its 7Y node")
+                prev_vals = {i: float(matrix[k - 1, j]) for j, i in enumerate(ids)}
+                if "stale_eurusd_vol_surface" in wanted:
+                    for i in [x for x in ids if x.startswith("VOL:EURUSD:")]:
+                        vals[i] = prev_vals[i]
+                        observed[i] = self.dates[k - 1]
+                    planted.append(
+                        "stale_eurusd_vol_surface: EUR/USD vol surface not updated on the business date"
+                    )
+                if "missing_usd_7y_node" in wanted:
+                    del vals[ir_id("USD", "7Y")]
+                    planted.append("missing_usd_7y_node: USD zero curve is missing its 7Y node")
             snapshots[self.dates[k]] = MarketSnapshot(as_of=self.dates[k], values=vals, observed_at=observed)
         snapshot = snapshots[problem_date]
         previous = snapshots[self.dates[pi - 1]]

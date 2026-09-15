@@ -39,6 +39,8 @@ def _guard(fn, *a, **kw) -> Any:
         raise HTTPException(404, str(e)) from e
     except WorkflowError as e:
         raise HTTPException(409, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 class ActionBody(BaseModel):
@@ -289,6 +291,111 @@ def copilot_provider():
 
     p = make_provider(settings)
     return {"provider": p.name, "model": p.model}
+
+
+# --- agents and Portfolio Lab ------------------------------------------------------------------
+class InvestigateBody(BaseModel):
+    breach_id: str
+    attach: bool = True
+
+
+class ScenariosBody(BaseModel):
+    run_id: str | None = None
+    n: int = Field(default=4, ge=1, le=8)
+
+
+class ValidationBody(BaseModel):
+    run_id: str | None = None
+    records: list[str] | None = None
+    run_tests: bool = False
+
+
+class DocumentBody(BaseModel):
+    path: str
+
+
+class NoteDecisionBody(BaseModel):
+    note_id: str
+    actor: str = Field(min_length=1)
+    reason: str = ""
+
+
+class LabBody(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    template: str = "bank"
+    problems: list[str] = []
+    market_problems: list[str] = []
+    scale: float = 1.0
+    n_trades: int = Field(default=600, ge=50, le=5000)
+    seed: int = 42
+    business_date: str = "2026-09-11"
+    years: float = 2.0
+    counterparty: bool = False
+    regulatory: bool = False
+
+
+def _ops():
+    from novera.api.agents_api import AgentOps
+
+    return AgentOps(settings.db_path)
+
+
+@app.post("/agents/investigate-breach")
+def agent_investigate(body: InvestigateBody):
+    return _guard(_ops().investigate_breach, body.breach_id, body.attach)
+
+
+@app.post("/agents/suggest-scenarios")
+def agent_scenarios(body: ScenariosBody):
+    return _guard(_ops().suggest_scenarios, body.run_id, body.n)
+
+
+@app.post("/agents/draft-validation")
+def agent_validation(body: ValidationBody):
+    return _guard(_ops().draft_validation, body.run_id, body.records, body.run_tests)
+
+
+@app.post("/agents/propose-csa")
+def agent_propose_csa(body: DocumentBody):
+    return _guard(_ops().propose_csa, body.path)
+
+
+@app.post("/agents/approve-csa")
+def agent_approve_csa(body: NoteDecisionBody):
+    return _guard(_ops().approve_csa, body.note_id, body.actor)
+
+
+@app.post("/agents/reject-csa")
+def agent_reject_csa(body: NoteDecisionBody):
+    return _guard(_ops().reject_csa, body.note_id, body.actor, body.reason)
+
+
+@app.get("/agents/notes")
+def agent_notes(kind: str | None = None, subject: str | None = None, limit: int = 50):
+    return _ops().agent_notes(kind, subject, limit)
+
+
+@app.get("/lab/catalogue")
+def lab_catalogue():
+    return _ops().problem_catalogue()
+
+
+@app.post("/lab/run")
+def lab_run(body: LabBody):
+    return _guard(_ops().run_lab, body.model_dump())
+
+
+@app.get("/lab")
+def lab_list():
+    return _ops().labs()
+
+
+@app.get("/lab/{name}")
+def lab_detail(name: str):
+    out = _ops().lab(name)
+    if out is None:
+        raise HTTPException(404, f"lab {name} not found")
+    return out
 
 
 # --- alerts, jobs, reconciliation ------------------------------------------------------------
