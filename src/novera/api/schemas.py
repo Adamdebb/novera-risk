@@ -13,11 +13,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from novera.domain.counterparties import Counterparty
+from novera.domain.counterparties import CSA, Counterparty, NettingSet
 from novera.domain.organisation import Organisation
 from novera.domain.trades import Trade
 
-__all__ = ["Counterparty", "Organisation", "Trade"]
+__all__ = ["CSA", "Counterparty", "NettingSet", "Organisation", "Trade"]
 
 
 class ApiModel(BaseModel):
@@ -282,6 +282,14 @@ class TradeDetail(ApiModel):
     trade: Trade | None = Field(default=None, description="None when the trade left the snapshot")
     sensitivities: list[TradeSensitivityRow]
     stress: list[TradeStressRow]
+
+
+class CounterpartyReference(ApiModel):
+    """Who we face and under which agreements, independent of any run."""
+
+    counterparties: list[Counterparty]
+    netting_sets: list[NettingSet]
+    csas: list[CSA]
 
 
 class AuditEvent(ApiModel):

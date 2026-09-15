@@ -1216,6 +1216,78 @@
         "title": "CDSSingleName",
         "type": "object"
       },
+      "CSA": {
+        "additionalProperties": false,
+        "description": "Credit support annex terms. Amounts in ``collateral_currency``.",
+        "properties": {
+          "call_frequency": {
+            "default": "DAILY",
+            "title": "Call Frequency",
+            "type": "string"
+          },
+          "collateral_currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Collateral Currency",
+            "type": "string"
+          },
+          "csa_id": {
+            "title": "Csa Id",
+            "type": "string"
+          },
+          "haircut": {
+            "default": 0.0,
+            "description": "Applied to posted collateral",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Haircut",
+            "type": "number"
+          },
+          "independent_amount": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Independent Amount",
+            "type": "number"
+          },
+          "margin_period_of_risk_days": {
+            "default": 10,
+            "minimum": 1.0,
+            "title": "Margin Period Of Risk Days",
+            "type": "integer"
+          },
+          "minimum_transfer_amount": {
+            "minimum": 0.0,
+            "title": "Minimum Transfer Amount",
+            "type": "number"
+          },
+          "rounding": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Rounding",
+            "type": "number"
+          },
+          "threshold_they_post": {
+            "description": "Their threshold before they post",
+            "minimum": 0.0,
+            "title": "Threshold They Post",
+            "type": "number"
+          },
+          "threshold_we_post": {
+            "description": "Our threshold before we post",
+            "minimum": 0.0,
+            "title": "Threshold We Post",
+            "type": "number"
+          }
+        },
+        "required": [
+          "csa_id",
+          "collateral_currency",
+          "threshold_we_post",
+          "threshold_they_post",
+          "minimum_transfer_amount"
+        ],
+        "title": "CSA",
+        "type": "object"
+      },
       "CSAWhatIf": {
         "additionalProperties": true,
         "properties": {
@@ -2545,6 +2617,40 @@
           "summary"
         ],
         "title": "CounterpartyExposures",
+        "type": "object"
+      },
+      "CounterpartyReference": {
+        "additionalProperties": true,
+        "description": "Who we face and under which agreements, independent of any run.",
+        "properties": {
+          "counterparties": {
+            "items": {
+              "$ref": "#/components/schemas/Counterparty"
+            },
+            "title": "Counterparties",
+            "type": "array"
+          },
+          "csas": {
+            "items": {
+              "$ref": "#/components/schemas/CSA"
+            },
+            "title": "Csas",
+            "type": "array"
+          },
+          "netting_sets": {
+            "items": {
+              "$ref": "#/components/schemas/NettingSet"
+            },
+            "title": "Netting Sets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "counterparties",
+          "netting_sets",
+          "csas"
+        ],
+        "title": "CounterpartyReference",
         "type": "object"
       },
       "CounterpartySummary": {
@@ -5590,6 +5696,49 @@
           "basket"
         ],
         "title": "MutualFund",
+        "type": "object"
+      },
+      "NettingSet": {
+        "additionalProperties": false,
+        "description": "Trades that net under one agreement with one counterparty and one of our entities.",
+        "properties": {
+          "agreement_type": {
+            "default": "ISDA",
+            "description": "ISDA, GMRA, CCP rulebook, ...",
+            "title": "Agreement Type",
+            "type": "string"
+          },
+          "counterparty_id": {
+            "title": "Counterparty Id",
+            "type": "string"
+          },
+          "csa_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None means uncollateralised",
+            "title": "Csa Id"
+          },
+          "legal_entity_id": {
+            "title": "Legal Entity Id",
+            "type": "string"
+          },
+          "netting_set_id": {
+            "title": "Netting Set Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "netting_set_id",
+          "counterparty_id",
+          "legal_entity_id"
+        ],
+        "title": "NettingSet",
         "type": "object"
       },
       "NettingSetRecord": {
@@ -11350,6 +11499,24 @@
     "/organisation": {
       "get": {
         "operationId": "organisation_organisation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "firm_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Firm Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11393,6 +11560,54 @@
           }
         },
         "summary": "Organisation"
+      }
+    },
+    "/reference/counterparties": {
+      "get": {
+        "operationId": "counterparty_reference_reference_counterparties_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CounterpartyReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Counterparty Reference"
       }
     },
     "/runs": {

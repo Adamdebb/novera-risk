@@ -243,8 +243,24 @@ class RiskService:
     def audit(self, subject: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         return _records(self.repo.load_audit_events(subject, limit))
 
-    def organisation(self, firm_id: str = "GMB") -> dict[str, Any]:
+    def organisation(self, firm_id: str | None = None) -> dict[str, Any]:
+        """The firm's hierarchy. Without ``firm_id`` the single firm stored in this database."""
+        if not firm_id:
+            ids = self.repo.firm_ids()
+            if not ids:
+                raise KeyError("no organisation stored")
+            firm_id = ids[0]
         return self.repo.load_organisation(firm_id).model_dump(mode="json")
+
+    def counterparty_reference(self) -> dict[str, Any]:
+        """Static counterparty reference data: counterparties, netting sets and CSA terms,
+        independent of any run."""
+        netting_sets, csas = self.repo.load_netting_sets()
+        return {
+            "counterparties": [c.model_dump(mode="json") for c in self.repo.load_counterparties()],
+            "netting_sets": [n.model_dump(mode="json") for n in netting_sets],
+            "csas": [c.model_dump(mode="json") for c in csas],
+        }
 
     # --- breach workflow (reads) -------------------------------------------------------------
     def breaches(self, open_only: bool = True, limit_id: str | None = None) -> list[dict[str, Any]]:

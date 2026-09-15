@@ -107,6 +107,11 @@ def test_http_endpoints(client):
     assert client.get(f"/runs/{rid}/pnl", params={"by": "asset_class"}).json()["by"]
     assert client.get("/audit").json()
     assert client.get("/organisation").json()["firm"]["firm_id"] == "GMB"
+    assert client.get("/organisation", params={"firm_id": "GMB"}).json()["desks"]
+    assert client.get("/organisation", params={"firm_id": "NOPE"}).status_code == 404
+    ref = client.get("/reference/counterparties").json()
+    assert ref["counterparties"] and ref["netting_sets"] and ref["csas"]
+    assert {n["csa_id"] for n in ref["netting_sets"] if n["csa_id"]} <= {c["csa_id"] for c in ref["csas"]}
     assert client.get("/runs/nope/summary").status_code == 404
     assert client.get(f"/runs/{rid}/trades/NOPE").status_code == 404
 
@@ -271,6 +276,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.CapitalReport, client.get(f"/runs/{rid}/capital").json()),
         (s.LookthroughReport, client.get(f"/runs/{rid}/lookthrough").json()),
         (s.MarketDataProxies, client.get(f"/runs/{rid}/market-data-proxies").json()),
+        (s.CounterpartyReference, client.get("/reference/counterparties").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))

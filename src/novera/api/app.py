@@ -249,8 +249,13 @@ def audit(subject: str | None = None, limit: int = 100, svc: RiskService = Depen
 
 
 @app.get("/organisation", response_model=s.Organisation)
-def organisation(svc: RiskService = Depends(service)):
-    return svc.organisation()
+def organisation(firm_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.organisation(firm_id)
+
+
+@app.get("/reference/counterparties", response_model=s.CounterpartyReference)
+def counterparty_reference(svc: RiskService = Depends(service)):
+    return svc.counterparty_reference()
 
 
 # --- breach workflow ------------------------------------------------------------------------

@@ -105,6 +105,7 @@ def app(db_path, monkeypatch):
         "Risk pack",
         "Alerts & jobs",
         "Runs & audit",
+        "Reference data",
     ],
 )
 def test_every_page_renders(app, page):
@@ -120,3 +121,22 @@ def test_overview_shows_var_and_breaches(app):
     metrics = {m.label: m.value for m in app.metric}
     assert "VaR 99% 1d" in metrics and metrics["VaR 99% 1d"].endswith("m")
     assert any("BREACH" in e.value or "—" in e.value for e in app.error) or app.success
+
+
+def test_reference_page_shows_both_trees(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Reference data").run()
+    assert not app.exception, [e.value for e in app.exception]
+    text = " ".join(m.value for m in app.markdown)
+    assert "legal entities" in text and "desks" in text and "books" in text
+    assert "USD_RATES" in text and "GMB_NY" in text
+    next(r for r in app.radio if r.label == "Group by").set_value("Legal entity").run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("GMB" in e.label for e in app.expander)
+    next(r for r in app.radio if r.label == "Show").set_value("Counterparties").run()
+    assert not app.exception, [e.value for e in app.exception]
+    text = " ".join(m.value for m in app.markdown)
+    assert "netting sets" in text and "CSA" in text and "MPoR" in text
+    next(t for t in app.text_input if t.label == "Filter").set_value("BANK_A").run()
+    assert not app.exception, [e.value for e in app.exception]
+    labels = [e.label for e in app.expander]
+    assert labels and all("BANK_A" in lab for lab in labels)
