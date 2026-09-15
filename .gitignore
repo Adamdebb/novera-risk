@@ -27,3 +27,7 @@ runs/
 .DS_Store
 .idea/
 .vscode/
+
+# local secrets in any env file (email.env, slack.env, ...)
+*.env
+!.env.example
