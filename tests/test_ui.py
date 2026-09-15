@@ -142,3 +142,10 @@ def test_reference_page_shows_both_trees(app):
     assert not app.exception, [e.value for e in app.exception]
     labels = [e.label for e in app.expander]
     assert labels and all("BANK_A" in lab for lab in labels)
+    next(t for t in app.text_input if t.label == "Filter").set_value("").run()
+    next(r for r in app.radio if r.label == "Show").set_value("Products").run()
+    assert not app.exception, [e.value for e in app.exception]
+    labels = [e.label for e in app.expander]
+    assert any("Rates · RATES" in lab for lab in labels) and any("SWAPTION" in lab for lab in labels)
+    text = " ".join(m.value for m in app.markdown)
+    assert "PR-012" in text and "swap_tenor" in text

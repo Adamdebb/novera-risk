@@ -252,6 +252,12 @@ class RiskService:
             firm_id = ids[0]
         return self.repo.load_organisation(firm_id).model_dump(mode="json")
 
+    def product_reference(self) -> dict[str, Any]:
+        """What the platform prices, with which model and methodology record (from code)."""
+        from novera.pricing.catalogue import product_reference
+
+        return product_reference()
+
     def counterparty_reference(self) -> dict[str, Any]:
         """Static counterparty reference data: counterparties, netting sets and CSA terms,
         independent of any run."""

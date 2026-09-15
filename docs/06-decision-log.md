@@ -410,6 +410,16 @@ now only the API (`/organisation`) and the run-scoped counterparty page showed t
   run needed) and `/organisation` resolves the firm stored in the database instead of assuming
   the bank, so the fund face works too.
 
+### 15.4 Product hierarchy
+- Options: venue, model, methodology record and defining fields ★ · venue, model, methodology
+  only · also the instruments booked in today's snapshot
+- Choice: **Venue, model, methodology, defining fields.** A third tree, asset class → product
+  (19 products, 6 asset classes), each opening to listed/OTC, the pricing model and version,
+  the PR-0xx record, and the fields that define an instrument of that type. Read from code
+  through a product catalogue (`pricing/catalogue.py`); a test checks the catalogue against
+  the pricer registry, the model names written on valuation rows, and the methodology files.
+- Where: `pricing/catalogue.py`, `GET /reference/products`, `ui/app.py`
+
 ---
 
 ## Standing instructions given outside the question rounds

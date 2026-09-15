@@ -253,6 +253,11 @@ def organisation(firm_id: str | None = None, svc: RiskService = Depends(service)
     return svc.organisation(firm_id)
 
 
+@app.get("/reference/products", response_model=s.ProductReference)
+def product_reference(svc: RiskService = Depends(service)):
+    return svc.product_reference()
+
+
 @app.get("/reference/counterparties", response_model=s.CounterpartyReference)
 def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()

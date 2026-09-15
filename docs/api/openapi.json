@@ -292,6 +292,33 @@
         "title": "AssetClass",
         "type": "string"
       },
+      "AssetClassProducts": {
+        "additionalProperties": true,
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductSpec"
+            },
+            "title": "Products",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset_class",
+          "name",
+          "products"
+        ],
+        "title": "AssetClassProducts",
+        "type": "object"
+      },
       "AuditEvent": {
         "additionalProperties": true,
         "properties": {
@@ -6367,6 +6394,130 @@
         "title": "ProblemEntry",
         "type": "object"
       },
+      "ProductField": {
+        "additionalProperties": true,
+        "properties": {
+          "default": {
+            "title": "Default"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "required"
+        ],
+        "title": "ProductField",
+        "type": "object"
+      },
+      "ProductReference": {
+        "additionalProperties": true,
+        "description": "What the platform can price, grouped by asset class. Read from code, not from a run.",
+        "properties": {
+          "asset_classes": {
+            "items": {
+              "$ref": "#/components/schemas/AssetClassProducts"
+            },
+            "title": "Asset Classes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset_classes"
+        ],
+        "title": "ProductReference",
+        "type": "object"
+      },
+      "ProductSpec": {
+        "additionalProperties": true,
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ProductField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "instrument_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Class"
+          },
+          "methodology": {
+            "description": "Methodology record id, e.g. PR-012",
+            "title": "Methodology",
+            "type": "string"
+          },
+          "methodology_title": {
+            "title": "Methodology Title",
+            "type": "string"
+          },
+          "model": {
+            "description": "Model name written on every valuation row",
+            "title": "Model",
+            "type": "string"
+          },
+          "model_label": {
+            "title": "Model Label",
+            "type": "string"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "product_type": {
+            "title": "Product Type",
+            "type": "string"
+          },
+          "venue": {
+            "title": "Venue",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_type",
+          "name",
+          "asset_class",
+          "venue",
+          "model",
+          "model_label",
+          "model_version",
+          "methodology",
+          "methodology_title"
+        ],
+        "title": "ProductSpec",
+        "type": "object"
+      },
       "ProvenanceRow": {
         "additionalProperties": true,
         "properties": {
@@ -11608,6 +11759,54 @@
           }
         },
         "summary": "Counterparty Reference"
+      }
+    },
+    "/reference/products": {
+      "get": {
+        "operationId": "product_reference_reference_products_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Product Reference"
       }
     },
     "/runs": {

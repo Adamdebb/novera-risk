@@ -292,6 +292,40 @@ class CounterpartyReference(ApiModel):
     csas: list[CSA]
 
 
+class ProductField(ApiModel):
+    name: str
+    type: str
+    required: bool
+    default: Any = None
+    description: str = ""
+
+
+class ProductSpec(ApiModel):
+    product_type: str
+    name: str
+    asset_class: str
+    venue: str
+    model: str = Field(description="Model name written on every valuation row")
+    model_label: str
+    model_version: str
+    methodology: str = Field(description="Methodology record id, e.g. PR-012")
+    methodology_title: str
+    instrument_class: str | None = None
+    fields: list[ProductField] = Field(default_factory=list)
+
+
+class AssetClassProducts(ApiModel):
+    asset_class: str
+    name: str
+    products: list[ProductSpec]
+
+
+class ProductReference(ApiModel):
+    """What the platform can price, grouped by asset class. Read from code, not from a run."""
+
+    asset_classes: list[AssetClassProducts]
+
+
 class AuditEvent(ApiModel):
     event_id: str
     at: str
