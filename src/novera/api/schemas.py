@@ -441,6 +441,33 @@ class MarketDataSources(ApiModel):
     summary: dict[str, int] = Field(description="Factor and family counts per status")
 
 
+class RerunStage(ApiModel):
+    name: str
+    title: str
+    description: str
+    tables: list[str] = Field(description="Result tables the stage replaces on the new run")
+    dependents: list[str] = Field(description="Stages copied from the parent that are not recomputed")
+    summary_keys: list[str]
+    faces: list[str] = Field(description="bank, fund or both")
+
+
+class RerunRecord(RunRecord):
+    """A RERUN run: the parent's results copied under a new run id with one stage recomputed."""
+
+    rerun: dict[str, Any] = Field(
+        description="parent_run_id, stage, actor, reason, stale_stages, changed (before and after per "
+        "summary key), seconds"
+    )
+
+
+class RerunOptions(ApiModel):
+    """What an administrator can re-run and what has been re-run. Record OPS-002."""
+
+    record: str
+    stages: list[RerunStage]
+    reruns: list[RerunRecord]
+
+
 class StressShock(ApiModel):
     target: str = Field(description="Factor id or family prefix the shock applies to")
     family: str

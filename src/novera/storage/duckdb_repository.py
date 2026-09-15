@@ -616,6 +616,38 @@ class DuckDBRepository:
         self._conn.unregister("_frame_df")
         return len(df)
 
+    def copy_run_frames(self, src_run_id: str, dst_run_id: str) -> list[str]:
+        """Copy every stored result table of one run under another run id, leaving the source
+        untouched (partial re-runs, OPS-002). Returns the tables that had rows to copy."""
+        tables = [
+            r[0]
+            for r in self._conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'run_%' ORDER BY 1"
+            ).fetchall()
+        ]
+        copied: list[str] = []
+        for t in tables:
+            cols = [
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = ? "
+                    "ORDER BY ordinal_position",
+                    [t],
+                ).fetchall()
+            ]
+            if "run_id" not in cols:
+                continue
+            others = [c for c in cols if c != "run_id"]
+            quoted = ", ".join(f'"{c}"' for c in others)
+            n = self._conn.execute(
+                f'INSERT INTO {t} ("run_id"{", " + quoted if others else ""}) '
+                f"SELECT ?{', ' + quoted if others else ''} FROM {t} WHERE run_id = ?",
+                [dst_run_id, src_run_id],
+            ).fetchone()
+            if n and n[0]:
+                copied.append(t)
+        return copied
+
     def load_run_frame(self, run_id: str, name: str) -> pd.DataFrame:
         table = f"run_{name}"
         exists = self._conn.execute(

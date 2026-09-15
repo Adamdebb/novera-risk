@@ -1,5 +1,6 @@
 from datetime import date
 
+import pandas as pd
 import pytest
 
 from novera.market_data.history import MarketHistory
@@ -178,3 +179,45 @@ def test_coupon_between_dates_is_not_a_loss():
     carry = out.steps.set_index("step")["pnl"]["CARRY"]
     # A 2.5m coupon paid on 15 May crosses the window: carry must be small and positive, not -2.5m.
     assert 0 < carry < 200_000, carry
+
+
+def test_partial_rerun_of_a_stage(db_path, result, tmp_path):
+    from novera.workflows.rerun import STAGE_BY_NAME, rerun_stage
+
+    parent = result.run
+    with DuckDBRepository(db_path) as repo:
+        before_summary = repo.load_run(parent.run_id).summary
+        before_stress = repo.load_run_frame(parent.run_id, "stress_summary")
+        breaches_before = len(repo.load_breaches(open_only=False))
+        res = rerun_stage(repo, parent.run_id, "stress", "Risk Control", "fixture check", runs_dir=tmp_path)
+        run = res.run
+        assert run.run_type == "RERUN" and run.status == "COMPLETED" and run.run_id != parent.run_id
+        assert run.config["rerun"]["parent_run_id"] == parent.run_id and run.config_hash != parent.config_hash
+        assert (
+            run.business_date == parent.business_date and run.market_snapshot_id == parent.market_snapshot_id
+        )
+        # The parent is untouched and the breach workflow was not touched either.
+        again = repo.load_run(parent.run_id)
+        assert again.summary == before_summary and again.config_hash == parent.config_hash
+        assert len(repo.load_breaches(open_only=False)) == breaches_before
+        assert repo.latest_run().run_id == parent.run_id  # a re-run never becomes the latest EOD run
+        # Every result table was copied under the new id; the stage reproduced the parent exactly.
+        for name in ("valuation", "sensitivities", "limits", "var_summary", "dq_findings"):
+            assert len(repo.load_run_frame(run.run_id, name)) == len(
+                repo.load_run_frame(parent.run_id, name)
+            ), name
+        after = repo.load_run_frame(run.run_id, "stress_summary")
+        key = lambda d: d.sort_values("scenario_id").reset_index(drop=True)  # noqa: E731
+        pd.testing.assert_frame_equal(key(after), key(before_stress))
+        assert res.changed == {} and res.stale_stages == STAGE_BY_NAME["stress"].dependents
+        assert run.summary["rerun"]["stage"] == "stress" and run.summary["rerun"]["copied_tables"] > 10
+        events = repo.load_audit_events(subject=run.run_id)
+        assert {"RERUN_STARTED", "RERUN_FINISHED"} <= set(events["event_type"])
+        with pytest.raises(ValueError):
+            rerun_stage(repo, parent.run_id, "alerts", "x")
+        with pytest.raises(ValueError):
+            rerun_stage(repo, parent.run_id, "fund", "x")  # bank face
+        # A limits re-run recomputes VaR and stress in memory and reproduces the stored table.
+        lim = rerun_stage(repo, parent.run_id, "limits", "Risk Control", runs_dir=tmp_path)
+        assert lim.changed == {} and lim.run.summary["breaches"] == parent.summary["breaches"]
+        assert len(repo.load_breaches(open_only=False)) == breaches_before

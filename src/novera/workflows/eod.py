@@ -460,105 +460,38 @@ def run_eod(
     return result
 
 
-def _persist(
-    repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir, extras=None
-) -> None:
-    rid = run.run_id
-    repo.save_run(run)
-    if extras:
-        mc, bts, btl, conc, liq = (extras[k] for k in ("mc", "bt_static", "bt_live", "conc", "liq"))
-        if extras.get("proxies") is not None:
-            repo.save_run_frame(rid, "md_proxies", extras["proxies"].table())
-        lt = extras.get("lookthrough")
-        if lt is not None:
-            repo.save_run_frame(rid, "lookthrough_holdings", lt.holdings)
-            repo.save_run_frame(rid, "lookthrough_constituents", lt.constituents)
-        repo.save_run_frame(rid, "var_contributions_monte_carlo", mc.contributions.assign(method=mc.method))
-        repo.save_run_frame(rid, "backtest_summary", pd.DataFrame([bts.summary(), btl.summary()]))
-        repo.save_run_frame(rid, "backtest_series", bts.series.assign(kind=bts.kind))
-        if len(btl.series):
-            repo.save_run_frame(rid, "backtest_live_series", btl.series.assign(kind=btl.kind))
-        repo.save_run_frame(rid, "concentration", conc.by_dimension)
-        repo.save_run_frame(rid, "concentration_top", conc.top_positions)
-        repo.save_run_frame(rid, "concentration_tenor", conc.tenor)
-        repo.save_run_frame(
-            rid,
-            "liquidity_trades",
-            liq.by_trade.assign(horizon_bucket=lambda d: d["horizon_bucket"].astype(str)),
-        )
-        repo.save_run_frame(
-            rid,
-            "liquidity_buckets",
-            liq.by_bucket.assign(horizon_bucket=lambda d: d["horizon_bucket"].astype(str)),
-        )
-        repo.save_run_frame(rid, "liquidity_desks", liq.by_desk)
-        repo.save_run_frame(
-            rid,
-            "risk_flags",
-            pd.DataFrame(
-                [{"kind": "CONCENTRATION", "message": f} for f in conc.flags]
-                + [{"kind": "LIQUIDITY", "message": f} for f in liq.flags]
-                + [{"kind": "LOOKTHROUGH", "message": f} for f in (lt.flags if lt is not None else [])],
-                columns=["kind", "message"],
-            ),
-        )
-    repo.save_run_frame(rid, "valuation", valuation)
-    repo.save_run_frame(rid, "sensitivities", sens)
-    var_summary = pd.DataFrame(
-        [
-            {
-                "method": hs.method,
-                "var": hs.var,
-                "es": hs.es,
-                "var_scaled": hs.var_scaled,
-                "es_scaled": hs.es_scaled,
-                "confidence": hs.config.confidence,
-                "es_confidence": hs.config.es_confidence,
-                "window_days": hs.config.window_days,
-                "scenarios": len(hs.pnl),
-                "var_scenario_date": hs.var_scenario_date,
-            },
-            {
-                "method": tv.method,
-                "var": tv.var,
-                "es": tv.es,
-                "var_scaled": tv.var_scaled,
-                "es_scaled": tv.es_scaled,
-                "confidence": tv.config.confidence,
-                "es_confidence": tv.config.es_confidence,
-                "window_days": tv.config.window_days,
-                "scenarios": len(tv.pnl),
-                "var_scenario_date": tv.var_scenario_date,
-            },
-        ]
-    )
-    if extras:
-        mc = extras["mc"]
-        var_summary = pd.concat(
-            [
-                var_summary,
-                pd.DataFrame(
-                    [
-                        {
-                            "method": mc.method,
-                            "var": mc.var,
-                            "es": mc.es,
-                            "var_scaled": mc.var_scaled,
-                            "es_scaled": mc.es_scaled,
-                            "confidence": mc.config.confidence,
-                            "es_confidence": mc.config.es_confidence,
-                            "window_days": mc.config.window_days,
-                            "scenarios": len(mc.pnl),
-                            "var_scenario_date": mc.var_scenario_date,
-                        }
-                    ]
-                ),
-            ],
-            ignore_index=True,
-        )
-    repo.save_run_frame(rid, "var_summary", var_summary)
+def run_dir(run_id: str, runs_dir: Path | None = None) -> Path:
+    """Directory for a run's Parquet matrices next to the database (too wide for a table)."""
+    base = runs_dir or get_settings().data_dir / "runs"
+    d = Path(base) / run_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _var_row(x: Any) -> dict[str, Any]:
+    return {
+        "method": x.method,
+        "var": x.var,
+        "es": x.es,
+        "var_scaled": x.var_scaled,
+        "es_scaled": x.es_scaled,
+        "confidence": x.config.confidence,
+        "es_confidence": x.config.es_confidence,
+        "window_days": x.config.window_days,
+        "scenarios": len(x.pnl),
+        "var_scenario_date": x.var_scenario_date,
+    }
+
+
+def persist_var(repo, rid: str, hs, tv, mc, runs_dir: Path | None = None) -> None:
+    """VaR tables: one summary row per method, contributions, the scenario vector, and the
+    full P&L matrices as Parquet."""
+    rows = [_var_row(hs), _var_row(tv)] + ([_var_row(mc)] if mc is not None else [])
+    repo.save_run_frame(rid, "var_summary", pd.DataFrame(rows))
     repo.save_run_frame(rid, "var_contributions", hs.contributions.assign(method=hs.method))
     repo.save_run_frame(rid, "var_contributions_challenger", tv.contributions.assign(method=tv.method))
+    if mc is not None:
+        repo.save_run_frame(rid, "var_contributions_monte_carlo", mc.contributions.assign(method=mc.method))
     scen = pd.DataFrame(
         {
             "scenario_date": hs.portfolio_pnl.index,
@@ -567,6 +500,12 @@ def _persist(
         }
     )
     repo.save_run_frame(rid, "var_scenarios", scen)
+    d = run_dir(rid, runs_dir)
+    hs.pnl.to_parquet(d / "var_pnl_full_revaluation.parquet")
+    tv.pnl.to_parquet(d / "var_pnl_delta_gamma_vega.parquet")
+
+
+def persist_stress(repo, rid: str, stress: list) -> None:
     stress_rows = pd.concat(
         [
             r.pnl.rename("pnl")
@@ -594,6 +533,67 @@ def _persist(
             ]
         ),
     )
+
+
+def persist_backtest(repo, rid: str, bts, btl) -> None:
+    repo.save_run_frame(rid, "backtest_summary", pd.DataFrame([bts.summary(), btl.summary()]))
+    repo.save_run_frame(rid, "backtest_series", bts.series.assign(kind=bts.kind))
+    if len(btl.series):
+        repo.save_run_frame(rid, "backtest_live_series", btl.series.assign(kind=btl.kind))
+
+
+def persist_concentration(repo, rid: str, conc, liq, lt) -> None:
+    if lt is not None:
+        repo.save_run_frame(rid, "lookthrough_holdings", lt.holdings)
+        repo.save_run_frame(rid, "lookthrough_constituents", lt.constituents)
+    repo.save_run_frame(rid, "concentration", conc.by_dimension)
+    repo.save_run_frame(rid, "concentration_top", conc.top_positions)
+    repo.save_run_frame(rid, "concentration_tenor", conc.tenor)
+    repo.save_run_frame(
+        rid,
+        "liquidity_trades",
+        liq.by_trade.assign(horizon_bucket=lambda d: d["horizon_bucket"].astype(str)),
+    )
+    repo.save_run_frame(
+        rid,
+        "liquidity_buckets",
+        liq.by_bucket.assign(horizon_bucket=lambda d: d["horizon_bucket"].astype(str)),
+    )
+    repo.save_run_frame(rid, "liquidity_desks", liq.by_desk)
+    repo.save_run_frame(
+        rid,
+        "risk_flags",
+        pd.DataFrame(
+            [{"kind": "CONCENTRATION", "message": f} for f in conc.flags]
+            + [{"kind": "LIQUIDITY", "message": f} for f in liq.flags]
+            + [{"kind": "LOOKTHROUGH", "message": f} for f in (lt.flags if lt is not None else [])],
+            columns=["kind", "message"],
+        ),
+    )
+
+
+def persist_pnl(repo, rid: str, pnl) -> None:
+    repo.save_run_frame(rid, "pnl_steps", pnl.steps)
+    repo.save_run_frame(rid, "pnl_by_trade", pnl.by_trade)
+    repo.save_run_frame(rid, "pnl_challenger", pnl.challenger)
+
+
+def _persist(
+    repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir, extras=None
+) -> None:
+    rid = run.run_id
+    repo.save_run(run)
+    mc = None
+    if extras:
+        mc = extras["mc"]
+        if extras.get("proxies") is not None:
+            repo.save_run_frame(rid, "md_proxies", extras["proxies"].table())
+        persist_backtest(repo, rid, extras["bt_static"], extras["bt_live"])
+        persist_concentration(repo, rid, extras["conc"], extras["liq"], extras.get("lookthrough"))
+    repo.save_run_frame(rid, "valuation", valuation)
+    repo.save_run_frame(rid, "sensitivities", sens)
+    persist_var(repo, rid, hs, tv, mc, runs_dir)
+    persist_stress(repo, rid, stress)
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(
@@ -602,13 +602,5 @@ def _persist(
         dq.table().assign(affected_trade_ids=[",".join(f.affected_trade_ids[:200]) for f in dq.findings]),
     )
     if pnl is not None:
-        repo.save_run_frame(rid, "pnl_steps", pnl.steps)
-        repo.save_run_frame(rid, "pnl_by_trade", pnl.by_trade)
-        repo.save_run_frame(rid, "pnl_challenger", pnl.challenger)
+        persist_pnl(repo, rid, pnl)
     repo.save_audit_events(events)
-    # Full scenario matrices go to Parquet next to the database (too wide for a table).
-    base = runs_dir or get_settings().data_dir / "runs"
-    d = Path(base) / rid
-    d.mkdir(parents=True, exist_ok=True)
-    hs.pnl.to_parquet(d / "var_pnl_full_revaluation.parquet")
-    tv.pnl.to_parquet(d / "var_pnl_delta_gamma_vega.parquet")

@@ -53,7 +53,11 @@ if not runs:
     st.title(f"{settings.platform_name}")
     st.warning("No completed run found. Run `novera simulate` then `novera run eod`.")
     st.stop()
-labels = {r["run_id"]: f"{r['business_date']}  {r['run_id']}  [{r['verdict']}]" for r in runs}
+labels = {
+    r["run_id"]: f"{r['business_date']}  {r['run_id']}  [{r['verdict']}]"
+    + (f"  · rerun of {r['summary'].get('rerun', {}).get('stage', '?')}" if r["run_type"] == "RERUN" else "")
+    for r in runs
+}
 with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
@@ -76,6 +80,7 @@ with st.sidebar:
         "Runs & audit",
         "Market data",
         "Reference data",
+        "Admin",
     ]
     page = st.radio("View", pages)
     st.caption("Every figure is read from the stored run. Nothing is computed on this page.")
@@ -468,6 +473,93 @@ elif page == "Stress library":
                         cols.append("tenors")
                         shocks["tenors"] = shocks["tenors"].fillna("all")
                     st.dataframe(shocks[cols].round(1), use_container_width=True, hide_index=True)
+
+elif page == "Admin":
+    header("Administration")
+    st.caption(
+        "Operational configurations for risk control. Every action names an actor and is written "
+        "to the audit trail. Nothing here edits a stored run."
+    )
+    config = st.selectbox("Configuration", ["Partial re-run of a single stage"])
+    if config == "Partial re-run of a single stage":
+        st.markdown(
+            "Re-run one stage of the EOD workflow on a stored run. The result is a new run of type "
+            "RERUN with the parent's results copied and only that stage recomputed from the same "
+            "snapshots (OPS-002). Stages downstream of it are copied, not recomputed, and listed as "
+            "such. A re-run never raises or escalates breaches, sends alerts, or becomes the latest EOD run."
+        )
+        opts = client.rerun_options()
+        face = "fund" if is_fund else "bank"
+        stages = {s["name"]: s for s in opts["stages"] if face in s["faces"]}
+        with st.form("rerun"):
+            c1, c2 = st.columns(2)
+            parent = c1.selectbox(
+                "Run to re-run", list(labels), index=list(labels).index(run_id), format_func=labels.get
+            )
+            stage = c2.selectbox("Stage", list(stages), format_func=lambda n: stages[n]["title"])
+            c3, c4 = st.columns(2)
+            actor = c3.text_input("Actor", value="Risk Control")
+            reason = c4.text_input("Reason", placeholder="e.g. market data correction on the USD 7Y node")
+            go = st.form_submit_button("Run the stage")
+        spec = stages[stage]
+        st.caption(
+            f"{spec['description']} Replaces: {', '.join(spec['tables'])}. Not recomputed: "
+            f"{', '.join(spec['dependents']) or 'nothing depends on it'}."
+        )
+        if go:
+            if not actor.strip():
+                st.error("Name the actor: every re-run is audited.")
+            else:
+                with st.spinner(f"Re-running {spec['title'].lower()} on {parent}..."):
+                    res = client.rerun_stage(parent, stage, actor.strip(), reason.strip())
+                info = res["rerun"]
+                st.success(
+                    f"Re-run {res['run_id']} completed in {info['seconds']:.0f}s "
+                    f"({info['copied_tables']} tables copied from {info['parent_run_id']})."
+                )
+                if info["changed"]:
+                    st.markdown("**Summary values that changed**")
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {"measure": k, "before": str(v["before"]), "after": str(v["after"])}
+                                for k, v in info["changed"].items()
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info("The stage reproduced the parent's numbers exactly (same inputs, same results).")
+                if info["stale_stages"]:
+                    st.caption(f"Copied from the parent, not recomputed: {', '.join(info['stale_stages'])}.")
+                load_runs.clear()
+                st.caption("Select the new run in the sidebar to browse it.")
+                opts = client.rerun_options()  # the list below includes the run just made
+        st.subheader("Re-runs so far")
+        if opts["reruns"]:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "run_id": r["run_id"],
+                            "business_date": r["business_date"],
+                            "stage": r["rerun"].get("stage"),
+                            "parent": r["rerun"].get("parent_run_id"),
+                            "actor": r["rerun"].get("actor"),
+                            "reason": r["rerun"].get("reason"),
+                            "status": r["status"],
+                            "changed": ", ".join(r["rerun"].get("changed", {})) or "nothing",
+                            "seconds": round(r["rerun"].get("seconds", 0) or 0),
+                        }
+                        for r in opts["reruns"]
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.caption("No re-run yet.")
 
 elif page == "Counterparty":
     header("Counterparty risk")

@@ -668,6 +668,49 @@ listing the stress tests by category with the shocks used. Built without a quest
 
 ---
 
+## Round 23 — Admin page and partial re-runs (2026-09-15)
+
+Context: asked what the EOD skeleton is, the owner learned it has no partial re-run of a
+single stage and asked for an Admin page holding administrative configurations, starting
+with that one. Built without a question round (non-interactive session); the choices below
+are defaults to confirm.
+
+### 23.1 What a partial re-run produces
+- Options: a new RERUN run with the parent's tables copied and one stage replaced ★ ·
+  overwrite the stage's tables on the parent run · a run holding only the recomputed stage
+- Choice (default): **New RERUN run.** Rule 5 says stored results are immutable, and a run
+  with a single table would break every screen; copying the parent (about fifty tables, under
+  a second) and replacing one stage keeps both. The parent keeps its config hash; the child's
+  differs by the `rerun` block.
+- Where: `workflows/rerun.py`, `copy_run_frames`, OPS-002.
+- Reversal: none; the parent is exactly as it was.
+
+### 23.2 Dependencies between stages
+- Options: recompute only the requested stage and list its dependents as not recomputed ★ ·
+  recompute the stage and everything downstream · refuse stages with dependents
+- Choice (default): **Stage only, dependents listed.** Upstream inputs are recomputed in
+  memory (deterministic, so they match the stored numbers, which the tests check); downstream
+  tables stay the parent's and `stale_stages` says so on the run, the page and the CLI.
+- Reversal: a `--cascade` flag that walks `Stage.dependents` in order.
+
+### 23.3 Workflow side effects
+- Options: none, ever ★ · sync breaches when limits are re-run · send alerts
+- Choice (default): **None.** A re-run monitors limits and stores the table but never raises,
+  escalates or closes a breach, never dispatches an alert, never becomes the latest EOD run and
+  never counts in the live backtest. Flowing a corrected result into the workflow is a full
+  EOD or a breach action by a named actor.
+- Reversal: expose `sync_breaches` behind an explicit admin flag once a sign-off step exists.
+
+### 23.4 Admin page shape
+- Options: one page with a configuration selector ★ · one page per admin action · fold into
+  Runs & audit
+- Choice (default): **Configuration selector**, so later administrative settings (sign-off,
+  cascade, scheduler overrides) slot in as entries. Every action names an actor; there is
+  still no authentication (item 1 below).
+- Reversal: split into pages when a second configuration is heavy.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).

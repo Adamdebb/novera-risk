@@ -108,6 +108,7 @@ def app(db_path, monkeypatch):
         "Alerts & jobs",
         "Runs & audit",
         "Reference data",
+        "Admin",
     ],
 )
 def test_every_page_renders(app, page):

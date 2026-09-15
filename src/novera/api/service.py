@@ -508,6 +508,17 @@ class RiskService:
 
         return market_data_sources(self.repo.load_risk_factors(), self.repo.load_market_provenance())
 
+    def rerun_options(self) -> dict[str, Any]:
+        """The EOD stages an administrator can re-run on a stored run, and the re-runs made so
+        far (OPS-002)."""
+        from novera.workflows.rerun import RECORD, STAGES
+
+        reruns = [
+            {**self._run_dict(r), "rerun": r.summary.get("rerun", {})}
+            for r in self.repo.list_runs(run_type="RERUN", limit=50)
+        ]
+        return {"record": RECORD, "stages": [s.to_dict() for s in STAGES], "reruns": reruns}
+
     def stress_library(self) -> dict[str, Any]:
         """The stress library by category with the shocks each scenario applies; historical
         windows show the realised moves of headline factors in the stored history (MR-005)."""
@@ -961,6 +972,18 @@ class RiskWriteService:
 
     def __init__(self, repo: DuckDBRepository) -> None:
         self.repo = repo
+
+    def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]:
+        """Re-run one EOD stage of a stored run into a new RERUN run; the parent is untouched
+        (OPS-002)."""
+        from novera.workflows.rerun import rerun_stage
+
+        rid = RiskService(self.repo).resolve(run_id).run_id
+        try:
+            res = rerun_stage(self.repo, rid, stage, actor, reason)
+        except ValueError as e:
+            raise InvalidRequestError(str(e)) from e
+        return {**RiskService._run_dict(res.run), "rerun": res.run.summary.get("rerun", {})}
 
     def acknowledge(self, breach_id: str, actor: str, comment: str = "") -> dict[str, Any]:
         b, _ = wf.acknowledge(self.repo, breach_id, actor, comment)
