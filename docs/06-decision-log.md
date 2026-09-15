@@ -420,6 +420,18 @@ now only the API (`/organisation`) and the run-scoped counterparty page showed t
   the pricer registry, the model names written on valuation rows, and the methodology files.
 - Where: `pricing/catalogue.py`, `GET /reference/products`, `ui/app.py`
 
+### 15.5 Risk hierarchy
+- Options (multi-select): risk measures ★ · risk-factor universe · limit hierarchy
+- Choice: **Risk measures and risk-factor universe.** Two more trees. Measures: risk area
+  (market, counterparty, regulatory capital, fund, control) → measure → definition, unit,
+  screen, methodology record and version, face; read from a measure catalogue in code
+  (`risk/catalogue.py`) that a test checks against `docs/methodology/` titles and versions and
+  against the set of MR, CR, REG, HF and DQ records. Risk factors: asset class → factor type
+  → underlying, with curve nodes, surface expiries × moneyness and cube expiries × tenors
+  summarised per line, read from the stored risk-factor universe. The limit hierarchy was not
+  chosen; the Limits page already lists definitions with utilisation.
+- Where: `risk/catalogue.py`, `GET /reference/measures`, `GET /reference/risk-factors`, `ui/app.py`
+
 ---
 
 ## Standing instructions given outside the question rounds

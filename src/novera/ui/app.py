@@ -1475,10 +1475,15 @@ elif page == "Runs & audit":
 elif page == "Reference data":
     header("Reference data")
     st.caption(
-        "What the runs are priced against: the organisation, the counterparties and the products, "
-        "as stored and as coded. No run figures on this page."
+        "What the runs are priced and measured against: organisation, counterparties, products, "
+        "risk measures and risk factors, as stored and as coded. No run figures on this page."
     )
-    what = st.radio("Show", ["Organisation", "Counterparties", "Products"], horizontal=True, key="ref_what")
+    what = st.radio(
+        "Show",
+        ["Organisation", "Counterparties", "Products", "Risk measures", "Risk factors"],
+        horizontal=True,
+        key="ref_what",
+    )
     q = st.text_input("Filter", placeholder="id or name, e.g. USD_RATES or Bank A", key="ref_filter")
     q = q.strip().lower()
 
@@ -1650,7 +1655,7 @@ elif page == "Reference data":
                     )
                     lines += cp_lines(sub, indent="    ")
                 st.markdown("\n".join(lines))
-    else:
+    elif what == "Products":
         ref = client.product_reference()
         n_products = sum(len(a["products"]) for a in ref["asset_classes"])
         st.markdown(
@@ -1693,5 +1698,121 @@ elif page == "Reference data":
                                 line += f" · {f['description']}"
                             rows.append(line)
                         st.markdown("\n".join(rows))
+    elif what == "Risk measures":
+        ref = client.measure_reference()
+        n_measures = sum(len(a["measures"]) for a in ref["areas"])
+        st.markdown(
+            f"{len(ref['areas'])} risk areas · {n_measures} measures · every measure has a methodology "
+            "record in `docs/methodology/` (definition, maths, inputs, assumptions, limitations, validation)"
+        )
+        for area in ref["areas"]:
+            area_hit = _hit(area["area"], area["name"])
+            ms = [
+                m
+                for m in area["measures"]
+                if area_hit or _hit(m["methodology"], m["name"], m["screen"], m["methodology_title"])
+            ]
+            if not ms:
+                continue
+            shown += 1
+            with st.expander(f"{area['name']} · {len(area['measures'])} measures", expanded=bool(q)):
+                for m in ms:
+                    with st.expander(f"{m['name']} · {m['methodology']} · {m['screen']}", expanded=bool(q)):
+                        st.markdown(
+                            f"{m['definition']}\n\n"
+                            f"- unit: {m['unit']}\n"
+                            f"- methodology: `{m['methodology']}` {m['methodology_title']} · "
+                            f"v{m['version']}\n"
+                            f"- screen: {m['screen']}\n"
+                            f"- face: {m['face']}"
+                        )
+    else:
+        factors = client.risk_factor_reference()["factors"]
+        type_names = {
+            "IR_ZERO": "Zero curves",
+            "FX_SPOT": "FX spot",
+            "EQUITY_SPOT": "Equity spot",
+            "EQUITY_INDEX": "Equity indices",
+            "COMMODITY_CURVE": "Commodity curves",
+            "CREDIT_SPREAD": "Credit spreads",
+            "CRYPTO_SPOT": "Crypto spot",
+            "IMPLIED_VOL": "Implied vol surfaces",
+            "SWAPTION_VOL": "Swaption vol cubes",
+        }
+        ac_names = {
+            "RATES": "Rates",
+            "FX": "FX",
+            "EQUITY": "Equity",
+            "CREDIT": "Credit",
+            "COMMODITY": "Commodities",
+            "DIGITAL_ASSET": "Digital assets",
+        }
+        tree: dict[str, dict[str, dict[str, list[dict]]]] = {}
+        for f in factors:
+            tree.setdefault(f["asset_class"], {}).setdefault(f["factor_type"], {}).setdefault(
+                f["underlying"], []
+            ).append(f)
+        st.markdown(
+            f"{len(factors)} risk factors · {len(tree)} asset classes · "
+            f"{sum(len(v) for v in tree.values())} factor types · sensitivities, VaR and stress all key off "
+            "these ids, so results reconcile"
+        )
+
+        def factor_line(underlying: str, fs: list[dict]) -> str:
+            first = fs[0]
+            kind = first["factor_type"]
+            shock = first["shock_type"].lower()
+            if len(fs) == 1:
+                return (
+                    f"- `{first['factor_id']}` **{underlying}** · {first['currency']} · {first['unit']} · "
+                    f"{shock} shocks"
+                )
+            if kind == "IMPLIED_VOL":
+                years = {f["tenor"]: f["expiry_years"] for f in fs}
+                exp = sorted(years, key=years.get)
+                mny = sorted({f["moneyness"] for f in fs})
+                return (
+                    f"- **{underlying}** · {len(fs)} points · expiries {', '.join(exp)} × moneyness "
+                    f"{', '.join(f'{m:.2f}' for m in mny)} · {first['unit']} · {shock} shocks"
+                )
+            if kind == "SWAPTION_VOL":
+                exp = sorted({f["expiry_years"] for f in fs})
+                years = {f["tenor"]: f["tenor_years"] for f in fs}
+                ten = sorted(years, key=years.get)
+                return (
+                    f"- **{underlying}** · {len(fs)} points · expiries {', '.join(f'{e:g}Y' for e in exp)} × "
+                    f"tenors {', '.join(ten)} · {first['unit']} · {shock} shocks"
+                )
+            nodes = sorted(fs, key=lambda f: f["tenor_years"] or 0)
+            return (
+                f"- **{underlying}** · {first['currency']} · {len(fs)} nodes: "
+                f"{', '.join(n['tenor'] for n in nodes)} · "
+                f"{first['unit']} · {shock} shocks"
+            )
+
+        for ac in ["RATES", "FX", "EQUITY", "CREDIT", "COMMODITY", "DIGITAL_ASSET"]:
+            if ac not in tree:
+                continue
+            ac_hit = _hit(ac, ac_names.get(ac, ac))
+            groups = []
+            for kind, by_und in tree[ac].items():
+                kind_hit = ac_hit or _hit(kind, type_names.get(kind, kind))
+                unds = {
+                    u: fs
+                    for u, fs in by_und.items()
+                    if kind_hit or _hit(u) or any(_hit(f["factor_id"]) for f in fs)
+                }
+                if unds:
+                    groups.append((kind, unds, sum(len(v) for v in by_und.values()), len(by_und)))
+            if not groups:
+                continue
+            shown += 1
+            n_ac = sum(len(fs) for by_und in tree[ac].values() for fs in by_und.values())
+            label = f"{ac_names.get(ac, ac)} · {ac} · {len(tree[ac])} factor types · {n_ac} factors"
+            with st.expander(label, expanded=bool(q)):
+                for kind, unds, n_kind, n_und in groups:
+                    label = f"{type_names.get(kind, kind)} · {kind} · {n_und} underlyings · {n_kind} factors"
+                    with st.expander(label, expanded=bool(q)):
+                        st.markdown("\n".join(factor_line(u, fs) for u, fs in sorted(unds.items())))
     if not shown:
         st.info("Nothing matches the filter.")

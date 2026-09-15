@@ -258,6 +258,16 @@ def product_reference(svc: RiskService = Depends(service)):
     return svc.product_reference()
 
 
+@app.get("/reference/measures", response_model=s.MeasureReference)
+def measure_reference(svc: RiskService = Depends(service)):
+    return svc.measure_reference()
+
+
+@app.get("/reference/risk-factors", response_model=s.RiskFactorReference)
+def risk_factor_reference(svc: RiskService = Depends(service)):
+    return svc.risk_factor_reference()
+
+
 @app.get("/reference/counterparties", response_model=s.CounterpartyReference)
 def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()

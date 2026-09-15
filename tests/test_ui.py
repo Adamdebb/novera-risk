@@ -149,3 +149,13 @@ def test_reference_page_shows_both_trees(app):
     assert any("Rates · RATES" in lab for lab in labels) and any("SWAPTION" in lab for lab in labels)
     text = " ".join(m.value for m in app.markdown)
     assert "PR-012" in text and "swap_tenor" in text
+    next(r for r in app.radio if r.label == "Show").set_value("Risk measures").run()
+    assert not app.exception, [e.value for e in app.exception]
+    labels = [e.label for e in app.expander]
+    assert any("Market risk" in lab for lab in labels) and any("MR-002" in lab for lab in labels)
+    next(r for r in app.radio if r.label == "Show").set_value("Risk factors").run()
+    assert not app.exception, [e.value for e in app.exception]
+    labels = [e.label for e in app.expander]
+    assert any("Zero curves" in lab for lab in labels)
+    text = " ".join(m.value for m in app.markdown)
+    assert "USD" in text and "nodes" in text and "moneyness" in text
