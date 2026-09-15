@@ -429,7 +429,7 @@ now only the API (`/organisation`) and the run-scoped counterparty page showed t
   against the set of MR, CR, REG, HF and DQ records. Risk factors: asset class → factor type
   → underlying, with curve nodes, surface expiries × moneyness and cube expiries × tenors
   summarised per line, read from the stored risk-factor universe. The limit hierarchy was not
-  chosen; the Limits page already lists definitions with utilisation.
+  chosen; the Limit management page lists definitions with utilisation.
 - Where: `risk/catalogue.py`, `GET /reference/measures`, `GET /reference/risk-factors`, `ui/app.py`
 
 ## Round 16 — Limit management module (2026-09-15)
@@ -442,6 +442,9 @@ to grow into the rest of the limit function later.
 - Choice: **One module page with tabs** ("Limit management": Hierarchy now; Utilisation,
   Breaches and Increases as placeholders that point at the existing pages until their content
   moves in, after which those pages are retired).
+- Same day: the Limits page was retired. Its only distinct role, opening on breaches and
+  warnings, became the module's Utilisation tab (highest utilisation first, trades in scope
+  as a column). Breaches and Increases still point at the Breaches page.
 
 ### 16.2 Limit rows
 - Options: definition plus current status ★ · definition only

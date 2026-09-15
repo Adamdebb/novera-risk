@@ -334,7 +334,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Current measure against each approved limit with warning and breach status, "
                 "temporary increases applied.",
                 "utilisation",
-                "Limits",
+                "Limit management",
                 "Limit utilisation and breach status",
             ),
             MeasureSpec(

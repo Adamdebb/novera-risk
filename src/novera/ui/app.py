@@ -58,7 +58,7 @@ with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
     run_id = st.selectbox("Run", list(labels), format_func=labels.get)
-    pages = ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Limit management", "Breaches"]
+    pages = ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limit management", "Breaches"]
     pages += ["Counterparty"]
     pages += ["Fund"] if is_fund else ["Capital"]
     pages += [
@@ -403,43 +403,6 @@ elif page == "Stress":
         row = stt[stt["name"] == pick].iloc[0]
         st.caption(row["description"])
         st.bar_chart(pd.Series({c: row[c] / M for c in cols}, name="loss (m)"))
-
-elif page == "Limits":
-    header("Limits")
-    status = st.multiselect("Status", ["BREACH", "WARNING", "OK", "NO_DATA"], default=["BREACH", "WARNING"])
-    lt = df(load("limits", run_id))
-    if not lt.empty:
-        lt = lt[lt["status"].isin(status)]
-        show = lt[
-            [
-                "status",
-                "limit_id",
-                "limit_type",
-                "level",
-                "entity_id",
-                "filters",
-                "current",
-                "amount",
-                "utilisation",
-                "owner",
-                "trades_in_scope",
-            ]
-        ].copy()
-        conc = show["limit_type"] == "CONCENTRATION"
-        show.loc[~conc, "current"] = show.loc[~conc, "current"] / M
-        show.loc[~conc, "amount"] = show.loc[~conc, "amount"] / M
-        show["utilisation"] = (show["utilisation"] * 100).round(0)
-        st.dataframe(
-            show.round(2).rename(
-                columns={
-                    "current": "current (m, or share)",
-                    "amount": "limit (m, or share)",
-                    "utilisation": "utilisation %",
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
 
 elif page == "Counterparty":
     header("Counterparty risk")
@@ -1937,7 +1900,61 @@ elif page == "Limit management":
                     if r["rationale"]:
                         st.caption(f"Rationale: {r['rationale']}")
     with tab_u:
-        st.caption("Utilisation stays on the Limits page until it moves into this module.")
+        u_rows = lh["rows"]
+        u1, u2 = st.columns([2, 3])
+        u_status = u1.multiselect(
+            "Status",
+            ["BREACH", "WARNING", "OK", "NO_DATA", "NO_RUN"],
+            default=["BREACH", "WARNING"],
+            key="lm_ustatus",
+        )
+        u_q = u2.text_input("Filter", placeholder="limit id, node, type, owner", key="lm_ufilter")
+        u_q = u_q.strip().lower()
+        u_rows = [
+            r
+            for r in u_rows
+            if r["status"] in u_status
+            and (not u_q or u_q in " ".join(str(v) for v in r.values() if v is not None).lower())
+        ]
+        u_rows.sort(key=lambda r: -(r["utilisation"] or 0))
+        st.caption(
+            f"{len(u_rows)} of {len(lh['rows'])} limits, highest utilisation first · "
+            f"amounts in {ccy} millions, shares as fractions · ↑ marks a temporary increase in force"
+        )
+        u_table = pd.DataFrame(
+            [
+                {
+                    "status": f"{badge.get(r['status'], '⚪')} {r['status']}",
+                    "limit": r["limit_id"],
+                    "type": r["limit_type"],
+                    "hierarchy": r["path"],
+                    "scope": r["filters"],
+                    "current": _lim_amt(r["current"], r["unit"]),
+                    "limit amount": _lim_amt(r["effective_amount"], r["unit"])
+                    + (" ↑" if r["increase_id"] else ""),
+                    "utilisation": r["utilisation"],
+                    "owner": r["owner"],
+                    "trades in scope": r["trades_in_scope"],
+                }
+                for r in u_rows
+            ]
+        )
+        if u_table.empty:
+            st.success("No limits in the selected statuses.")
+        else:
+            st.dataframe(
+                u_table,
+                use_container_width=True,
+                hide_index=True,
+                height=min(38 * (len(u_table) + 1) + 4, 900),
+                column_config={
+                    "utilisation": st.column_config.ProgressColumn(
+                        "utilisation", min_value=0.0, max_value=1.5, format="percent"
+                    ),
+                    "hierarchy": st.column_config.TextColumn("hierarchy", width="large"),
+                    "type": st.column_config.TextColumn("type", width="medium"),
+                },
+            )
     with tab_b:
         st.caption("The breach workflow stays on the Breaches page until it moves into this module.")
     with tab_i:
