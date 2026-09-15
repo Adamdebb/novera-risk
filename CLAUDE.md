@@ -97,10 +97,14 @@ uv run python scripts/export_openapi.py   # refresh docs/api/openapi.json after 
 uv run python scripts/export_model_inventory.py   # refresh the MV-001 table after changing the pricer catalogue (a test checks it)
 ```
 If `uv run` fails with `ModuleNotFoundError: No module named 'novera'`, Python skipped the
-editable `.pth` file because macOS flagged it hidden (recent Pythons ignore hidden `.pth`
-files, and a reinstall recreates it hidden). Fix:
-`chflags nohidden .venv/lib/python3.12/site-packages/*.pth`. Tests are immune (pytest
-`pythonpath`); `PYTHONPATH=src uv run ...` also works as a one-off.
+editable `.pth` file because it carries the macOS hidden flag (recent Pythons ignore hidden
+`.pth` files). Cause: the repo lives under `~/Documents`, which iCloud Drive syncs, and iCloud
+marks every dot-prefixed item hidden and restores the flag from the cloud copy after it is
+cleared. Fix, in order: exclude the venv from sync once with
+`xattr -w 'com.apple.fileprovider.ignore#P' 1 .venv`, then clear the flags with
+`chflags -R nohidden .venv`. Tests are immune (pytest `pythonpath`); `PYTHONPATH=src uv run ...`
+works as a one-off. The durable fix is to keep the repo outside iCloud-synced folders, which
+also protects `.git` and the DuckDB files from being synced mid-write.
 
 ## Do not
 - Do not read or use `../z-My_Tests` (owner's private brainstorming).
