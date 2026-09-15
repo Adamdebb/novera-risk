@@ -16,8 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from novera.domain.counterparties import CSA, Counterparty, NettingSet
 from novera.domain.organisation import Organisation
 from novera.domain.trades import Trade
+from novera.market_data.risk_factors import RiskFactor
 
-__all__ = ["CSA", "Counterparty", "NettingSet", "Organisation", "Trade"]
+__all__ = ["CSA", "Counterparty", "NettingSet", "Organisation", "RiskFactor", "Trade"]
 
 
 class ApiModel(BaseModel):
@@ -324,6 +325,35 @@ class ProductReference(ApiModel):
     """What the platform can price, grouped by asset class. Read from code, not from a run."""
 
     asset_classes: list[AssetClassProducts]
+
+
+class MeasureSpec(ApiModel):
+    methodology: str = Field(description="Methodology record id, e.g. MR-002; the measure's id")
+    name: str
+    definition: str
+    unit: str
+    screen: str = Field(description="Dashboard page where the measure is read")
+    methodology_title: str
+    version: str
+    face: str = Field(description="bank, fund, or bank and fund")
+
+
+class RiskArea(ApiModel):
+    area: str
+    name: str
+    measures: list[MeasureSpec]
+
+
+class MeasureReference(ApiModel):
+    """Every risk measure by area, with its governing record. Read from code, not from a run."""
+
+    areas: list[RiskArea]
+
+
+class RiskFactorReference(ApiModel):
+    """The stored risk-factor universe: curves, spots, spreads, surfaces and cubes."""
+
+    factors: list[RiskFactor]
 
 
 class AuditEvent(ApiModel):

@@ -258,6 +258,16 @@ class RiskService:
 
         return product_reference()
 
+    def measure_reference(self) -> dict[str, Any]:
+        """Every risk measure by area, with its methodology record (from code)."""
+        from novera.risk.catalogue import measure_reference
+
+        return measure_reference()
+
+    def risk_factor_reference(self) -> dict[str, Any]:
+        """The stored risk-factor universe every measure keys off."""
+        return {"factors": [f.model_dump(mode="json") for f in self.repo.load_risk_factors()]}
+
     def counterparty_reference(self) -> dict[str, Any]:
         """Static counterparty reference data: counterparties, netting sets and CSA terms,
         independent of any run."""

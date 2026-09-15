@@ -5655,6 +5655,76 @@
         "title": "MarketDataProxies",
         "type": "object"
       },
+      "MeasureReference": {
+        "additionalProperties": true,
+        "description": "Every risk measure by area, with its governing record. Read from code, not from a run.",
+        "properties": {
+          "areas": {
+            "items": {
+              "$ref": "#/components/schemas/RiskArea"
+            },
+            "title": "Areas",
+            "type": "array"
+          }
+        },
+        "required": [
+          "areas"
+        ],
+        "title": "MeasureReference",
+        "type": "object"
+      },
+      "MeasureSpec": {
+        "additionalProperties": true,
+        "properties": {
+          "definition": {
+            "title": "Definition",
+            "type": "string"
+          },
+          "face": {
+            "description": "bank, fund, or bank and fund",
+            "title": "Face",
+            "type": "string"
+          },
+          "methodology": {
+            "description": "Methodology record id, e.g. MR-002; the measure's id",
+            "title": "Methodology",
+            "type": "string"
+          },
+          "methodology_title": {
+            "title": "Methodology Title",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "screen": {
+            "description": "Dashboard page where the measure is read",
+            "title": "Screen",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "methodology",
+          "name",
+          "definition",
+          "unit",
+          "screen",
+          "methodology_title",
+          "version",
+          "face"
+        ],
+        "title": "MeasureSpec",
+        "type": "object"
+      },
       "MutualFund": {
         "additionalProperties": false,
         "description": "Open-ended fund priced by look-through with a cash sleeve; dealt through a transfer agent.",
@@ -7301,6 +7371,159 @@
         ],
         "title": "Repo",
         "type": "object"
+      },
+      "RiskArea": {
+        "additionalProperties": true,
+        "properties": {
+          "area": {
+            "title": "Area",
+            "type": "string"
+          },
+          "measures": {
+            "items": {
+              "$ref": "#/components/schemas/MeasureSpec"
+            },
+            "title": "Measures",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "area",
+          "name",
+          "measures"
+        ],
+        "title": "RiskArea",
+        "type": "object"
+      },
+      "RiskFactor": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "expiry_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiry Years"
+          },
+          "factor_id": {
+            "title": "Factor Id",
+            "type": "string"
+          },
+          "factor_type": {
+            "$ref": "#/components/schemas/RiskFactorType"
+          },
+          "moneyness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "K/F for vol nodes",
+            "title": "Moneyness"
+          },
+          "shock_type": {
+            "description": "ABSOLUTE (rates, spreads) or RELATIVE (prices, vols)",
+            "title": "Shock Type",
+            "type": "string"
+          },
+          "tenor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Curve tenor label, e.g. 10Y",
+            "title": "Tenor"
+          },
+          "tenor_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenor Years"
+          },
+          "underlying": {
+            "description": "Currency, pair, ticker, index, commodity or family",
+            "title": "Underlying",
+            "type": "string"
+          },
+          "unit": {
+            "description": "rate, price, level, bp, vol",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "factor_id",
+          "factor_type",
+          "asset_class",
+          "currency",
+          "underlying",
+          "unit",
+          "shock_type"
+        ],
+        "title": "RiskFactor",
+        "type": "object"
+      },
+      "RiskFactorReference": {
+        "additionalProperties": true,
+        "description": "The stored risk-factor universe: curves, spots, spreads, surfaces and cubes.",
+        "properties": {
+          "factors": {
+            "items": {
+              "$ref": "#/components/schemas/RiskFactor"
+            },
+            "title": "Factors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "factors"
+        ],
+        "title": "RiskFactorReference",
+        "type": "object"
+      },
+      "RiskFactorType": {
+        "enum": [
+          "IR_ZERO",
+          "FX_SPOT",
+          "EQUITY_SPOT",
+          "EQUITY_INDEX",
+          "COMMODITY_CURVE",
+          "CREDIT_SPREAD",
+          "CRYPTO_SPOT",
+          "IMPLIED_VOL",
+          "SWAPTION_VOL"
+        ],
+        "title": "RiskFactorType",
+        "type": "string"
       },
       "RiskPackFiles": {
         "properties": {
@@ -11761,6 +11984,54 @@
         "summary": "Counterparty Reference"
       }
     },
+    "/reference/measures": {
+      "get": {
+        "operationId": "measure_reference_reference_measures_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasureReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Measure Reference"
+      }
+    },
     "/reference/products": {
       "get": {
         "operationId": "product_reference_reference_products_get",
@@ -11807,6 +12078,54 @@
           }
         },
         "summary": "Product Reference"
+      }
+    },
+    "/reference/risk-factors": {
+      "get": {
+        "operationId": "risk_factor_reference_reference_risk_factors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskFactorReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Risk Factor Reference"
       }
     },
     "/runs": {

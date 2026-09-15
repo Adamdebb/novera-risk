@@ -114,6 +114,12 @@ def test_http_endpoints(client):
     swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
     assert swaption["methodology"] == "PR-012" and swaption["venue"] == "OTC"
     assert {f["name"] for f in swaption["fields"]} >= {"expiry_date", "swap_tenor", "strike", "payer"}
+    areas = client.get("/reference/measures").json()["areas"]
+    assert [a["area"] for a in areas] == ["MARKET", "COUNTERPARTY", "REGULATORY", "FUND", "CONTROL"]
+    var = next(m for a in areas for m in a["measures"] if m["methodology"] == "MR-002")
+    assert var["screen"] == "VaR" and var["version"]
+    factors = client.get("/reference/risk-factors").json()["factors"]
+    assert factors and {f["factor_type"] for f in factors} >= {"IR_ZERO", "FX_SPOT", "IMPLIED_VOL"}
     ref = client.get("/reference/counterparties").json()
     assert ref["counterparties"] and ref["netting_sets"] and ref["csas"]
     assert {n["csa_id"] for n in ref["netting_sets"] if n["csa_id"]} <= {c["csa_id"] for c in ref["csas"]}
@@ -283,6 +289,8 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.MarketDataProxies, client.get(f"/runs/{rid}/market-data-proxies").json()),
         (s.CounterpartyReference, client.get("/reference/counterparties").json()),
         (s.ProductReference, client.get("/reference/products").json()),
+        (s.MeasureReference, client.get("/reference/measures").json()),
+        (s.RiskFactorReference, client.get("/reference/risk-factors").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))
@@ -411,3 +419,28 @@ def test_product_catalogue_matches_pricers_and_methodology(db_path):
     assert len(seen) >= 10, "the test portfolio should span most products"
     for pt, models in seen.items():
         assert models == {PRODUCT_CATALOGUE[ProductType(pt)].model}, (pt, models)
+
+
+def test_measure_catalogue_matches_methodology_records():
+    """Every catalogued measure points at a record whose title and version match, and every
+    market, counterparty, regulatory, fund and data-quality record is catalogued."""
+    import re
+    from pathlib import Path
+
+    from novera.risk.catalogue import MEASURE_CATALOGUE
+
+    docs = Path(__file__).resolve().parents[1] / "docs" / "methodology"
+    catalogued = {m.methodology: m for a in MEASURE_CATALOGUE for m in a.measures}
+    assert len(catalogued) == sum(len(a.measures) for a in MEASURE_CATALOGUE), "duplicate measure id"
+    for mid, spec in catalogued.items():
+        files = list(docs.glob(f"{mid}-*.md"))
+        assert files, f"{mid} has no methodology record"
+        text = files[0].read_text(encoding="utf-8")
+        head = re.match(r"# (.+?)\s+\(ID: (\S+)\)", text)
+        assert head and head.group(2) == mid, files[0].name
+        assert head.group(1).strip() == spec.title, (mid, head.group(1), spec.title)
+        version = re.search(r"\|\s*Version\s*\|\s*([0-9.]+)\s*\|", text)
+        assert version and version.group(1) == spec.version, (mid, spec.version)
+    ids = (re.match(r"^(MR|CR|REG|HF|DQ)-(\d{3})-", f.name) for f in docs.glob("*.md"))
+    expected = {f"{m.group(1)}-{m.group(2)}" for m in ids if m}
+    assert expected <= set(catalogued), f"records not catalogued: {sorted(expected - set(catalogued))}"
