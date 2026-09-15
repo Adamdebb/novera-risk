@@ -1370,7 +1370,7 @@ elif page == "Portfolio Lab":
         market_problems = st.multiselect("Market-data problems", list(mkt), format_func=mkt.get)
         c4, c5, c6 = st.columns(3)
         n_trades = c4.number_input("Background trades", 100, 3000, 600, 100)
-        years = c5.number_input("Years of history", 1.0, 3.0, 2.0, 0.5)
+        years = c5.number_input("Years of history", 1.0, 5.0, 2.0, 0.5)
         cpty = c6.checkbox("Run the counterparty engine (slower; needed for wrong-way problems)")
         go = st.form_submit_button("Run the lab")
     if go:

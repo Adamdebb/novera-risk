@@ -58,6 +58,7 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 - Options: 3 years daily ★ · 5 years · 1 year
 - Choice: **3 years daily** (783 business days)
 - Revisit: 5 years would allow a longer backtest window than the current 250 + 250 days.
+- Superseded 2026-09-15 by 20.1: five years, built as this three-year core plus a two-year extension.
 
 ---
 
@@ -567,6 +568,37 @@ round (non-interactive session); the choices below are defaults to confirm.
 
 ---
 
+## Round 20 — Five-year synthetic history (2026-09-15)
+
+Context: the owner asked to extend the synthetic history from three to five years (flagged
+in 2.4). A first attempt regenerated five years end to end: the equity and crypto drifts are
+tuned to land near the reference levels after three years, so the extra years moved every
+level and day 1 showed 22 breaches instead of the four planted ones. Built without a question
+round (non-interactive session); the choices below are defaults to confirm.
+
+### 20.1 How the extra years are generated
+- Options: keep the three-year core identical and join an earlier extension segment in
+  front ★ · regenerate five years end to end and recalibrate all 79 limits · end to end with
+  limits calibrated from a target utilisation (item 5 below)
+- Choice (default): **Core plus extension.** The last three years (`core_years`) are drawn
+  exactly as before, so the limits, the planted breaches, the two episodes, the VaR window
+  and the backtest are untouched. The two earlier years come from a second run of the same
+  model with its own seed (`seed + 101`) and no episodes, re-levelled so the junction is
+  continuous (shift for zero rates, scale for prices, spreads and vols), with the overlap
+  day dropped so the junction step is an ordinary daily return.
+- Where: `simulation/market_data.py` (`generate_market_data`, `_Sim.prepend`), SIM-001 v1.1.0,
+  `MarketSimConfig.years=5.0` and `core_years=3.0`, `novera simulate --years`.
+- Reversal: set `core_years` equal to `years` for one segment, and expect to recalibrate
+  every limit.
+
+### 20.2 What uses the extra history
+- Options: nothing yet, windows unchanged ★ · widen the backtest to use the extra years
+- Choice (default): **Windows unchanged.** VaR stays at 500 days and the backtest at
+  250 + 250; the extension makes a backtest of up to about 1,050 test days possible later.
+- Reversal: none; the data is stored.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -584,7 +616,9 @@ round (non-interactive session); the choices below are defaults to confirm.
    the model-risk story for option books.
 5. **Limit calibration by hand** (4.3): any generator change moves the utilisations;
    consider calibrating limits from a target utilisation instead.
-6. **Three-year history** (2.4): a five-year history would give a longer backtest.
+6. **Extension years are calm** (20.1): the two earlier years carry no stress episode and
+   the backtest still uses 250 + 250 days; a longer backtest and an older third episode are
+   the natural next steps.
 7. **Synthetic parameters** (9.3, 11.2, HF-002, HF-006): volume, spread, margin schedules,
    crowding scores and capital risk weights are assumptions; each record says so.
 8. **Swaption cube without a strike smile** (12.1): every strike prices off the at-the-money

@@ -60,7 +60,7 @@ def simulate(
     trades: int = typer.Option(1500, help="Number of trades before injected problems"),
     seed: int = typer.Option(42, help="Random seed for reproducibility"),
     no_inject: bool = typer.Option(False, help="Do not plant the demo problems"),
-    years: float = typer.Option(3.0, help="Years of daily market-data history"),
+    years: float = typer.Option(5.0, help="Years of daily market-data history"),
     no_market_data: bool = typer.Option(False, help="Skip market-data generation"),
     days: int = typer.Option(2, help="Business days to simulate; day 1 carries the planted problems"),
     template: str = typer.Option(
