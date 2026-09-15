@@ -432,6 +432,32 @@ now only the API (`/organisation`) and the run-scoped counterparty page showed t
   chosen; the Limits page already lists definitions with utilisation.
 - Where: `risk/catalogue.py`, `GET /reference/measures`, `GET /reference/risk-factors`, `ui/app.py`
 
+## Round 16 — Limit management module (2026-09-15)
+
+Context: the owner asked for a limit management page, starting with the limit hierarchy,
+to grow into the rest of the limit function later.
+
+### 16.1 Page shape
+- Options: one module page with tabs ★ · separate page, hierarchy only
+- Choice: **One module page with tabs** ("Limit management": Hierarchy now; Utilisation,
+  Breaches and Increases as placeholders that point at the existing pages until their content
+  moves in, after which those pages are retired).
+
+### 16.2 Limit rows
+- Options: definition plus current status ★ · definition only
+- Choice: **Definition plus current status.** Type, scope, amount, warning threshold, owner,
+  approver, approval status and effective dates from the definition; utilisation, status and
+  the amount in force (temporary increases marked) from the selected run.
+
+### 16.3 Layout
+- Options: hierarchy tree with a limit-type toggle ★ · hierarchy tree only
+- Choice: **Table, not a tree**, with the toggle. Rows ordered firm → business → desk →
+  counterparty with a hierarchy path column; "Group by limit type" reorders by type. Level,
+  run-status and text filters; selecting a row opens its full definition. The join of
+  definitions, organisation names and run figures happens in the API
+  (`GET /limits/hierarchy`), so the screen computes nothing.
+- Where: `api/service.py` `limit_hierarchy`, `ui/app.py` page "Limit management"
+
 ---
 
 ## Standing instructions given outside the question rounds

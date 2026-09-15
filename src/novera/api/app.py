@@ -273,6 +273,12 @@ def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()
 
 
+# --- limit management -----------------------------------------------------------------------
+@app.get("/limits/hierarchy", response_model=s.LimitHierarchy)
+def limit_hierarchy(run_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.limit_hierarchy(run_id)
+
+
 # --- breach workflow ------------------------------------------------------------------------
 @app.get("/breaches", response_model=list[s.BreachRecord])
 def breaches(open_only: bool = True, limit_id: str | None = None, svc: RiskService = Depends(service)):

@@ -5106,6 +5106,203 @@
         "title": "LimitChangeRow",
         "type": "object"
       },
+      "LimitHierarchy": {
+        "additionalProperties": true,
+        "properties": {
+          "business_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Date"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LimitHierarchyRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "LimitHierarchy",
+        "type": "object"
+      },
+      "LimitHierarchyRow": {
+        "additionalProperties": true,
+        "description": "A limit definition placed in the firm hierarchy, with the selected run's figures.",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "approval_status": {
+            "title": "Approval Status",
+            "type": "string"
+          },
+          "approver": {
+            "default": "",
+            "title": "Approver",
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "effective_amount": {
+            "description": "Amount in force on the run, after temporary increases",
+            "title": "Effective Amount",
+            "type": "number"
+          },
+          "effective_from": {
+            "title": "Effective From",
+            "type": "string"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "filters": {
+            "default": "",
+            "title": "Filters",
+            "type": "string"
+          },
+          "increase_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Increase Id"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "level_rank": {
+            "title": "Level Rank",
+            "type": "integer"
+          },
+          "limit_id": {
+            "title": "Limit Id",
+            "type": "string"
+          },
+          "limit_type": {
+            "title": "Limit Type",
+            "type": "string"
+          },
+          "node_name": {
+            "title": "Node Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "path": {
+            "description": "Hierarchy path, e.g. Global Macro Bank \u203a Macro \u203a USD Rates",
+            "title": "Path",
+            "type": "string"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          },
+          "status": {
+            "description": "OK, WARNING, BREACH, NO_DATA or NO_RUN",
+            "title": "Status",
+            "type": "string"
+          },
+          "trades_in_scope": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trades In Scope"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "utilisation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utilisation"
+          },
+          "warning_threshold": {
+            "title": "Warning Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit_id",
+          "limit_type",
+          "level",
+          "level_rank",
+          "entity_id",
+          "node_name",
+          "path",
+          "unit",
+          "amount",
+          "warning_threshold",
+          "owner",
+          "approval_status",
+          "effective_from",
+          "effective_amount",
+          "status"
+        ],
+        "title": "LimitHierarchyRow",
+        "type": "object"
+      },
       "LimitRow": {
         "additionalProperties": true,
         "properties": {
@@ -11816,6 +12013,72 @@
           }
         },
         "summary": "Lab Detail"
+      }
+    },
+    "/limits/hierarchy": {
+      "get": {
+        "operationId": "limit_hierarchy_limits_hierarchy_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitHierarchy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Limit Hierarchy"
       }
     },
     "/market-data/provenance": {
