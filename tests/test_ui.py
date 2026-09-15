@@ -128,7 +128,9 @@ def test_reference_page_shows_both_trees(app):
     assert not app.exception, [e.value for e in app.exception]
     text = " ".join(m.value for m in app.markdown)
     assert "legal entities" in text and "desks" in text and "books" in text
-    assert "USD_RATES" in text and "GMB_NY" in text
+    labels = [e.label for e in app.expander]
+    assert any("MACRO" in lab for lab in labels) and any("USD_RATES" in lab for lab in labels)
+    assert "GMB_NY" in text and "USD_MACRO_RV" in text
     next(r for r in app.radio if r.label == "Group by").set_value("Legal entity").run()
     assert not app.exception, [e.value for e in app.exception]
     assert any("GMB" in e.label for e in app.expander)
