@@ -67,6 +67,8 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
 - Operations: a scheduler that advances the simulated world and runs EOD with retries,
   alerts to Slack or email, an independent-challenger reconciliation that attributes the
   gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).
+  A "Market data" page shows, for every risk factor, whether its history is real or
+  synthetic and which free and paid sources could replace it.
 
 ## Morning dashboard
 

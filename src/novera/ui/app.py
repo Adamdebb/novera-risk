@@ -73,6 +73,7 @@ with st.sidebar:
         "Portfolio Lab",
         "Alerts & jobs",
         "Runs & audit",
+        "Market data",
         "Reference data",
     ]
     page = st.radio("View", pages)
@@ -1448,6 +1449,135 @@ elif page == "Runs & audit":
     st.subheader("Audit events")
     st.dataframe(df(client.audit(limit=200)), use_container_width=True, hide_index=True)
 
+elif page == "Market data":
+    header("Market data sources")
+    st.caption(
+        "Where every risk factor's history comes from today, and where real data could come "
+        "from. Status is decided from the store and the adapter maps, never by hand (MD-001)."
+    )
+
+    @st.cache_data(ttl=60, show_spinner=False)
+    def load_sources(firm: str) -> dict:
+        return client.market_data_sources()
+
+    src = load_sources(firm_name)
+    tot = src["summary"]
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Risk factors", f"{tot['factors']:,}")
+    c2.metric("Real, fetched", f"{tot['real']:,}")
+    c3.metric("Real source wired", f"{tot['available']:,}", "not fetched yet")
+    c4.metric("Synthetic", f"{tot['synthetic']:,}", f"{tot['synthetic'] / max(tot['factors'], 1):.0%}")
+    c5.metric("Families fully synthetic", f"{tot['families_synthetic']} / {tot['families']}")
+    if not tot["real"]:
+        st.info(
+            "Nothing has been fetched into this store. `uv run novera fetch` pulls the wired "
+            "sources (FRED needs a free key in `FRED_API_KEY`); fetched dates replace the "
+            "synthetic values and every other factor stays simulated."
+        )
+
+    status_names = {
+        "REAL": "🟢 Real, fetched",
+        "PARTIAL": "🟡 Partly real or fetchable",
+        "AVAILABLE": "🔵 Real source wired, not fetched",
+        "SYNTHETIC": "⚪ Synthetic",
+    }
+    ac_names = {
+        "RATES": "Rates",
+        "FX": "FX",
+        "EQUITY": "Equity",
+        "CREDIT": "Credit",
+        "COMMODITY": "Commodities",
+        "DIGITAL_ASSET": "Digital assets",
+    }
+    fams = df(src["families"])
+    f1, f2, f3 = st.columns([2, 2, 3])
+    pick_status = f1.multiselect(
+        "Status",
+        list(status_names),
+        default=list(status_names),
+        format_func=status_names.get,
+        key="md_status",
+    )
+    pick_ac = f2.multiselect(
+        "Asset class",
+        list(ac_names),
+        default=list(ac_names),
+        format_func=ac_names.get,
+        key="md_ac",
+    )
+    q = f3.text_input(
+        "Filter", placeholder="family, underlying or source, e.g. VOL:SPX or Bloomberg", key="md_q"
+    )
+    q = q.strip().lower()
+    mask = fams["status"].isin(pick_status) & fams["asset_class"].isin(pick_ac)
+    if q:
+        text_cols = ["family", "group", "underlying", "free_source", "paid_source", "notes"]
+        mask &= fams[text_cols].astype(str).apply(lambda r: q in " ".join(r).lower(), axis=1)
+    shown = fams[mask].copy()
+    order = {s_: i for i, s_ in enumerate(status_names)}
+    ac_order = {a: i for i, a in enumerate(ac_names)}
+    shown = shown.sort_values(
+        ["status", "asset_class", "family"],
+        key=lambda c: c.map(order if c.name == "status" else ac_order if c.name == "asset_class" else str),
+    )
+    if shown.empty:
+        st.info("Nothing matches the filter.")
+    else:
+        view = st.radio("Show", ["By family", "By source group"], horizontal=True, key="md_view")
+        if view == "By family":
+            table = pd.DataFrame(
+                {
+                    "family": shown["family"],
+                    "group": shown["group"],
+                    "status": shown["status"].map(status_names),
+                    "nodes": shown["factors"],
+                    "real": shown["real"],
+                    "wired": shown["available"],
+                    "synthetic": shown["synthetic"],
+                    "current source": shown["sources"].map(", ".join),
+                    "last real date": shown["last_date"].fillna("—"),
+                    "free source": shown["free_source"],
+                    "paid source": shown["paid_source"],
+                    "notes": shown["notes"],
+                }
+            )
+            st.dataframe(
+                table, hide_index=True, use_container_width=True, height=min(60 + 35 * len(table), 700)
+            )
+            st.caption(
+                f"{len(shown)} families · {int(shown['factors'].sum()):,} factors · "
+                f"'wired' means an adapter maps the node but `novera fetch` has not been run for it"
+            )
+            with st.expander("Factor detail for the families shown"):
+                rows = df(src["rows"])
+                rows = rows[rows["family"].isin(shown["family"])]
+                detail = pd.DataFrame(
+                    {
+                        "factor": rows["factor_id"],
+                        "status": rows["status"].map(status_names),
+                        "current source": rows["source"],
+                        "adapter": rows["adapter"].fillna("—"),
+                        "first real date": rows["first_date"].fillna("—"),
+                        "last real date": rows["last_date"].fillna("—"),
+                        "real rows": rows["row_count"].fillna(0).astype(int),
+                    }
+                )
+                st.dataframe(detail, hide_index=True, use_container_width=True, height=500)
+        else:
+            for group, g in shown.groupby("group", sort=True):
+                counts = " · ".join(f"{status_names[s_]} {n}" for s_, n in g["status"].value_counts().items())
+                n_fam = f"{len(g)} famil{'y' if len(g) == 1 else 'ies'}"
+                label = f"{group} · {n_fam} · {int(g['factors'].sum()):,} factors · {counts}"
+                with st.expander(label, expanded=bool(q)):
+                    first = g.iloc[0]
+                    st.markdown(
+                        f"- **Families:** {', '.join(sorted(g['family']))}\n"
+                        f"- **Current source:** {', '.join(sorted(set(sum(g['sources'].tolist(), []))))}\n"
+                        f"- **Free source:** {first['free_source']}\n"
+                        f"- **Paid source:** {first['paid_source']}"
+                        + (f"\n- **Note:** {first['notes']}" if first["notes"] else "")
+                    )
+
 elif page == "Reference data":
     header("Reference data")
     st.caption(
@@ -2116,4 +2246,3 @@ elif page == "Trade extract":
         )
     else:
         st.info("No trades match the filters.")
-

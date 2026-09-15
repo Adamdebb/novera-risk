@@ -271,9 +271,7 @@ def trade_extract_options(run_id: str, svc: RiskService = Depends(service)):
 
 
 @app.get("/runs/{run_id}/trade-extract", response_model=s.TradeExtract)
-def trade_extract(
-    run_id: str, f: Annotated[ExtractFilters, Query()], svc: RiskService = Depends(service)
-):
+def trade_extract(run_id: str, f: Annotated[ExtractFilters, Query()], svc: RiskService = Depends(service)):
     return svc.trade_extract(run_id, **f.model_dump(exclude_none=True))
 
 
@@ -327,6 +325,11 @@ def measure_reference(svc: RiskService = Depends(service)):
 @app.get("/reference/risk-factors", response_model=s.RiskFactorReference)
 def risk_factor_reference(svc: RiskService = Depends(service)):
     return svc.risk_factor_reference()
+
+
+@app.get("/reference/market-data-sources", response_model=s.MarketDataSources)
+def market_data_sources(svc: RiskService = Depends(service)):
+    return svc.market_data_sources()
 
 
 @app.get("/reference/counterparties", response_model=s.CounterpartyReference)

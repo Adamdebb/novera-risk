@@ -530,6 +530,43 @@ appropriateness needed its own record.
 
 ---
 
+## Round 19 — Market data sources page (2026-09-15)
+
+Context: the owner asked which market data is real and which is synthetic, learned that
+only USD Treasuries, spots and crypto have adapters, and asked for a page showing each
+market datum, its source, and a potential free and paid source. Built without a question
+round (non-interactive session); the choices below are defaults to confirm.
+
+### 19.1 Status source of truth
+- Options: derived from the store and the adapter maps ★ · a hand-maintained table
+- Choice (default): **Derived.** REAL comes from `market_provenance`, AVAILABLE from the
+  adapters' symbol maps, SYNTHETIC otherwise; a family whose nodes differ is PARTIAL.
+- Where: `market_data/catalogue.py`, MD-001 "Source catalogue"
+- Reversal: a hand table would drift from the adapters within a phase.
+
+### 19.2 Granularity
+- Options: one row per family with a factor drill-down ★ · one row per factor only
+- Choice (default): **Family rows, factor detail in an expander.** 1,398 factors collapse
+  to 121 families (curves, surfaces, cubes, single factors); the free and paid text is
+  written per group (29 groups: each rates currency, FX spot, energy curves, FX vol, ...).
+- Where: `ui/app.py` "Market data" page, `GET /reference/market-data-sources`
+- Reversal: none needed; the route already returns both levels.
+
+### 19.3 Location
+- Options: own "Market data" page in the sidebar ★ · a tab under Reference data
+- Choice (default): **Own page**, placed before Reference data, since it is the first
+  question a reviewer asks about a demo built on simulated history.
+- Reversal: move the block under the Reference data radio; no API change.
+
+### 19.4 Candidate sources
+- Options: free and paid text per group in code ★ · in the methodology record only
+- Choice (default): **In code**, so the page, the API and MD-001 read one catalogue. The
+  text names concrete sources (FRED series, ECB and Bank of England curves, Cboe vol
+  indices, Markit, Bloomberg pages) and says where no free daily history exists.
+- Reversal: none; the record would still point at the module.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -569,3 +606,7 @@ appropriateness needed its own record.
     trade but the EUR book is still priced without the ESTR/EURIBOR basis; dual-curve is the
     next pricing upgrade. The market standard named per product in MV-001 is sell-side
     practice; a fund marking listed products to screen would rate the ETF row differently.
+16. **Candidate market-data sources are untested text** (19.4): the free and paid sources
+    per group were written from knowledge of the vendors, not from a fetch; wire one before
+    quoting it to a client, and re-check FRED's ICE swap-rate series, which may be
+    discontinued.

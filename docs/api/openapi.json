@@ -5881,6 +5881,292 @@
         "title": "MarketDataProxies",
         "type": "object"
       },
+      "MarketDataSourceFamily": {
+        "additionalProperties": true,
+        "properties": {
+          "adapters": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Adapters",
+            "type": "array"
+          },
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "available": {
+            "title": "Available",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "factor_type": {
+            "title": "Factor Type",
+            "type": "string"
+          },
+          "factors": {
+            "title": "Factors",
+            "type": "integer"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "free_source": {
+            "title": "Free Source",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "last_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Date"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "paid_source": {
+            "title": "Paid Source",
+            "type": "string"
+          },
+          "real": {
+            "title": "Real",
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "status": {
+            "description": "REAL, AVAILABLE, SYNTHETIC, or PARTIAL when nodes differ",
+            "title": "Status",
+            "type": "string"
+          },
+          "status_label": {
+            "title": "Status Label",
+            "type": "string"
+          },
+          "synthetic": {
+            "title": "Synthetic",
+            "type": "integer"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "group",
+          "factor_type",
+          "asset_class",
+          "currency",
+          "underlying",
+          "factors",
+          "real",
+          "available",
+          "synthetic",
+          "status",
+          "status_label",
+          "sources",
+          "adapters",
+          "free_source",
+          "paid_source"
+        ],
+        "title": "MarketDataSourceFamily",
+        "type": "object"
+      },
+      "MarketDataSourceRow": {
+        "additionalProperties": true,
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fred, yahoo or coinbase when an adapter maps it",
+            "title": "Adapter"
+          },
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "factor_id": {
+            "title": "Factor Id",
+            "type": "string"
+          },
+          "factor_type": {
+            "title": "Factor Type",
+            "type": "string"
+          },
+          "family": {
+            "description": "Curve, surface, cube or single factor, e.g. IR:USD or VOL:SPX",
+            "title": "Family",
+            "type": "string"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "first_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Date"
+          },
+          "free_source": {
+            "title": "Free Source",
+            "type": "string"
+          },
+          "group": {
+            "description": "Catalogue group the free and paid sources are written for",
+            "title": "Group",
+            "type": "string"
+          },
+          "last_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Date"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "paid_source": {
+            "title": "Paid Source",
+            "type": "string"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "source": {
+            "description": "Adapter that fetched it, else the simulator record",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "REAL (fetched), AVAILABLE (adapter wired, not fetched) or SYNTHETIC",
+            "title": "Status",
+            "type": "string"
+          },
+          "status_label": {
+            "title": "Status Label",
+            "type": "string"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          }
+        },
+        "required": [
+          "factor_id",
+          "family",
+          "factor_type",
+          "asset_class",
+          "currency",
+          "underlying",
+          "group",
+          "status",
+          "status_label",
+          "source",
+          "free_source",
+          "paid_source"
+        ],
+        "title": "MarketDataSourceRow",
+        "type": "object"
+      },
+      "MarketDataSources": {
+        "additionalProperties": true,
+        "description": "Where every risk factor's history comes from today, and where real data could come\nfrom: one row per factor, one per family, and the totals. Record MD-001.",
+        "properties": {
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/MarketDataSourceFamily"
+            },
+            "title": "Families",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/MarketDataSourceRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Factor and family counts per status",
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "record",
+          "rows",
+          "families",
+          "summary"
+        ],
+        "title": "MarketDataSources",
+        "type": "object"
+      },
       "MeasureReference": {
         "additionalProperties": true,
         "description": "Every risk measure by area, with its governing record. Read from code, not from a run.",
@@ -12818,6 +13104,54 @@
           }
         },
         "summary": "Counterparty Reference"
+      }
+    },
+    "/reference/market-data-sources": {
+      "get": {
+        "operationId": "market_data_sources_reference_market_data_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketDataSources"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Market Data Sources"
       }
     },
     "/reference/measures": {
