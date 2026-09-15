@@ -441,6 +441,51 @@ class MarketDataSources(ApiModel):
     summary: dict[str, int] = Field(description="Factor and family counts per status")
 
 
+class StressShock(ApiModel):
+    target: str = Field(description="Factor id or family prefix the shock applies to")
+    family: str
+    size: float
+    unit: str = Field(description="bp, vol points or %")
+    tenors: str | None = Field(default=None, description="Curve nodes the rule is limited to")
+    text: str
+    kind: str = Field(description="RULE (hypothetical) or REALISED (observed move in the history)")
+
+
+class StressScenarioSpec(ApiModel):
+    scenario_id: str
+    name: str
+    category: str
+    kind: str = Field(description="HYPOTHETICAL or HISTORICAL, as the engine runs it")
+    description: str
+    in_daily_run: bool
+    status: str = Field(description="IN_RUN, NOT_COVERED, SYNTHETIC_WINDOW, PARTLY_REAL or REAL")
+    window_start: str | None = None
+    window_end: str | None = None
+    shocks: list[StressShock]
+    shock_count: int
+    real_share: float | None = None
+    note: str | None = None
+
+
+class StressCategory(ApiModel):
+    category: str
+    title: str
+    description: str
+    in_daily_run: bool
+    count: int
+    scenarios: list[StressScenarioSpec]
+
+
+class StressLibrary(ApiModel):
+    """The stress library by category with the shocks each scenario applies, and for
+    historical windows the realised moves of headline factors. Record MR-005."""
+
+    record: str
+    history: dict[str, Any]
+    categories: list[StressCategory]
+    summary: dict[str, int]
+
+
 class AuditEvent(ApiModel):
     event_id: str
     at: str

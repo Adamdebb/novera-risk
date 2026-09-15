@@ -46,6 +46,7 @@ class RiskClient(Protocol):
     def measure_reference(self) -> dict[str, Any]: ...
     def risk_factor_reference(self) -> dict[str, Any]: ...
     def market_data_sources(self) -> dict[str, Any]: ...
+    def stress_library(self) -> dict[str, Any]: ...
 
 
 WRITE_METHODS = {
@@ -207,6 +208,9 @@ class HttpClient:
 
     def market_data_sources(self):
         return self._get("/reference/market-data-sources")
+
+    def stress_library(self):
+        return self._get("/reference/stress-library")
 
     def _post(self, path: str, **body: Any) -> Any:
         return self._check(self.http.post(path, json=body))

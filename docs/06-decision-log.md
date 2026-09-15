@@ -636,6 +636,38 @@ without a question round (non-interactive session); the choices below are defaul
 
 ---
 
+## Round 22 — Stress library page (2026-09-15)
+
+Context: the owner asked whether real crises can be replayed (not yet: the history is
+synthetic and the named windows are not wired into the run) and then asked for a page
+listing the stress tests by category with the shocks used. Built without a question round
+(non-interactive session); the choices below are defaults to confirm.
+
+### 22.1 Where the catalogue lives
+- Options: engine module read by a reference route ★ · built in the dashboard from the
+  run's stress table · a hand-written table in MR-005
+- Choice (default): **Engine module** `risk/stress_catalogue.py` behind
+  `GET /reference/stress-library`, so the page, the API and MR-005 describe one library and
+  a rule change shows up everywhere. The page reads the route and renders (rule 2).
+- Reversal: none needed; the route is additive.
+
+### 22.2 Named crises as a third category
+- Options: list them with an honest status ★ · hide them until real data is fetched · run
+  them on the synthetic history because the dates are covered
+- Choice (default): **List with status.** The 2022 and 2023 windows now fall inside the
+  five-year synthetic history, so a naive replay would show synthetic moves over a real
+  calendar; the status SYNTHETIC_WINDOW says so, and REAL requires provenance for every
+  factor across the window. None of the seven runs in the daily EOD.
+- Reversal: wire `named_crisis_scenarios` into `run_eod` once a real fetch reaches REAL.
+
+### 22.3 Historical shocks shown
+- Options: fourteen headline factors ★ · every factor · family averages
+- Choice (default): **Headline factors**, one per market a reviewer asks about, computed
+  from the stored history by the same `episode_shocks` the engine uses.
+- Reversal: extend `HEADLINE_FACTORS`; the route loads only those series.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -682,3 +714,9 @@ without a question round (non-interactive session); the choices below are defaul
     per group were written from knowledge of the vendors, not from a fetch; wire one before
     quoting it to a client, and re-check FRED's ICE swap-rate series, which may be
     discontinued.
+17. **The stylised crash window is noisy in the demo seed** (22.3): on the Stress library
+    page the risk-off crash shows S&P 500 -9.7% first-to-last and USD 10Y +71bp, although the
+    episode is defined with -27% and -60bp. The 2.5x daily vol multiplier over 22 days lets
+    noise dominate the drift for seed 42 (the 20% drawdown test measures peak to trough over
+    the whole history). A cleaner episode needs a stronger drift or a lower multiplier, which
+    changes the core history and so every calibrated limit; deferred for that reason.

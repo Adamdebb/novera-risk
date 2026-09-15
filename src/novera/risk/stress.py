@@ -12,7 +12,7 @@ from novera.market_data.history import MarketHistory
 from novera.risk.revaluation import Portfolio
 from novera.risk.scenarios import episode_shocks, shocks_for_prefix
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"  # 1.1.0: catalogue and Stress library page (MR-005); scenario results unchanged
 
 
 @dataclass(frozen=True)
