@@ -501,6 +501,13 @@ class RiskService:
         """The stored risk-factor universe every measure keys off."""
         return {"factors": [f.model_dump(mode="json") for f in self.repo.load_risk_factors()]}
 
+    def market_data_sources(self) -> dict[str, Any]:
+        """Every stored risk factor with where its history comes from (real source or the
+        simulator) and the free and paid sources that could replace it (MD-001)."""
+        from novera.market_data.catalogue import market_data_sources
+
+        return market_data_sources(self.repo.load_risk_factors(), self.repo.load_market_provenance())
+
     def counterparty_reference(self) -> dict[str, Any]:
         """Static counterparty reference data: counterparties, netting sets and CSA terms,
         independent of any run."""

@@ -161,6 +161,18 @@ def test_http_endpoints(client):
     assert var["screen"] == "VaR" and var["version"]
     factors = client.get("/reference/risk-factors").json()["factors"]
     assert factors and {f["factor_type"] for f in factors} >= {"IR_ZERO", "FX_SPOT", "IMPLIED_VOL"}
+    srcs = client.get("/reference/market-data-sources").json()
+    assert srcs["record"] == "MD-001" and len(srcs["rows"]) == len(factors)
+    assert srcs["summary"]["real"] == 0 and srcs["summary"]["available"] > 0  # nothing fetched in tests
+    by_id = {r["factor_id"]: r for r in srcs["rows"]}
+    assert by_id["IR:USD:10Y"]["status"] == "AVAILABLE" and by_id["IR:USD:10Y"]["adapter"] == "fred"
+    assert by_id["IR:EUR:10Y"]["status"] == "SYNTHETIC" and by_id["IR:EUR:10Y"]["source"].startswith(
+        "simulator"
+    )
+    assert all(r["free_source"] and r["paid_source"] for r in srcs["rows"])
+    fam = {f["family"]: f for f in srcs["families"]}
+    assert fam["CMD:BRENT"]["status"] == "PARTIAL" and fam["CMD:BRENT"]["available"] == 1
+    assert fam["SWVOL:USD"]["status"] == "SYNTHETIC"
     ref = client.get("/reference/counterparties").json()
     assert ref["counterparties"] and ref["netting_sets"] and ref["csas"]
     assert {n["csa_id"] for n in ref["netting_sets"] if n["csa_id"]} <= {c["csa_id"] for c in ref["csas"]}
@@ -335,6 +347,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.TradeExtractOptions, client.get(f"/runs/{rid}/trade-extract/options").json()),
         (s.MeasureReference, client.get("/reference/measures").json()),
         (s.RiskFactorReference, client.get("/reference/risk-factors").json()),
+        (s.MarketDataSources, client.get("/reference/market-data-sources").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))

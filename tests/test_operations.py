@@ -15,6 +15,7 @@ from novera.market_data.adapters import (
     apply_real_history,
     fetch_all,
 )
+from novera.market_data.catalogue import adapter_coverage, market_data_sources
 from novera.market_data.crises import named_crisis_scenarios
 from novera.market_data.history import MarketHistory
 from novera.reconciliation import reconcile
@@ -229,6 +230,20 @@ def test_adapters_with_recorded_responses(db_path):
         assert set(prov["source"]) == {"fred", "yahoo", "coinbase"}
         rows = repo.load_market_history(["EQIDX:SPX"], start=date(2020, 3, 1), end=date(2020, 3, 5))
         assert len(rows) == 1
+        # The source catalogue tells the fetched factors from the wired and the synthetic ones.
+        cat = market_data_sources(repo.load_risk_factors(), repo.load_market_provenance())
+        by_id = {r["factor_id"]: r for r in cat["rows"]}
+        assert by_id["EQIDX:SPX"]["status"] == "REAL" and by_id["EQIDX:SPX"]["source"] == "yahoo"
+        assert by_id["EQIDX:SPX"]["last_date"] == "2020-03-02" and by_id["EQIDX:SPX"]["row_count"] == 1
+        assert by_id["CRYPTO:BTC"]["status"] == "REAL" and by_id["IR:USD:15Y"]["status"] == "REAL"
+        assert by_id["EQIDX:NDX"]["status"] == "AVAILABLE" and by_id["EQIDX:NDX"]["adapter"] == "yahoo"
+        assert (
+            by_id["VOL:SPX:1M:1.00"]["status"] == "SYNTHETIC" and by_id["VOL:SPX:1M:1.00"]["adapter"] is None
+        )
+        fam = {f["family"]: f for f in cat["families"]}
+        assert fam["CRYPTO:BTC"]["status"] == "REAL" and fam["IR:USD"]["status"] == "REAL"
+        assert fam["IR:USD"]["real"] == 12 and fam["EQIDX:NDX"]["status"] == "AVAILABLE"
+        assert cat["summary"]["real"] == 15 and cat["summary"]["families_real"] == 4
     failing = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500)))
     bad = fetch_all([CoinbaseAdapter(client=failing)], date(2020, 3, 1), date(2020, 3, 2))
     assert bad[0].errors and bad[0].frame.empty
@@ -325,3 +340,26 @@ def test_alert_serialises_round_trip():
     d = a.to_dict()
     assert json.loads(json.dumps(d))["kind"] == "RUN_SUMMARY" and a.dedupe_key.endswith("2026-09-11")
     assert Path(".").exists()
+
+
+def test_source_catalogue_covers_every_factor_and_follows_the_adapter_maps():
+    """Every stored factor gets a row with both candidate sources; the wired set is read from
+    the adapters, so adding a symbol to an adapter changes the page without touching it."""
+    from novera.market_data.adapters.yahoo import SYMBOLS
+    from novera.simulation.market_data import build_risk_factor_universe
+
+    factors = build_risk_factor_universe()
+    cat = market_data_sources(factors, None)
+    assert len(cat["rows"]) == len(factors) and cat["summary"]["real"] == 0
+    assert {r["status"] for r in cat["rows"]} == {"AVAILABLE", "SYNTHETIC"}
+    wired = {r["factor_id"] for r in cat["rows"] if r["status"] == "AVAILABLE"}
+    assert wired == set(adapter_coverage()) & {f.factor_id for f in factors}
+    assert set(SYMBOLS.values()) <= wired
+    assert all(r["free_source"] and r["paid_source"] and r["group"] for r in cat["rows"])
+    groups = {r["family"]: r["group"] for r in cat["rows"]}
+    assert groups["VOL:SPX"] == "Equity index vol surfaces" and groups["VOL:EURUSD"] == "FX vol surfaces"
+    assert (
+        groups["VOL:AAPL"] == "Single-stock vol surfaces" and groups["VOL:BRENT"] == "Commodity vol surfaces"
+    )
+    assert groups["CDS:CDX.NA.IG"] == "CDS indices" and groups["CDS:FORD"] == "Single-name CDS"
+    assert groups["CMD:GOLD"] == "Metal curves" and groups["IR:EUR"] == "EUR rates"

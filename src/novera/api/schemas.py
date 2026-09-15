@@ -389,6 +389,58 @@ class RiskFactorReference(ApiModel):
     factors: list[RiskFactor]
 
 
+class MarketDataSourceRow(ApiModel):
+    factor_id: str
+    family: str = Field(description="Curve, surface, cube or single factor, e.g. IR:USD or VOL:SPX")
+    factor_type: str
+    asset_class: str
+    currency: str
+    underlying: str
+    group: str = Field(description="Catalogue group the free and paid sources are written for")
+    status: str = Field(description="REAL (fetched), AVAILABLE (adapter wired, not fetched) or SYNTHETIC")
+    status_label: str
+    source: str = Field(description="Adapter that fetched it, else the simulator record")
+    adapter: str | None = Field(default=None, description="fred, yahoo or coinbase when an adapter maps it")
+    fetched_at: str | None = None
+    first_date: str | None = None
+    last_date: str | None = None
+    row_count: int | None = None
+    free_source: str
+    paid_source: str
+    notes: str = ""
+
+
+class MarketDataSourceFamily(ApiModel):
+    family: str
+    group: str
+    factor_type: str
+    asset_class: str
+    currency: str
+    underlying: str
+    factors: int
+    real: int
+    available: int
+    synthetic: int
+    status: str = Field(description="REAL, AVAILABLE, SYNTHETIC, or PARTIAL when nodes differ")
+    status_label: str
+    sources: list[str]
+    adapters: list[str]
+    last_date: str | None = None
+    free_source: str
+    paid_source: str
+    notes: str = ""
+
+
+class MarketDataSources(ApiModel):
+    """Where every risk factor's history comes from today, and where real data could come
+    from: one row per factor, one per family, and the totals. Record MD-001."""
+
+    record: str
+    rows: list[MarketDataSourceRow]
+    families: list[MarketDataSourceFamily]
+    summary: dict[str, int] = Field(description="Factor and family counts per status")
+
+
 class AuditEvent(ApiModel):
     event_id: str
     at: str
