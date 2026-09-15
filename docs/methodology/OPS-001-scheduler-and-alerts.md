@@ -37,6 +37,14 @@ Every alert is stored. Delivery goes through configured channels only (Slack inc
 webhook, SMTP email), for WARNING and above. Duplicates (same kind, subject and business
 date) are suppressed. Delivery failures are recorded per channel, never raised.
 
+## Testing a channel
+`novera alert test` sends one WARNING alert of kind CHANNEL_TEST through every configured
+channel and prints the delivery outcome per channel; the alert is stored with its
+deliveries like any other, so the test leaves a record. The email channel uses STARTTLS
+and a login only when `NOVERA_SMTP_USER` and `NOVERA_SMTP_PASSWORD` are set; without them
+it speaks plain SMTP, which is what a local relay or a development sink expects.
+
 ## Validation tests
 `tests/test_operations.py`: alert derivation, partial delivery, suppression, failed-run
-alert, weekend skipping, advance-and-run, skip when already run, injected clock loop.
+alert, weekend skipping, advance-and-run, skip when already run, injected clock loop,
+email channel message and TLS/login behaviour, `alert test` without a channel.

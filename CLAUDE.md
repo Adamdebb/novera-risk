@@ -79,6 +79,7 @@ uv run novera run eod         # governed EOD run, stores results and audit event
 uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
 uv run novera ask "..."       # Risk Copilot; scripted provider unless ANTHROPIC_API_KEY is set
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
+uv run novera alert test      # send one test alert through the configured channels (Slack, SMTP); `alert list` shows stored alerts
 uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
 uv run novera fetch           # real market data into the history (network, optional FRED key)
 uv run novera run counterparty # exposure engine on a stored run (EOD does this too unless NOVERA_EXPOSURE_ENABLED=false)
