@@ -311,6 +311,13 @@ class ProductSpec(ApiModel):
     model_version: str
     methodology: str = Field(description="Methodology record id, e.g. PR-012")
     methodology_title: str
+    market_standard: str = Field(description="The model a desk or validation team would expect")
+    simplifications: str = Field(description="Where the model used departs from the standard")
+    appropriateness: str = Field(
+        description="market_standard, acceptable_simplification or known_weakness (MV-001)"
+    )
+    appropriateness_label: str
+    validation: str = Field(description="External benchmark or analytic identity, and the test")
     instrument_class: str | None = None
     fields: list[ProductField] = Field(default_factory=list)
 
@@ -325,6 +332,32 @@ class ProductReference(ApiModel):
     """What the platform can price, grouped by asset class. Read from code, not from a run."""
 
     asset_classes: list[AssetClassProducts]
+
+
+class ModelInventoryRow(ApiModel):
+    product_type: str
+    name: str
+    asset_class: str
+    asset_class_name: str
+    model: str = Field(description="Model name written on every valuation row")
+    model_label: str
+    model_version: str
+    methodology: str = Field(description="Pricing methodology record id, e.g. PR-002")
+    market_standard: str
+    simplifications: str
+    appropriateness: str = Field(description="market_standard, acceptable_simplification or known_weakness")
+    appropriateness_label: str
+    validation: str
+
+
+class ModelInventory(ApiModel):
+    """One row per product: model used, market standard, simplifications, appropriateness
+    rating and how the implementation is validated. Record MV-001; read from code."""
+
+    record: str = Field(description="Methodology record id of the inventory, MV-001")
+    version: str
+    rows: list[ModelInventoryRow]
+    summary: dict[str, int] = Field(description="Product count per appropriateness rating")
 
 
 class MeasureSpec(ApiModel):

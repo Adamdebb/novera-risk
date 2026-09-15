@@ -486,6 +486,48 @@ Context: the owner asked for a page to download all or a filtered set of trades 
   available to any client and is named after the run for reproducibility.
 - Where: `api/service.py` `trade_extract*`, `ui/app.py` page "Trade extract"
 
+## Round 18 — Model inventory (2026-09-15)
+
+Context: the owner asked how to be sure each product is priced with the right model, as
+distinct from a correctly implemented one. The QuantLib benchmarks prove implementation;
+appropriateness needed its own record.
+
+### 18.1 Location
+- Options: in code, surfaced everywhere ★ · markdown document only · both, hand-written doc
+- Choice: **In code, surfaced everywhere.** `ProductSpec` in `pricing/catalogue.py` gained
+  `market_standard`, `simplifications`, `appropriateness` and `validation`. They flow to
+  `GET /reference/products`, a new `GET /reference/model-inventory`, the Reference data
+  page (a "Model inventory" view and the product cards) and the MV-001 record, whose table
+  `scripts/export_model_inventory.py` renders and a test keeps current.
+- Where: `pricing/catalogue.py`, `api/schemas.py`, `api/app.py`, `ui/app.py`,
+  `docs/methodology/MV-001-model-inventory.md`
+- Reversal: a hand-written document would drift from the code; the fields are cheap to keep.
+
+### 18.2 Rating
+- Options: three-level rating ★ · text only
+- Choice: **Three-level rating**: market standard (5 products), acceptable simplification
+  (11), known weakness (3: EUR swaps on a single curve, swaptions without a strike smile,
+  barrier options on one flat vol). The record states the rating is a methodology judgment
+  by the owner, not a validation opinion, and that AI may quote but not change it.
+- Reversal: drop the column; the text columns stand on their own.
+
+### 18.3 Gap test
+- Options: swap only ★ · swap and CDS · no tests now
+- Choice: **Swap only.** `test_eur_swap_single_curve_gap_is_measured` prices a 7-year EUR
+  receiver swap in QuantLib with ESTR discounting and EURIBOR-6M projection (15bp basis) and
+  bounds the single-curve error between 0.05% and 1% of PV; measured 0.53%. USD and GBP
+  swaps reference SOFR and SONIA, so the single curve is exact for them. The CDS flat-hazard
+  gap stays at its stated 5% tolerance.
+- Where: `tests/test_pricing.py`, PR-002 limitations, MV-001 "Measured gaps"
+- Reversal: none needed; a dual-curve EUR pricer would turn the gap test into a benchmark.
+
+### 18.4 Record
+- Options: new record MV-001 ★ · section in 04-governance.md
+- Choice: **New record MV-001** "Model inventory and appropriateness", owner Market Risk
+  Methodology, with the rating scale, the rendered table, the measured gaps and its own
+  validation tests. `04-governance.md` gained a short "Model inventory" section pointing at it.
+- Reversal: fold the record into governance; the code and tests would not change.
+
 ---
 
 ## Standing instructions given outside the question rounds
@@ -523,3 +565,7 @@ Context: the owner asked for a page to download all or a filtered set of trades 
     data model settles and the drift test has been quiet for a phase.
 14. **Grouped rows carry the dimension as an extra field** (14.1): a `{by, rows}` shape would
     type cleanly; deferred because it breaks every screen that reads those endpoints.
+15. **EUR swaps on a single curve** (18.3): the gap is measured at 0.53% of PV on the test
+    trade but the EUR book is still priced without the ESTR/EURIBOR basis; dual-curve is the
+    next pricing upgrade. The market standard named per product in MV-001 is sell-side
+    practice; a fund marking listed products to screen would rate the ETF row differently.

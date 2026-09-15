@@ -248,6 +248,102 @@ def test_par_swap_has_zero_pv_and_matches_quantlib(market: MarketSnapshot) -> No
     assert PRICERS[swap.product_type](payer, market, AS_OF).pv_local == pytest.approx(-res.pv_local)
 
 
+def test_eur_swap_single_curve_gap_is_measured(market: MarketSnapshot) -> None:
+    """MV-001 measured gap. EUR swaps reference EURIBOR-6M but the engine discounts and
+    projects on one curve. Price the same trade in QuantLib the market way (ESTR discounting
+    with EURIBOR projection, basis 15bp) and record the error: it must be small relative
+    to the PV, and non-zero so the gap is measured rather than assumed. A USD SOFR swap
+    has no such gap because the index is the discount rate."""
+    swap = InterestRateSwap(
+        instrument_id="S_EUR",
+        currency="EUR",
+        effective_date=date(2024, 9, 11),
+        maturity_date=date(2031, 9, 11),
+        fixed_rate=0.03,  # par is ~2.1%: a seasoned receiver, well in the money
+        float_index="EUR-EURIBOR-6M",
+        fixed_frequency=Frequency.ANNUAL,
+        fixed_day_count=DayCount.THIRTY_360,
+        float_frequency=Frequency.SEMI_ANNUAL,
+        float_day_count=DayCount.ACT_360,
+    )
+    trade = Trade(
+        trade_id="T_EUR",
+        instrument=swap,
+        direction=BuySell.BUY,
+        swap_side=SwapSide.RECEIVE_FIXED,
+        quantity=100e6,
+        trade_price=0.03,
+        trade_date=date(2024, 9, 11),
+        book_id="B",
+        trader_id="T",
+        **_bilateral(),
+    )
+    single = PRICERS[swap.product_type](trade, market, AS_OF).pv_local
+
+    basis = 0.0015  # ESTR below EURIBOR-6M
+    projection = _ql_curve(EUR_ZEROS, AS_OF)
+    discounting = _ql_curve(EUR_ZEROS - basis, AS_OF)
+    index = ql.IborIndex(
+        "SIM6M",
+        ql.Period(6, ql.Months),
+        0,
+        ql.EURCurrency(),
+        ql.NullCalendar(),
+        ql.Unadjusted,
+        False,
+        ql.Actual360(),
+        projection,
+    )
+    fixed = ql.Schedule(
+        ql.Date(11, 9, 2024),
+        ql.Date(11, 9, 2031),
+        ql.Period(ql.Annual),
+        ql.NullCalendar(),
+        ql.Unadjusted,
+        ql.Unadjusted,
+        ql.DateGeneration.Backward,
+        False,
+    )
+    flt = ql.Schedule(
+        ql.Date(11, 9, 2024),
+        ql.Date(11, 9, 2031),
+        ql.Period(ql.Semiannual),
+        ql.NullCalendar(),
+        ql.Unadjusted,
+        ql.Unadjusted,
+        ql.DateGeneration.Backward,
+        False,
+    )
+    qs = ql.VanillaSwap(
+        ql.VanillaSwap.Receiver,
+        100e6,
+        fixed,
+        0.03,
+        ql.Thirty360(ql.Thirty360.USA),
+        flt,
+        index,
+        0.0,
+        ql.Actual360(),
+    )
+    # QuantLib needs the fixing of the period already running (Mar to Sep 2026). The engine
+    # has no stored fixings and accrues the remaining half period at the curve forward
+    # (PR-002), a cashflow of N (1/DF(T) - 1); hand QuantLib the fixing that pays the same.
+    period_start, period_end = ql.Date(11, 3, 2026), ql.Date(11, 9, 2026)
+    tau_full = ql.Actual360().yearFraction(period_start, period_end)
+    index.addFixing(period_start, (1.0 / projection.discount(period_end) - 1.0) / tau_full)
+    qs.setPricingEngine(ql.DiscountingSwapEngine(projection))
+    single_ql = qs.NPV()
+    qs.setPricingEngine(ql.DiscountingSwapEngine(discounting))
+    dual_ql = qs.NPV()
+
+    assert single == pytest.approx(single_ql, abs=2_000), "engine must match QuantLib single-curve"
+    gap = dual_ql - single
+    rel = gap / abs(single)
+    print(f"single-curve PV {single:,.0f}; dual-curve PV {dual_ql:,.0f}; gap {gap:,.0f} ({rel:.2%})")
+    assert abs(single) > 4e6, "the test trade should be well in the money for the gap to show"
+    assert 0.0005 < abs(rel) < 0.01, f"measured single-curve gap {rel:.2%} of PV outside its bound"
+
+
 # --- FX ------------------------------------------------------------------------------
 
 

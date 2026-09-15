@@ -160,6 +160,13 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       amendment and approval
 - [x] Trade extract page and endpoint: filtered CSV of the run's trades with valuation and
       instrument terms (round 17)
+- [x] Model inventory (MV-001): market-standard model, simplifications, three-level
+      appropriateness rating and validation per product, held in the pricer catalogue,
+      served at `GET /reference/model-inventory`, shown on the Reference data page and
+      rendered into the record; the EUR single-curve swap gap measured against QuantLib
+      dual-curve (round 18)
+- [ ] Dual-curve EUR swaps (ESTR discounting, EURIBOR projection): the first known weakness
+      in MV-001 to close; then a strike smile on the swaption cube
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
       for a full phase; morning overview and limits first
 
