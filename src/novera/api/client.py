@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from novera.api.agents_api import AGENT_METHODS
+from novera.api.errors import ApiError, NotFoundError, error_from_problem, translate
 from novera.api.service import RiskService, RiskWriteService
 from novera.storage.duckdb_repository import DuckDBRepository
 
@@ -58,6 +59,26 @@ class LocalClient:
         self.db_path = db_path
 
     def _call(self, name: str, *a: Any, **kw: Any) -> Any:
+        try:
+            return self._dispatch(name, *a, **kw)
+        except ApiError:
+            raise
+        except Exception as e:  # noqa: BLE001 - engine errors become the API's errors
+            err = translate(e)
+            if err is None:
+                raise
+            raise err from e
+
+    def risk_pack_content(self, run_id: str | None = None, fmt: str = "html") -> bytes:
+        from pathlib import Path
+
+        files = self._call("risk_pack", run_id, pdf=fmt == "pdf")
+        path = files.get(fmt)
+        if not path or not Path(path).exists():
+            raise NotFoundError(f"no {fmt} risk pack for run {run_id}", code="RISK_PACK_NOT_BUILT")
+        return Path(path).read_bytes()
+
+    def _dispatch(self, name: str, *a: Any, **kw: Any) -> Any:
         if name in COPILOT_METHODS:
             from novera.ai import Copilot, make_provider
 
@@ -97,10 +118,19 @@ class HttpClient:
         self.base = base_url.rstrip("/")
         self.http = httpx.Client(base_url=self.base, timeout=30)
 
-    def _get(self, path: str, **params: Any) -> Any:
-        r = self.http.get(path, params={k: v for k, v in params.items() if v is not None})
-        r.raise_for_status()
+    @staticmethod
+    def _check(r: Any) -> Any:
+        """Raise the typed error carried by a problem document; return the JSON body otherwise."""
+        if r.status_code >= 400:
+            try:
+                payload = r.json()
+            except ValueError:
+                payload = {}
+            raise error_from_problem(payload if isinstance(payload, dict) else {}, r.status_code, r.text)
         return r.json()
+
+    def _get(self, path: str, **params: Any) -> Any:
+        return self._check(self.http.get(path, params={k: v for k, v in params.items() if v is not None}))
 
     def _rid(self, run_id: str | None) -> str:
         return run_id or "latest"
@@ -148,13 +178,7 @@ class HttpClient:
         return self._get("/organisation")
 
     def _post(self, path: str, **body: Any) -> Any:
-        r = self.http.post(path, json=body)
-        if r.status_code == 409:
-            from novera.limits import WorkflowError
-
-            raise WorkflowError(r.json().get("detail", r.text))
-        r.raise_for_status()
-        return r.json()
+        return self._check(self.http.post(path, json=body))
 
     def breaches(self, open_only=True, limit_id=None):
         return self._get("/breaches", open_only=open_only, limit_id=limit_id)
@@ -203,18 +227,18 @@ class HttpClient:
         return self._get("/compare", run_a=run_a, run_b=run_b, by=by)
 
     def ask(self, question, run_id=None, session_id=None):
-        r = self.http.post(
-            "/copilot/ask",
-            json={"question": question, "run_id": run_id, "session_id": session_id},
-            timeout=300,
+        return self._check(
+            self.http.post(
+                "/copilot/ask",
+                json={"question": question, "run_id": run_id, "session_id": session_id},
+                timeout=300,
+            )
         )
-        r.raise_for_status()
-        return r.json()
 
     def commentary(self, run_id=None):
-        r = self.http.post("/copilot/commentary", params={"run_id": run_id} if run_id else None, timeout=300)
-        r.raise_for_status()
-        return r.json()
+        return self._check(
+            self.http.post("/copilot/commentary", params={"run_id": run_id} if run_id else None, timeout=300)
+        )
 
     def copilot_history(self, limit=50):
         return self._get("/copilot/history", limit=limit)
@@ -224,9 +248,7 @@ class HttpClient:
 
     # --- agents and lab (long-running: generous timeouts) ---
     def _post_long(self, path, **body):
-        r = self.http.post(path, json=body, timeout=1800)
-        r.raise_for_status()
-        return r.json()
+        return self._check(self.http.post(path, json=body, timeout=1800))
 
     def investigate_breach(self, breach_id, attach=True):
         return self._post_long("/agents/investigate-breach", breach_id=breach_id, attach=attach)
@@ -270,11 +292,12 @@ class HttpClient:
         return self._get("/jobs", limit=limit)
 
     def reconciliation(self, run_id=None):
-        r = self.http.get(f"/runs/{self._rid(run_id)}/reconciliation")
-        if r.status_code == 404:
-            return None
-        r.raise_for_status()
-        return r.json()
+        try:
+            return self._get(f"/runs/{self._rid(run_id)}/reconciliation")
+        except NotFoundError as e:
+            if e.code == "RECONCILIATION_NOT_FOUND":
+                return None
+            raise
 
     def provenance(self):
         return self._get("/market-data/provenance")
@@ -301,11 +324,11 @@ class HttpClient:
         return self._get(f"/runs/{self._rid(run_id)}/counterparties/{counterparty_id}")
 
     def csa_what_if(self, netting_set_id, run_id=None, **terms):
-        r = self.http.post(
-            f"/runs/{self._rid(run_id)}/csa-what-if", json={"netting_set_id": netting_set_id, **terms}
+        return self._check(
+            self.http.post(
+                f"/runs/{self._rid(run_id)}/csa-what-if", json={"netting_set_id": netting_set_id, **terms}
+            )
         )
-        r.raise_for_status()
-        return r.json()
 
     def fund(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/fund")
@@ -313,10 +336,16 @@ class HttpClient:
     def capital(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/capital")
 
+    def risk_pack_content(self, run_id=None, fmt="html"):
+        r = self.http.get(f"/runs/{self._rid(run_id)}/risk-pack/{fmt}", timeout=120)
+        if r.status_code >= 400:
+            self._check(r)
+        return r.content
+
     def risk_pack(self, run_id=None, out_dir=None, pdf=True):
-        r = self.http.post(f"/runs/{self._rid(run_id)}/risk-pack", params={"pdf": pdf}, timeout=300)
-        r.raise_for_status()
-        return r.json()
+        return self._check(
+            self.http.post(f"/runs/{self._rid(run_id)}/risk-pack", params={"pdf": pdf}, timeout=300)
+        )
 
 
 def make_client(settings, db_path=None) -> RiskClient:

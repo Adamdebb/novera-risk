@@ -804,14 +804,14 @@ elif page == "P&L explain":
 
 elif page == "Breaches":
     header("Breach workflow")
-    from novera.limits import WorkflowError
+    from novera.api.errors import ApiError
 
     def act(fn, *args, **kwargs):
         try:
             fn(*args, **kwargs)
             st.cache_data.clear()
             st.rerun()
-        except WorkflowError as e:
+        except ApiError as e:
             st.error(str(e))
 
     show_closed = st.checkbox("Show closed breaches", value=False)
@@ -1113,7 +1113,8 @@ elif page == "Risk pack":
             else:
                 col.caption(f"{key.upper()} not generated")
         if files.get("html"):
-            st.components.v1.html(Path(files["html"]).read_text(encoding="utf-8"), height=900, scrolling=True)
+            html = client.risk_pack_content(run_id, "html").decode("utf-8")
+            st.components.v1.html(html, height=900, scrolling=True)
 
 elif page == "Compare runs":
     header("Compare two runs")

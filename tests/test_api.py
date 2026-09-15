@@ -209,3 +209,172 @@ def test_counterparty_endpoints(client):
 def test_capital_endpoint(client):
     r = client.get("/runs/latest/capital")
     assert r.status_code == 200
+
+
+# --- contract: response models, problem details, one error hierarchy -----------------------------
+def _walk_extras(obj, path="", out=None):
+    """Collect (path, extra keys) for every model in the tree that carries undeclared fields."""
+    from pydantic import BaseModel
+
+    from novera.api.schemas import Row
+
+    out = [] if out is None else out
+    if isinstance(obj, BaseModel):
+        extra = obj.model_extra or {}
+        if extra and not isinstance(obj, Row):
+            out.append((path or type(obj).__name__, sorted(extra)))
+        for name in type(obj).model_fields:
+            _walk_extras(getattr(obj, name), f"{path}.{name}" if path else name, out)
+    elif isinstance(obj, list):
+        for i, x in enumerate(obj[:3]):
+            _walk_extras(x, f"{path}[{i}]", out)
+    elif isinstance(obj, dict):
+        for k, x in obj.items():
+            _walk_extras(x, f"{path}.{k}", out)
+    return out
+
+
+def test_every_route_declares_its_response(client):
+    from fastapi.routing import APIRoute
+
+    import novera.api.app as app_module
+
+    file_routes = {"/runs/{run_id}/risk-pack/{fmt}"}
+    missing = [
+        r.path
+        for r in app_module.app.routes
+        if isinstance(r, APIRoute) and r.path not in file_routes and r.response_model is None
+    ]
+    assert not missing, f"routes without a response model: {missing}"
+    schema = client.get("/openapi.json").json()
+    for path, ops in schema["paths"].items():
+        for method, op in ops.items():
+            if path in file_routes:
+                continue
+            ok = op["responses"]["200"]["content"]["application/json"]["schema"]
+            assert ok, f"{method.upper()} {path} has no 200 schema"
+
+
+def test_schemas_declare_every_field_the_engine_returns(client):
+    """Extra fields pass through so nothing is lost, but the schema must not fall behind."""
+    from novera.api import schemas as s
+
+    rid = client.get("/runs").json()[0]["run_id"]
+    pairs = [
+        (s.RunSummary, client.get(f"/runs/{rid}/summary").json()),
+        (s.PnLExplain, client.get(f"/runs/{rid}/pnl", params={"by": "desk_id"}).json()),
+        (s.RunComparison, client.get("/compare", params={"run_a": rid, "run_b": rid}).json()),
+        (s.ConcentrationReport, client.get(f"/runs/{rid}/concentration").json()),
+        (s.LiquidityReport, client.get(f"/runs/{rid}/liquidity").json()),
+        (s.BacktestReport, client.get(f"/runs/{rid}/backtest").json()),
+        (s.CounterpartyExposures, client.get(f"/runs/{rid}/counterparties").json()),
+        (s.CapitalReport, client.get(f"/runs/{rid}/capital").json()),
+        (s.LookthroughReport, client.get(f"/runs/{rid}/lookthrough").json()),
+        (s.MarketDataProxies, client.get(f"/runs/{rid}/market-data-proxies").json()),
+    ]
+    for model, payload in pairs:
+        pairs_extra = _walk_extras(model.model_validate(payload))
+        assert not pairs_extra, f"{model.__name__} is behind the engine: {pairs_extra}"
+    for model, payload in [
+        (s.LimitRow, client.get(f"/runs/{rid}/limits").json()),
+        (s.DQFinding, client.get(f"/runs/{rid}/dq").json()),
+        (s.BreachRecord, client.get("/breaches", params={"open_only": False}).json()),
+        (s.IncreaseRecord, client.get("/increases").json()),
+        (s.AuditEvent, client.get("/audit").json()),
+        (s.VarSummaryRow, client.get(f"/runs/{rid}/var/summary").json()),
+        (s.VarScenarioRow, client.get(f"/runs/{rid}/var/scenarios").json()),
+        (s.AlertRecord, client.get("/alerts").json()),
+        (s.JobRecord, client.get("/jobs").json()),
+    ]:
+        for row in payload[:5]:
+            extra = _walk_extras(model.model_validate(row))
+            assert not extra, f"{model.__name__} is behind the engine: {extra}"
+    cid = client.get(f"/runs/{rid}/counterparties").json()["summary"][0]["counterparty_id"]
+    extra = _walk_extras(
+        s.CounterpartyDetail.model_validate(client.get(f"/runs/{rid}/counterparties/{cid}").json())
+    )
+    assert not extra, extra
+    tid = client.get(f"/runs/{rid}/positions", params={"by": "trade_id"}).json()[0]["trade_id"]
+    extra = _walk_extras(s.TradeDetail.model_validate(client.get(f"/runs/{rid}/trades/{tid}").json()))
+    assert not extra, extra
+
+
+def test_errors_are_problem_details(client):
+    r = client.get("/runs/nope/summary")
+    assert r.status_code == 404 and r.headers["content-type"].startswith("application/problem+json")
+    p = r.json()
+    assert p["code"] == "RUN_NOT_FOUND" and p["status"] == 404 and p["title"] == "Not found"
+    assert p["instance"] == "/runs/nope/summary" and p["context"] == {"run_id": "nope"}
+    rid = client.get("/runs").json()[0]["run_id"]
+    assert client.get(f"/runs/{rid}/trades/NOPE").json()["code"] == "NOT_FOUND"
+    assert client.get("/runs/latest/reconciliation").json()["code"] == "RECONCILIATION_NOT_FOUND"
+    assert client.get("/lab/nope").json()["code"] == "LAB_NOT_FOUND"
+    r = client.get("/runs/latest/risk-pack/docx")
+    assert r.status_code == 422 and r.json()["code"] == "VALIDATION_FAILED"
+    bid = client.get("/breaches", params={"open_only": False}).json()[0]["breach_id"]
+    r = client.post(f"/breaches/{bid}/acknowledge", json={"comment": "no actor"})
+    assert r.status_code == 422 and r.json()["code"] == "VALIDATION_FAILED" and "actor" in r.json()["detail"]
+    r = client.post(f"/breaches/{bid}/acknowledge", json={"actor": "Head of Desk"})
+    assert r.status_code == 409 and r.json()["code"] == "WORKFLOW_CONFLICT"
+    assert r.json()["title"] == "Workflow rule violated" and r.json()["detail"]
+    r = client.post(f"/breaches/{bid}/close", json={"actor": "Head of Desk"})
+    assert r.status_code == 422 and r.json()["context"] == {"field": "reason"}
+
+
+def test_both_clients_raise_the_same_errors(db_path, client):
+    from novera.api.client import HttpClient
+    from novera.api.errors import ConflictError, NotFoundError, RunNotFoundError
+
+    local = LocalClient(db_path)
+    http = HttpClient("http://testserver")
+    http.http = client  # the TestClient is an httpx client
+    for c in (local, http):
+        with pytest.raises(RunNotFoundError) as e:
+            c.summary(run_id="nope")
+        assert e.value.code == "RUN_NOT_FOUND" and e.value.run_id == "nope" and e.value.status == 404
+        with pytest.raises(NotFoundError):
+            c.trade("NOPE")
+        assert c.reconciliation() is None
+        bid = c.breaches(open_only=False)[0]["breach_id"]
+        with pytest.raises(ConflictError) as e:
+            c.acknowledge(bid, "Head of Desk")
+        assert e.value.code == "WORKFLOW_CONFLICT" and e.value.status == 409
+    with pytest.raises(NotFoundError) as e:
+        http.risk_pack_content(fmt="pdf")
+    assert e.value.code == "RISK_PACK_NOT_BUILT"
+    # the typed response always carries every declared key (null when the run lacks it)
+    strip = lambda d: {k: v for k, v in d.items() if v is not None}  # noqa: E731
+    assert strip(local.summary()["summary"]) == strip(http.summary()["summary"])
+    assert local.limits() == http.limits()
+
+
+def test_risk_pack_download(client):
+    r = client.post("/runs/latest/risk-pack", params={"pdf": False})
+    assert r.status_code == 200
+    r = client.get("/runs/latest/risk-pack/html")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html") and b"<" in r.content
+    assert client.get("/runs/latest/risk-pack/pdf").json()["code"] == "RISK_PACK_NOT_BUILT"
+
+
+def test_openapi_schema_is_committed():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    r = subprocess.run(
+        [sys.executable, str(root / "scripts" / "export_openapi.py"), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_cors_setting_parses_a_comma_list():
+    from novera.config import Settings
+
+    assert Settings(cors_origins=" http://localhost:5173, http://127.0.0.1:5173 ").cors_origin_list == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    assert Settings(cors_origins="").cors_origin_list == []

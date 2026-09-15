@@ -60,6 +60,7 @@ scenario set ---------+                         |             |
 | Boundary | Rule | Why |
 |----------|------|-----|
 | UI to engine | UI calls API only | Streamlit to React swap stays cheap |
+| API to client | Response model on every route, problem+json errors with codes, schema committed at `docs/api/openapi.json` | A client generates types from git and branches on error codes, not messages |
 | Engine to storage | All SQL in `storage/` | DuckDB to Postgres swap stays cheap |
 | AI to engine | Tools call services; AI never computes | Auditability, model risk |
 | Pricing to risk | Pricers return PV and cashflows only | Sensitivities are computed uniformly by bump-and-reprice or analytic hooks |
