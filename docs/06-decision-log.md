@@ -393,6 +393,8 @@ now only the API (`/organisation`) and the run-scoped counterparty page showed t
 - Choice: **Expanders with indented bullets.** One expander per business (or legal entity, or
   counterparty group); desks, books, traders, netting sets and CSA terms as nested bullets.
   A filter box narrows every tree to matching ids and names and opens the matches.
+- Revised the same day: desks are expanders of their own inside the business or legal-entity
+  expander (Streamlit 1.63 allows nesting), so a desk's books open only on click.
 - Where: `ui/app.py` page "Reference data"
 
 ### 15.2 Run figures on the page

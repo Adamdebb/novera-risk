@@ -1513,44 +1513,52 @@ elif page == "Reference data":
         )
         group = st.radio("Group by", ["Business", "Legal entity"], horizontal=True, key="ref_group")
 
-        def desk_lines(d: dict, books: list[dict]) -> list[str]:
+        def render_desk(d: dict, books: list[dict], expanded: bool) -> None:
             head = f" · head {d['head']}" if d.get("head") else ""
-            lines = [f"- **{d['name']}** `{d['desk_id']}` · {_words(d['asset_class'])} · {d['region']}{head}"]
-            for bk in books:
-                strat = f" · {bk['strategy']}" if bk.get("strategy") else ""
-                ent = entities.get(bk["legal_entity_id"], {}).get("name", "")
-                lines.append(
-                    f"    - `{bk['book_id']}` {bk['name']}{strat} · entity `{bk['legal_entity_id']}` {ent}"
-                )
-            if traders_by_desk.get(d["desk_id"]):
-                lines.append(f"    - traders: {', '.join(traders_by_desk[d['desk_id']])}")
-            return lines
+            label = (
+                f"{d['name']} · {d['desk_id']} · {_words(d['asset_class'])} · {d['region']}{head} · "
+                f"{len(books)} book{'s' if len(books) != 1 else ''}"
+            )
+            with st.expander(label, expanded=expanded):
+                lines = []
+                for bk in books:
+                    strat = f" · {bk['strategy']}" if bk.get("strategy") else ""
+                    ent = entities.get(bk["legal_entity_id"], {}).get("name", "")
+                    lines.append(
+                        f"- `{bk['book_id']}` {bk['name']}{strat} · entity `{bk['legal_entity_id']}` {ent}"
+                    )
+                if traders_by_desk.get(d["desk_id"]):
+                    lines.append(f"- traders: {', '.join(traders_by_desk[d['desk_id']])}")
+                st.markdown("\n".join(lines) if lines else "_no books_")
 
-        def branch(parent_hit: bool, desks: list[dict], books_of: dict[str, list[dict]]) -> list[str]:
-            """Desks and books to show under one parent: everything if the parent matches,
-            otherwise only matching desks (with all their books) and matching books."""
-            out: list[str] = []
+        def desks_to_show(
+            parent_hit: bool, desks: list[dict], books_of: dict[str, list[dict]]
+        ) -> list[tuple[dict, list[dict]]]:
+            """Desks to show under one parent: all of them if the parent matches the filter,
+            otherwise matching desks with all their books, and desks with matching books."""
+            out: list[tuple[dict, list[dict]]] = []
             for d in desks:
                 books = books_of.get(d["desk_id"], [])
                 if parent_hit or _hit(d["desk_id"], d["name"]):
-                    out += desk_lines(d, books)
+                    out.append((d, books))
                 else:
                     match = [bk for bk in books if _hit(bk["book_id"], bk["name"], bk.get("strategy"))]
                     if match:
-                        out += desk_lines(d, match)
+                        out.append((d, match))
             return out
 
         if group == "Business":
             for b in org["businesses"]:
                 desks = [d for d in org["desks"] if d["business_id"] == b["business_id"]]
-                lines = branch(_hit(b["business_id"], b["name"]), desks, books_by_desk)
-                if not lines:
+                items = desks_to_show(_hit(b["business_id"], b["name"]), desks, books_by_desk)
+                if not items:
                     continue
                 shown += 1
                 n_books = sum(len(books_by_desk.get(d["desk_id"], [])) for d in desks)
                 label = f"{b['name']} · {b['business_id']} · {len(desks)} desks · {n_books} books"
                 with st.expander(label, expanded=bool(q)):
-                    st.markdown("\n".join(lines))
+                    for d, books in items:
+                        render_desk(d, books, expanded=bool(q))
         else:
             for e in org["legal_entities"]:
                 eid = e["legal_entity_id"]
@@ -1560,8 +1568,8 @@ elif page == "Reference data":
                         entity_books.setdefault(bk["desk_id"], []).append(bk)
                 desks = [d for d in org["desks"] if d["desk_id"] in entity_books]
                 n_books = sum(len(v) for v in entity_books.values())
-                lines = branch(_hit(eid, e["name"], e["jurisdiction"]), desks, entity_books)
-                if not lines:
+                items = desks_to_show(_hit(eid, e["name"], e["jurisdiction"]), desks, entity_books)
+                if not items:
                     continue
                 shown += 1
                 with st.expander(
@@ -1569,7 +1577,8 @@ elif page == "Reference data":
                     f"{len(desks)} desks · {n_books} books",
                     expanded=bool(q),
                 ):
-                    st.markdown("\n".join(lines))
+                    for d, books in items:
+                        render_desk(d, books, expanded=bool(q))
     else:
         ref = client.counterparty_reference()
         csas = {c["csa_id"]: c for c in ref["csas"]}
