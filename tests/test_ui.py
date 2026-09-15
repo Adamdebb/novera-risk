@@ -91,6 +91,7 @@ def app(db_path, monkeypatch):
         "Overview",
         "Copilot",
         "Drill-down",
+        "Trade extract",
         "VaR",
         "Stress",
         "Limit management",
@@ -179,3 +180,18 @@ def test_limit_management_hierarchy_table(app):
     util = next(d.value for d in app.dataframe if "trades in scope" in d.value.columns)
     assert util["status"].str.contains("BREACH|WARNING").all()
     assert list(util["utilisation"]) == sorted(util["utilisation"], reverse=True)
+
+
+def test_trade_extract_filters_and_preview(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Trade extract").run()
+    assert not app.exception, [e.value for e in app.exception]
+    metrics = {m.label: m.value for m in app.metric}
+    total = int(metrics["Trades selected"].replace(",", ""))
+    assert total > 50 and app.dataframe[0].value.shape[0] <= 200
+    desk = next(m for m in app.multiselect if m.label == "Desk")
+    desk.set_value([desk.options[0]]).run()
+    assert not app.exception, [e.value for e in app.exception]
+    metrics = {m.label: m.value for m in app.metric}
+    picked = int(metrics["Trades selected"].replace(",", ""))
+    assert 0 < picked < total
+    assert (app.dataframe[0].value["desk_id"] == desk.options[0]).all()

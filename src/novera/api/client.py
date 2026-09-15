@@ -37,6 +37,9 @@ class RiskClient(Protocol):
     def audit(self, subject: str | None = None, limit: int = 100) -> list[dict[str, Any]]: ...
     def organisation(self, firm_id: str | None = None) -> dict[str, Any]: ...
     def limit_hierarchy(self, run_id: str | None = None) -> dict[str, Any]: ...
+    def trade_extract_options(self, run_id: str | None = None) -> dict[str, Any]: ...
+    def trade_extract(self, run_id: str | None = None, **filters: Any) -> dict[str, Any]: ...
+    def trade_extract_csv(self, run_id: str | None = None, **filters: Any) -> bytes: ...
     def counterparty_reference(self) -> dict[str, Any]: ...
     def product_reference(self) -> dict[str, Any]: ...
     def measure_reference(self) -> dict[str, Any]: ...
@@ -73,6 +76,9 @@ class LocalClient:
             if err is None:
                 raise
             raise err from e
+
+    def trade_extract_csv(self, run_id: str | None = None, **filters: Any) -> bytes:
+        return self._call("trade_extract_csv", run_id, **filters).encode("utf-8")
 
     def risk_pack_content(self, run_id: str | None = None, fmt: str = "html") -> bytes:
         from pathlib import Path
@@ -196,6 +202,19 @@ class HttpClient:
 
     def _post(self, path: str, **body: Any) -> Any:
         return self._check(self.http.post(path, json=body))
+
+    def trade_extract_options(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/trade-extract/options")
+
+    def trade_extract(self, run_id=None, **filters):
+        return self._get(f"/runs/{self._rid(run_id)}/trade-extract", **filters)
+
+    def trade_extract_csv(self, run_id=None, **filters):
+        params = {k: v for k, v in filters.items() if v not in (None, "", [], ())}
+        r = self.http.get(f"/runs/{self._rid(run_id)}/trade-extract.csv", params=params, timeout=120)
+        if r.status_code >= 400:
+            self._check(r)
+        return r.content
 
     def limit_hierarchy(self, run_id=None):
         return self._get("/limits/hierarchy", run_id=run_id)

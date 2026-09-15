@@ -158,6 +158,8 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       tab (the exceptions view that replaced the Limits page) (round 16)
 - [ ] Limit management: move breaches and increases into the module; then limit creation,
       amendment and approval
+- [x] Trade extract page and endpoint: filtered CSV of the run's trades with valuation and
+      instrument terms (round 17)
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
       for a full phase; morning overview and limits first
 

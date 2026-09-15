@@ -109,6 +109,22 @@ def test_http_endpoints(client):
     assert client.get("/organisation").json()["firm"]["firm_id"] == "GMB"
     assert client.get("/organisation", params={"firm_id": "GMB"}).json()["desks"]
     assert client.get("/organisation", params={"firm_id": "NOPE"}).status_code == 404
+    opts = client.get(f"/runs/{rid}/trade-extract/options").json()
+    assert opts["dims"]["desk_id"] and opts["dates"]["trade_date"]["min"]
+    ext = client.get(f"/runs/{rid}/trade-extract").json()
+    assert ext["count"] == len(ext["rows"]) > 50 and ext["columns"][0] == "trade_id"
+    assert {"pv", "model", "trade_date", "maturity_date", "instrument_id"} <= set(ext["columns"])
+    desk = opts["dims"]["desk_id"][0]
+    sub = client.get(f"/runs/{rid}/trade-extract", params={"desk_id": [desk]}).json()
+    assert 0 < sub["count"] < ext["count"] and all(r["desk_id"] == desk for r in sub["rows"])
+    two = [r["trade_id"] for r in ext["rows"][:2]]
+    assert client.get(f"/runs/{rid}/trade-extract", params={"trade_ids": two}).json()["count"] == 2
+    assert client.get(f"/runs/{rid}/trade-extract", params={"min_abs_pv": 1e15}).json()["count"] == 0
+    r = client.get(f"/runs/{rid}/trade-extract.csv", params={"desk_id": [desk]})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert r.headers["content-disposition"].endswith(f'{rid}.csv"')
+    lines = r.text.strip().splitlines()
+    assert lines[0].startswith("trade_id,") and len(lines) == sub["count"] + 1
     lh = client.get("/limits/hierarchy").json()
     assert lh["run_id"] == rid and lh["rows"]
     ranks = [r["level_rank"] for r in lh["rows"]]
@@ -262,7 +278,7 @@ def test_every_route_declares_its_response(client):
 
     import novera.api.app as app_module
 
-    file_routes = {"/runs/{run_id}/risk-pack/{fmt}"}
+    file_routes = {"/runs/{run_id}/risk-pack/{fmt}", "/runs/{run_id}/trade-extract.csv"}
     missing = [
         r.path
         for r in app_module.app.routes
@@ -297,6 +313,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.CounterpartyReference, client.get("/reference/counterparties").json()),
         (s.ProductReference, client.get("/reference/products").json()),
         (s.LimitHierarchy, client.get("/limits/hierarchy").json()),
+        (s.TradeExtractOptions, client.get(f"/runs/{rid}/trade-extract/options").json()),
         (s.MeasureReference, client.get("/reference/measures").json()),
         (s.RiskFactorReference, client.get("/reference/risk-factors").json()),
     ]
@@ -367,6 +384,8 @@ def test_both_clients_raise_the_same_errors(db_path, client):
         with pytest.raises(ConflictError) as e:
             c.acknowledge(bid, "Head of Desk")
         assert e.value.code == "WORKFLOW_CONFLICT" and e.value.status == 409
+        csv = c.trade_extract_csv(asset_class=["RATES"])
+        assert isinstance(csv, bytes) and csv.startswith(b"trade_id,")
     with pytest.raises(NotFoundError) as e:
         http.risk_pack_content(fmt="pdf")
     assert e.value.code == "RISK_PACK_NOT_BUILT"
