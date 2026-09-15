@@ -10,13 +10,17 @@ Model (methodology record SIM-001):
   and a static smile shape is applied around it. Skew steepens during the crash episode.
 - Two stylised episodes are overlaid as drifts and vol multipliers over fixed windows:
   a risk-off crash and a rates shock. They are explicitly synthetic.
+- A horizon longer than ``core_years`` is built as two segments: the core (the last
+  ``core_years``, drawn exactly as a run of that length would draw them, so the planted
+  episodes and the limit calibration are unchanged) and an earlier extension with its own
+  seed and no episodes, re-levelled so it joins the core continuously.
 - The business-date snapshot plants two data-quality problems: a stale EUR/USD vol surface
   and a missing USD 7Y node.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 import numpy as np
@@ -253,10 +257,18 @@ DEFAULT_EPISODES: tuple[Episode, ...] = (
 )
 
 
+EXTENSION_SEED_OFFSET = 101
+"""Added to ``seed`` for the extension segment so its draws never overlap the core's."""
+
+
 @dataclass(frozen=True)
 class MarketSimConfig:
     end_date: date
-    years: float = 3.0
+    years: float = 5.0
+    """Total business-day history, in years of 261 days."""
+    core_years: float = 3.0
+    """Length of the core segment ending on ``end_date``. Any history beyond it is an
+    extension segment drawn separately and joined in front (see ``generate_market_data``)."""
     seed: int = 42
     episodes: tuple[Episode, ...] = DEFAULT_EPISODES
     plant_data_quality_problems: bool = True
@@ -558,7 +570,8 @@ class _Sim:
                     node = np.clip(atm * term[ei] * shape, 0.03, 2.5)
                     self.series[vol_id(underlying, expiry, float(m))] = node
 
-    def run(self) -> GeneratedMarketData:
+    def simulate(self) -> None:
+        """Draw every family for this segment, in an order fixed so earlier phases reproduce."""
         self.rates()
         self.fx()
         self.equities()
@@ -569,6 +582,25 @@ class _Sim:
         # Phase 6 families are drawn last so the Phase 1 history is reproduced exactly.
         self.credit(single_names=True)
         self.swaption_vols()
+
+    def prepend(self, earlier: _Sim) -> None:
+        """Join an earlier segment in front of this one. ``earlier`` overlaps this segment by one
+        day: it is re-levelled so that day equals this segment's first day (a shift for zero
+        rates, which can be negative; a scale for prices, spreads and vols), then the overlap
+        is dropped so the junction step is the earlier segment's own last daily move."""
+        if earlier.dates[-1] != self.dates[0]:
+            raise ValueError("the earlier segment must end on this segment's first day")
+        shifted = {
+            f.factor_id for f in build_risk_factor_universe() if f.factor_type == RiskFactorType.IR_ZERO
+        }
+        for fid, core in self.series.items():
+            p = earlier.series[fid]
+            adj = p + (core[0] - p[-1]) if fid in shifted else p * (core[0] / p[-1])
+            self.series[fid] = np.concatenate([adj[:-1], core])
+        self.dates = earlier.dates[:-1] + self.dates
+        self.n = len(self.dates)
+
+    def assemble(self) -> GeneratedMarketData:
         universe = build_risk_factor_universe()
         ids = [f.factor_id for f in universe]
         missing = [i for i in ids if i not in self.series]
@@ -616,5 +648,25 @@ class _Sim:
 
 
 def generate_market_data(cfg: MarketSimConfig) -> GeneratedMarketData:
-    """Generate the risk-factor universe, daily history and business-date snapshots."""
-    return _Sim(cfg).run()
+    """Generate the risk-factor universe, daily history and business-date snapshots.
+
+    The core segment (the last ``core_years``) is drawn exactly as a run of that length would
+    draw it, so lengthening the history never moves the levels, the episodes or the VaR window
+    that the limits were calibrated on. Any horizon beyond the core is an extension segment
+    drawn with ``seed + EXTENSION_SEED_OFFSET`` and no episodes, joined in front."""
+    core = _Sim(cfg if cfg.years <= cfg.core_years else replace(cfg, years=cfg.core_years))
+    core.simulate()
+    extra = int(round(cfg.years * 261)) - core.n
+    if extra > 0:
+        earlier = _Sim(
+            replace(
+                cfg,
+                years=(extra + 1) / 261,
+                seed=cfg.seed + EXTENSION_SEED_OFFSET,
+                episodes=(),
+                end_date=core.dates[0],
+            )
+        )
+        earlier.simulate()
+        core.prepend(earlier)
+    return core.assemble()

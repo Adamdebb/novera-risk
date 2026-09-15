@@ -1,6 +1,7 @@
 from datetime import date
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from novera.market_data import MarketSnapshot, ZeroCurve
@@ -91,7 +92,7 @@ def test_planted_data_quality_problems(md) -> None:
 
 
 def test_crisis_episodes_visible() -> None:
-    md3 = generate_market_data(MarketSimConfig(end_date=BD, years=3.0, seed=42))
+    md3 = generate_market_data(MarketSimConfig(end_date=BD, seed=42))  # the shipped five-year default
     spx = md3.history[md3.history["factor_id"] == "EQIDX:SPX"].set_index("as_of")["value"]
     peak_to_trough = (spx / spx.cummax() - 1).min()
     assert peak_to_trough < -0.20, f"crash episode should show a >20% drawdown, got {peak_to_trough:.1%}"
@@ -123,3 +124,22 @@ def test_snapshot_with_values(md) -> None:
     bumped = s.with_values({"EQIDX:SPX": s.index_level("SPX") * 0.8})
     assert bumped.index_level("SPX") == pytest.approx(s.index_level("SPX") * 0.8)
     assert bumped.snapshot_id != s.snapshot_id and isinstance(bumped, MarketSnapshot)
+
+
+def test_extension_keeps_the_core_history_identical_and_joins_continuously() -> None:
+    core = generate_market_data(MarketSimConfig(end_date=BD, years=1.0, seed=3, core_years=1.0))
+    longer = generate_market_data(MarketSimConfig(end_date=BD, years=1.5, seed=3, core_years=1.0))
+    a = core.history.pivot(index="as_of", columns="factor_id", values="value")
+    b = longer.history.pivot(index="as_of", columns="factor_id", values="value")
+    assert len(a) == 261 and len(b) == round(1.5 * 261)
+    pd.testing.assert_frame_equal(b.loc[a.index], a)  # the last year is bit-identical
+    assert b.index.max() == a.index.max() and b.index.min() < a.index.min()
+    assert not b.isna().any().any()
+    rates = [c for c in b.columns if c.startswith("IR:")]
+    assert (b.drop(columns=rates) > 0).all().all()
+    # The junction is an ordinary daily move: no factor jumps more than it ever moves elsewhere.
+    change = b.diff().abs()
+    junction = change.loc[a.index[0]]
+    assert (junction <= change.drop(index=a.index[0]).max()).all()
+    # Snapshots and planted problems still come from the core.
+    assert longer.snapshot.as_of == BD and longer.planted == core.planted

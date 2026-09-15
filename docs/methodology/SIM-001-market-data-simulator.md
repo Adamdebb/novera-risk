@@ -2,11 +2,11 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.0.0 |
+| Version          | 1.1.0 |
 | Owner            | Market Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.simulation.market_data` |
-| Last validated   | 2026-09-14 |
+| Last validated   | 2026-09-15 |
 
 ## Definition
 Produces a reproducible daily history for every factor in the risk-factor universe, plus
@@ -28,7 +28,16 @@ not a forecast and makes no claim about real markets.
 
 ## Inputs
 Base levels and vols in `simulation/reference_levels.py`; episodes in
-`DEFAULT_EPISODES`; seed and horizon in `MarketSimConfig`.
+`DEFAULT_EPISODES`; seed and horizon in `MarketSimConfig`. The default horizon is five years
+(1,305 business days) built as two segments. The core segment is the last `core_years`
+(three years, 783 days) and is drawn exactly as a three-year run would draw it, so the
+episodes (crash starting 480 days before the end, rates shock 220 days before), the levels
+on the business date and the VaR window are unchanged by the longer horizon, and the limit
+calibration holds. The extension segment covers the earlier years: a second run of the same
+model with seed `seed + 101` and no episodes, re-levelled so its last day equals the core's
+first day (a shift for zero rates, a scale for everything else), with that overlap day then
+dropped so the junction step is an ordinary daily move. Every risk-factor series is
+re-levelled independently, which preserves the FX triangle and the curve shapes.
 
 ## Assumptions
 Constant correlations except through the vol multiplier; lognormal returns; no jumps
@@ -46,9 +55,11 @@ through the global factor. Not suitable for any regulatory purpose.
 
 ## Validation tests
 `tests/test_market_data.py`: reproducibility, positivity, skew sign, triangular FX
-consistency, backwardation shape, drawdown and rates-shock visibility, storage round trip.
+consistency, backwardation shape, drawdown and rates-shock visibility, storage round trip,
+and that the extension leaves the core bit-identical and joins without a jump.
 
 ## Change history
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-14 | Initial model | Novera |
+| 1.1.0 | 2026-09-15 | Default horizon three to five years as core plus extension segments (decision 20.1) | Novera |

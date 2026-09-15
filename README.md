@@ -33,7 +33,7 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
   across nineteen products (bonds, swaps, repos, rates futures, swaptions, FX spot,
   forwards and options, cash equity, index futures, equity options, barrier and digital
   options, ETFs and mutual funds, commodity futures and options, CDS indices and single
-  names, crypto), ~1,400 risk factors with three years of correlated daily history.
+  names, crypto), ~1,400 risk factors with five years of correlated daily history.
 - Pricing written in Python and benchmarked against QuantLib, with a model inventory that
   rates each product's model against the market standard and measures the gap where one
   exists; sensitivities, historical VaR with a challenger, stress library, 79 seeded limits,
