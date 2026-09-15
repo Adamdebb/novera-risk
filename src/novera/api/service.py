@@ -4,11 +4,11 @@ no screen ever computes a number itself (ADR 0004). Every answer carries the run
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
 
+from novera.api.errors import RunNotFoundError as _RunNotFoundError
 from novera.domain.breaches import CloseReason
 from novera.limits import workflow as wf
 from novera.storage.duckdb_repository import DuckDBRepository
@@ -28,9 +28,7 @@ def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
     return out.astype(object).where(pd.notna(out), None).to_dict(orient="records")
 
 
-@dataclass
-class RunNotFoundError(Exception):
-    run_id: str
+RunNotFoundError = _RunNotFoundError  # re-exported: the service raises the API's own error
 
 
 class RiskService:

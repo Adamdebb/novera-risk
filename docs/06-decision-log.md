@@ -341,6 +341,47 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
   plant and their size, run into a sandbox database, see what the platform detected.
 - Where: `lab/`, LAB-001
 
+## Round 14 — API contract before any front-end change (2026-09-15)
+
+Context: the owner asked whether to move the dashboard to React. Decision: stay on Streamlit
+while the data model keeps changing (every Streamlit screen is disposable; a React screen is
+not), but make the API the contract a React app would build on, so the port is a
+screen-by-screen job whenever a screen's response has stopped moving. A React rebuild of the
+overview screen over the real stored runs was produced as a private artifact to judge the gain.
+
+### 14.1 Response typing depth
+- Options: typed rows, shapes unchanged ★ · strict everywhere, grouped endpoints restructured
+  to `{by, rows}` · errors plus morning-dashboard endpoints only
+- Choice: **Typed rows, shapes unchanged.** Every route declares a Pydantic response model.
+  Grouped rows (VaR by desk, stress by asset class, SA-CCR add-ons, SIMM by class) declare
+  their fixed fields and carry the dimension as an extra field, since its name depends on
+  `by`. Models allow extra fields so a new engine column reaches a screen before the schema
+  catches up; `tests/test_api.py` fails when the schema is behind the engine.
+- Where: `api/schemas.py`, `api/app.py`
+- Reversal: restructuring grouped rows is a breaking change to the client and screens.
+
+### 14.2 Error format
+- Options: RFC 9457 Problem Details with a machine `code` ★ · keep FastAPI `{detail}` and add
+  a `code`
+- Choice: **Problem Details** (`application/problem+json`: type, title, status, detail,
+  instance, `code`, `context`). Codes: `RUN_NOT_FOUND`, `NOT_FOUND`, `LAB_NOT_FOUND`,
+  `RECONCILIATION_NOT_FOUND`, `RISK_PACK_NOT_BUILT`, `WORKFLOW_CONFLICT`, `VALIDATION_FAILED`.
+  Both clients raise the same `ApiError` classes, so the dashboard no longer imports an engine
+  exception (`WorkflowError`) to tell a workflow rule from a missing run.
+- Where: `api/errors.py`, `api/client.py`, `ui/app.py`
+
+### 14.3 Path prefix
+- Options: keep unversioned ★ · move to `/api/v1` now
+- Choice: **Keep unversioned** while there is one consumer; version when a second appears.
+
+### 14.4 OpenAPI file
+- Options: commit `docs/api/openapi.json` with a staleness test ★ · serve on demand only
+- Choice: **Commit it.** `scripts/export_openapi.py` writes it; the test suite fails when it is
+  stale, so a client project can generate types from git without running the server.
+- Also in this round: `NOVERA_CORS_ORIGINS` (comma-separated; empty means no browser origin
+  is allowed) and `GET /runs/{run_id}/risk-pack/{html|pdf|xlsx}` so a browser client can read
+  a pack that `POST /runs/{run_id}/risk-pack` built; the dashboard uses it through the client.
+
 ---
 
 ## Standing instructions given outside the question rounds
@@ -373,3 +414,8 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
     flat; the Claude path for `draft` is untested until a key is added (same as item 2).
 12. **Lab uses production limit calibration** (13.3): small sandbox books under-utilise
     limits, so detection scores depend on the background size chosen.
+13. **Schemas pass extra fields through** (14.1): the API never drops an engine column, but
+    a client generating types sees `additionalProperties`; tighten to `extra="forbid"` once the
+    data model settles and the drift test has been quiet for a phase.
+14. **Grouped rows carry the dimension as an extra field** (14.1): a `{by, rows}` shape would
+    type cleanly; deferred because it breaks every screen that reads those endpoints.

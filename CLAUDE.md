@@ -25,7 +25,10 @@ in scope now, and `docs/06-decision-log.md` before proposing to change a past ch
    written. Re-running with the same inputs must reproduce the same numbers.
 6. **Tests before "done".** Pricers are benchmarked against QuantLib or closed-form
    results. Risk aggregation is tested for additivity. Fixtures live in `tests/fixtures`.
-7. **The brand name is a config value.** Use `settings.platform_name` in user-facing text.
+7. **The API is a contract.** Every route declares a response model in `api/schemas.py`;
+   every error is a problem document with a stable `code` from `api/errors.py`; both clients
+   raise the same `ApiError` classes. Refresh `docs/api/openapi.json` after changing a route.
+8. **The brand name is a config value.** Use `settings.platform_name` in user-facing text.
    The package name `novera` may be renamed with `scripts/rename_platform.py`; do not
    hard-code the brand in strings that the script would miss (see that script's rules).
 
@@ -46,7 +49,7 @@ src/novera/
   workflows/           End-of-day pipeline, run registry, audit events
   storage/             Repository layer. All SQL lives here.
   reporting/           Risk packs, tables, exports
-  api/                 FastAPI app and typed schemas
+  api/                 FastAPI app, response schemas (schemas.py), one error contract (errors.py), clients
   ai/                  Risk Copilot: tools, prompts, provider adapter, agents/ (AI-002/003). Never computes.
   lab/                 Portfolio Lab: sandbox organisations with chosen planted problems (LAB-001)
   ui/                  Streamlit thin client
@@ -89,6 +92,7 @@ uv run novera mcp [--fund] [--allow-agents]   # MCP server over stdio (AI-004); 
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload
+uv run python scripts/export_openapi.py   # refresh docs/api/openapi.json after any API change (a test checks it)
 ```
 If `uv run` fails with `ModuleNotFoundError: No module named 'novera'`, Python skipped the
 editable `.pth` file because macOS flagged it hidden after a uv rebuild. Fix:

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     proxies_enabled: bool = True
     """Proxy missing and stale market data before pricing (MD-002); the raw snapshot is kept."""
 
+    # API. Browser origins allowed to call it (a React dev server, for example); empty = none.
+    cors_origins: str = Field(default="", description="Comma-separated origins, e.g. http://localhost:5173")
+
     # Scheduler.
     eod_time: str = Field(
         default="18:30", description="Local wall-clock time HH:MM for the scheduled EOD run"
@@ -54,6 +57,10 @@ class Settings(BaseSettings):
 
     # Real market data adapters (optional).
     fred_api_key: str | None = Field(default=None, validation_alias="FRED_API_KEY")
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache(maxsize=1)
