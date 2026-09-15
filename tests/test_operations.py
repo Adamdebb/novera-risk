@@ -83,6 +83,8 @@ def test_alerts_from_run_and_dedupe(db_path, tmp_path, monkeypatch):
         alerts = alerts_from_run(res, sync)
         kinds = {a.kind for a in alerts}
         assert "RUN_SUMMARY" in kinds and "RUN_VERDICT" in kinds and "NEW_BREACH" in kinds
+        for a in alerts:  # an escalation whose target is also the owner names the role once
+            assert a.recipients and len(a.recipients) == len(set(a.recipients)), (a.kind, a.recipients)
         good, bad = FakeChannel(), FakeChannel(fail=True, name="broken")
         sent = dispatch(repo, alerts, [good, bad])
         crit = [a for a in sent if a.severity != "INFO"]
@@ -242,6 +244,16 @@ def test_named_crises_require_coverage():
         pd.DataFrame({"EQIDX:SPX": range(300)}, index=pd.bdate_range("2025-01-01", periods=300).date)
     )
     assert named_crisis_scenarios(short) == []
+
+
+def test_alert_recipients_are_unique_and_ordered():
+    """An escalation whose target is also the limit owner names the role once."""
+    from novera.workflows.alerts import _alert
+
+    a = _alert("AUTO_ESCALATION", "CRITICAL", "L1", "t", "b", D1, "run", ["Head of CR", "Head of CR", ""])
+    assert a.recipients == ["Head of CR"]
+    a = _alert("NEW_BREACH", "CRITICAL", "L1", "t", "b", D1, "run", ["Owner", "Head of MR", "Owner"])
+    assert a.recipients == ["Owner", "Head of MR"]
 
 
 def test_alert_serialises_round_trip():
