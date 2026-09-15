@@ -300,6 +300,12 @@ class DuckDBRepository:
         ).fetchall()
         return [r[0] for r in rows]
 
+    def firm_ids(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT firm_id FROM organisation_entity ORDER BY firm_id"
+        ).fetchall()
+        return [r[0] for r in rows]
+
     def load_organisation(self, firm_id: str) -> Organisation:
         rows = self._conn.execute(
             "SELECT entity_kind, payload FROM organisation_entity WHERE firm_id = ? "

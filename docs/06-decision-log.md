@@ -382,6 +382,32 @@ overview screen over the real stored runs was produced as a private artifact to 
   is allowed) and `GET /runs/{run_id}/risk-pack/{html|pdf|xlsx}` so a browser client can read
   a pack that `POST /runs/{run_id}/risk-pack` built; the dashboard uses it through the client.
 
+## Round 15 — Reference data page (2026-09-15)
+
+Context: the owner asked where to see legal entities, desks, books and counterparties; until
+now only the API (`/organisation`) and the run-scoped counterparty page showed them.
+
+### 15.1 Tree rendering
+- Options: expanders with an indented bullet tree inside ★ · cascading selectors · one
+  indented text block
+- Choice: **Expanders with indented bullets.** One expander per business (or legal entity, or
+  counterparty group); desks, books, traders, netting sets and CSA terms as nested bullets.
+  A filter box narrows every tree to matching ids and names and opens the matches.
+- Where: `ui/app.py` page "Reference data"
+
+### 15.2 Run figures on the page
+- Options: trade counts and PV per node ★ · trade counts only · static reference only
+- Choice: **Static reference only.** The page shows what is stored, not what a run did; the
+  drill-down and counterparty pages carry the figures.
+
+### 15.3 Legal entities in the organisation tree
+- Options: toggle between business and legal-entity grouping ★ · business only, entity as a tag
+- Choice: **Toggle.** Default firm → business → desk → book with the entity on each book; the
+  legal-entity view regroups as firm → entity → desk → book for finance and regulators.
+- Also in this round: `GET /reference/counterparties` (counterparties, netting sets, CSAs, no
+  run needed) and `/organisation` resolves the firm stored in the database instead of assuming
+  the bank, so the fund face works too.
+
 ---
 
 ## Standing instructions given outside the question rounds

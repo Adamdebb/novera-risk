@@ -148,6 +148,8 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       problem documents with stable codes, one `ApiError` hierarchy shared by the HTTP and
       in-process clients, CORS setting, risk-pack download endpoint, committed OpenAPI file
       with a staleness test (decision log round 14)
+- [x] Reference data page: organisation tree (by business or legal entity) and counterparty
+      tree (netting sets, CSA terms) with a filter; `GET /reference/counterparties` (round 15)
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
       for a full phase; morning overview and limits first
 

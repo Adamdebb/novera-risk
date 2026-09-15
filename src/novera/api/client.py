@@ -35,7 +35,8 @@ class RiskClient(Protocol):
     def pnl(self, run_id: str | None = None, by: str | None = None, **filters: str) -> dict[str, Any]: ...
     def trade(self, trade_id: str, run_id: str | None = None) -> dict[str, Any]: ...
     def audit(self, subject: str | None = None, limit: int = 100) -> list[dict[str, Any]]: ...
-    def organisation(self) -> dict[str, Any]: ...
+    def organisation(self, firm_id: str | None = None) -> dict[str, Any]: ...
+    def counterparty_reference(self) -> dict[str, Any]: ...
 
 
 WRITE_METHODS = {
@@ -174,8 +175,11 @@ class HttpClient:
     def audit(self, subject=None, limit=100):
         return self._get("/audit", subject=subject, limit=limit)
 
-    def organisation(self):
-        return self._get("/organisation")
+    def organisation(self, firm_id=None):
+        return self._get("/organisation", firm_id=firm_id)
+
+    def counterparty_reference(self):
+        return self._get("/reference/counterparties")
 
     def _post(self, path: str, **body: Any) -> Any:
         return self._check(self.http.post(path, json=body))

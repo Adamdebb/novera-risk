@@ -71,6 +71,7 @@ with st.sidebar:
         "Portfolio Lab",
         "Alerts & jobs",
         "Runs & audit",
+        "Reference data",
     ]
     page = st.radio("View", pages)
     st.caption("Every figure is read from the stored run. Nothing is computed on this page.")
@@ -1470,3 +1471,175 @@ elif page == "Runs & audit":
     st.json(summary["timings"])
     st.subheader("Audit events")
     st.dataframe(df(client.audit(limit=200)), use_container_width=True, hide_index=True)
+
+elif page == "Reference data":
+    header("Reference data")
+    st.caption(
+        "What the runs are priced against: the organisation and the counterparties, as stored. "
+        "No run figures on this page."
+    )
+    what = st.radio("Show", ["Organisation", "Counterparties"], horizontal=True, key="ref_what")
+    q = st.text_input("Filter", placeholder="id or name, e.g. USD_RATES or Bank A", key="ref_filter")
+    q = q.strip().lower()
+
+    def _hit(*parts) -> bool:
+        return not q or any(q in str(x).lower() for x in parts if x)
+
+    def _amt(x: float) -> str:
+        if x >= 1e6:
+            return f"{x / 1e6:g}m"
+        if x >= 1e3:
+            return f"{x / 1e3:g}k"
+        return f"{x:g}"
+
+    def _words(x: str) -> str:
+        return x.replace("_", " ").lower()
+
+    shown = 0
+    if what == "Organisation":
+        org = client.organisation()
+        firm = org["firm"]
+        entities = {e["legal_entity_id"]: e for e in org["legal_entities"]}
+        books_by_desk: dict[str, list[dict]] = {}
+        traders_by_desk: dict[str, list[str]] = {}
+        for bk in org["books"]:
+            books_by_desk.setdefault(bk["desk_id"], []).append(bk)
+        for tr in org["traders"]:
+            traders_by_desk.setdefault(tr["desk_id"], []).append(tr["name"])
+        st.markdown(
+            f"**{firm['name']}** `{firm['firm_id']}` · {_words(firm['firm_type'])} · "
+            f"{len(entities)} legal entities · {len(org['businesses'])} businesses · "
+            f"{len(org['desks'])} desks · {len(org['books'])} books · {len(org['traders'])} traders"
+        )
+        group = st.radio("Group by", ["Business", "Legal entity"], horizontal=True, key="ref_group")
+
+        def desk_lines(d: dict, books: list[dict]) -> list[str]:
+            head = f" · head {d['head']}" if d.get("head") else ""
+            lines = [f"- **{d['name']}** `{d['desk_id']}` · {_words(d['asset_class'])} · {d['region']}{head}"]
+            for bk in books:
+                strat = f" · {bk['strategy']}" if bk.get("strategy") else ""
+                ent = entities.get(bk["legal_entity_id"], {}).get("name", "")
+                lines.append(
+                    f"    - `{bk['book_id']}` {bk['name']}{strat} · entity `{bk['legal_entity_id']}` {ent}"
+                )
+            if traders_by_desk.get(d["desk_id"]):
+                lines.append(f"    - traders: {', '.join(traders_by_desk[d['desk_id']])}")
+            return lines
+
+        def branch(parent_hit: bool, desks: list[dict], books_of: dict[str, list[dict]]) -> list[str]:
+            """Desks and books to show under one parent: everything if the parent matches,
+            otherwise only matching desks (with all their books) and matching books."""
+            out: list[str] = []
+            for d in desks:
+                books = books_of.get(d["desk_id"], [])
+                if parent_hit or _hit(d["desk_id"], d["name"]):
+                    out += desk_lines(d, books)
+                else:
+                    match = [bk for bk in books if _hit(bk["book_id"], bk["name"], bk.get("strategy"))]
+                    if match:
+                        out += desk_lines(d, match)
+            return out
+
+        if group == "Business":
+            for b in org["businesses"]:
+                desks = [d for d in org["desks"] if d["business_id"] == b["business_id"]]
+                lines = branch(_hit(b["business_id"], b["name"]), desks, books_by_desk)
+                if not lines:
+                    continue
+                shown += 1
+                n_books = sum(len(books_by_desk.get(d["desk_id"], [])) for d in desks)
+                label = f"{b['name']} · {b['business_id']} · {len(desks)} desks · {n_books} books"
+                with st.expander(label, expanded=bool(q)):
+                    st.markdown("\n".join(lines))
+        else:
+            for e in org["legal_entities"]:
+                eid = e["legal_entity_id"]
+                entity_books: dict[str, list[dict]] = {}
+                for bk in org["books"]:
+                    if bk["legal_entity_id"] == eid:
+                        entity_books.setdefault(bk["desk_id"], []).append(bk)
+                desks = [d for d in org["desks"] if d["desk_id"] in entity_books]
+                n_books = sum(len(v) for v in entity_books.values())
+                lines = branch(_hit(eid, e["name"], e["jurisdiction"]), desks, entity_books)
+                if not lines:
+                    continue
+                shown += 1
+                with st.expander(
+                    f"{e['name']} · {eid} · {e['jurisdiction']} · {e['functional_currency']} · "
+                    f"{len(desks)} desks · {n_books} books",
+                    expanded=bool(q),
+                ):
+                    st.markdown("\n".join(lines))
+    else:
+        ref = client.counterparty_reference()
+        csas = {c["csa_id"]: c for c in ref["csas"]}
+        ns_by_cp: dict[str, list[dict]] = {}
+        for n in ref["netting_sets"]:
+            ns_by_cp.setdefault(n["counterparty_id"], []).append(n)
+        cps = ref["counterparties"]
+        children: dict[str, list[dict]] = {}
+        for c in cps:
+            if c.get("parent_id"):
+                children.setdefault(c["parent_id"], []).append(c)
+        uncoll = sum(1 for n in ref["netting_sets"] if not n.get("csa_id"))
+        watch = sum(1 for c in cps if c.get("on_watchlist"))
+        st.markdown(
+            f"{len(cps)} counterparties · {len(ref['netting_sets'])} netting sets "
+            f"({uncoll} uncollateralised) · {len(csas)} CSAs · {watch} on watchlist"
+        )
+
+        def cp_lines(c: dict, indent: str = "") -> list[str]:
+            pd_txt = f" · PD 1y {c['internal_pd'] * 1e4:.0f}bp" if c.get("internal_pd") is not None else ""
+            flag = " · **on watchlist**" if c.get("on_watchlist") else ""
+            sector = c.get("sector") or "sector n/a"
+            lines = [f"{indent}- {sector} · {c['country']} · rating {c['rating']}{pd_txt}{flag}"]
+            for n in ns_by_cp.get(c["counterparty_id"], []):
+                lines.append(
+                    f"{indent}- **`{n['netting_set_id']}`** · our entity `{n['legal_entity_id']}` · "
+                    f"{n['agreement_type']}"
+                )
+                csa = csas.get(n.get("csa_id") or "")
+                if csa:
+                    lines.append(
+                        f"{indent}    - CSA `{csa['csa_id']}` · {csa['collateral_currency']} · "
+                        f"threshold we post {_amt(csa['threshold_we_post'])} / they post "
+                        f"{_amt(csa['threshold_they_post'])} · MTA {_amt(csa['minimum_transfer_amount'])} · "
+                        f"IA {_amt(csa['independent_amount'])} · rounding {_amt(csa['rounding'])} · "
+                        f"haircut {csa['haircut']:.0%} · MPoR {csa['margin_period_of_risk_days']}d · "
+                        f"{csa['call_frequency'].lower()} calls"
+                    )
+                else:
+                    lines.append(f"{indent}    - uncollateralised")
+            return lines
+
+        for c in cps:
+            if c.get("parent_id"):
+                continue  # shown under its parent
+            subs = children.get(c["counterparty_id"], [])
+            family = [c, *subs]
+            sets = [n for x in family for n in ns_by_cp.get(x["counterparty_id"], [])]
+            match = any(_hit(x["counterparty_id"], x["name"]) for x in family) or any(
+                _hit(n["netting_set_id"], n.get("csa_id")) for n in sets
+            )
+            if not match:
+                continue
+            shown += 1
+            n_ns = sum(len(ns_by_cp.get(x["counterparty_id"], [])) for x in family)
+            title = (
+                f"{c['name']} · {c['counterparty_id']} · {_words(c['counterparty_type'])} · "
+                f"{c['rating']} · {c['country']}"
+                + (f" · {len(subs)} subsidiaries" if subs else "")
+                + f" · {n_ns} netting sets"
+                + (" · ⚠ watchlist" if c.get("on_watchlist") else "")
+            )
+            with st.expander(title, expanded=bool(q)):
+                lines = cp_lines(c)
+                for sub in subs:
+                    lines.append(
+                        f"- **{sub['name']}** `{sub['counterparty_id']}` · "
+                        f"{_words(sub['counterparty_type'])} · subsidiary"
+                    )
+                    lines += cp_lines(sub, indent="    ")
+                st.markdown("\n".join(lines))
+    if not shown:
+        st.info("Nothing matches the filter.")
