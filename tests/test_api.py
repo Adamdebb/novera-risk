@@ -109,6 +109,13 @@ def test_http_endpoints(client):
     assert client.get("/organisation").json()["firm"]["firm_id"] == "GMB"
     assert client.get("/organisation", params={"firm_id": "GMB"}).json()["desks"]
     assert client.get("/organisation", params={"firm_id": "NOPE"}).status_code == 404
+    lh = client.get("/limits/hierarchy").json()
+    assert lh["run_id"] == rid and lh["rows"]
+    ranks = [r["level_rank"] for r in lh["rows"]]
+    assert ranks == sorted(ranks), "rows are ordered firm, business, desk, counterparty"
+    desk = next(r for r in lh["rows"] if r["level"] == "desk_id")
+    assert desk["path"].count("›") == 2 and desk["status"] in ("OK", "WARNING", "BREACH", "NO_DATA")
+    assert desk["effective_amount"] == desk["amount"] or desk["increase_id"]
     prods = client.get("/reference/products").json()["asset_classes"]
     assert {a["asset_class"] for a in prods} == {"RATES", "FX", "EQUITY", "CREDIT", "COMMODITY", "DIGITAL_ASSET"}
     swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
@@ -289,6 +296,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.MarketDataProxies, client.get(f"/runs/{rid}/market-data-proxies").json()),
         (s.CounterpartyReference, client.get("/reference/counterparties").json()),
         (s.ProductReference, client.get("/reference/products").json()),
+        (s.LimitHierarchy, client.get("/limits/hierarchy").json()),
         (s.MeasureReference, client.get("/reference/measures").json()),
         (s.RiskFactorReference, client.get("/reference/risk-factors").json()),
     ]

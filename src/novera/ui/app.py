@@ -58,7 +58,8 @@ with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
     run_id = st.selectbox("Run", list(labels), format_func=labels.get)
-    pages = ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches", "Counterparty"]
+    pages = ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Limit management", "Breaches"]
+    pages += ["Counterparty"]
     pages += ["Fund"] if is_fund else ["Capital"]
     pages += [
         "P&L explain",
@@ -1816,3 +1817,127 @@ elif page == "Reference data":
                         st.markdown("\n".join(factor_line(u, fs) for u, fs in sorted(unds.items())))
     if not shown:
         st.info("Nothing matches the filter.")
+
+elif page == "Limit management":
+    header("Limit management")
+    tab_h, tab_u, tab_b, tab_i = st.tabs(["Hierarchy", "Utilisation", "Breaches", "Increases"])
+    with tab_h:
+        lh = load("limit_hierarchy", run_id)
+        rows = lh["rows"]
+        level_names = {
+            "firm_id": "Firm",
+            "business_id": "Business",
+            "desk_id": "Desk",
+            "book_id": "Book",
+            "counterparty_id": "Counterparty",
+        }
+        f1, f2, f3, f4 = st.columns([1.3, 1.6, 1.6, 2])
+        group = f1.radio("Group by", ["Hierarchy", "Limit type"], horizontal=True, key="lm_group")
+        rank = {r["level"]: r["level_rank"] for r in rows}
+        levels = sorted(rank, key=rank.get)
+        lvl_pick = f2.multiselect(
+            "Level", levels, default=levels, format_func=lambda x: level_names.get(x, x), key="lm_levels"
+        )
+        statuses = ["BREACH", "WARNING", "OK", "NO_DATA", "NO_RUN"]
+        st_pick = f3.multiselect("Run status", statuses, default=statuses, key="lm_status")
+        q = f4.text_input("Filter", placeholder="limit id, node, type, owner", key="lm_filter")
+        q = q.strip().lower()
+        rows = [
+            r
+            for r in rows
+            if r["level"] in lvl_pick
+            and r["status"] in st_pick
+            and (not q or q in " ".join(str(v) for v in r.values() if v is not None).lower())
+        ]
+        if group == "Limit type":
+            rows = sorted(rows, key=lambda r: (r["limit_type"], r["level_rank"], r["path"], r["limit_id"]))
+
+        def _lim_amt(x, unit: str) -> str:
+            if x is None:
+                return "—"
+            return f"{x:.2f}" if unit == "share" else f"{x / M:,.1f}m"
+
+        badge = {"BREACH": "🔴", "WARNING": "🟠", "OK": "🟢", "NO_DATA": "⚪", "NO_RUN": "⚪"}
+        table = pd.DataFrame(
+            [
+                {
+                    "status": f"{badge.get(r['status'], '⚪')} {r['status']}",
+                    "hierarchy": r["path"],
+                    "limit": r["limit_id"],
+                    "type": r["limit_type"],
+                    "scope": r["filters"],
+                    "limit amount": _lim_amt(r["effective_amount"], r["unit"])
+                    + (" ↑" if r["increase_id"] else ""),
+                    "current": _lim_amt(r["current"], r["unit"]),
+                    "utilisation": r["utilisation"],
+                    "warning at": r["warning_threshold"],
+                    "owner": r["owner"],
+                    "approver": r["approver"],
+                    "approval": r["approval_status"],
+                    "effective from": r["effective_from"],
+                }
+                for r in rows
+            ]
+        )
+        n_b = sum(1 for r in rows if r["status"] == "BREACH")
+        n_w = sum(1 for r in rows if r["status"] == "WARNING")
+        st.caption(
+            f"{len(rows)} of {len(lh['rows'])} limits · {n_b} in breach · {n_w} in warning · "
+            f"amounts in {ccy} millions, shares as fractions · ↑ marks a temporary increase in force"
+            + (f" · figures from run {lh['run_id']}" if lh.get("run_id") else " · no run stored")
+        )
+        if table.empty:
+            st.info("No limits match the filters.")
+        else:
+            event = st.dataframe(
+                table,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="lm_table",
+                column_config={
+                    "utilisation": st.column_config.ProgressColumn(
+                        "utilisation", min_value=0.0, max_value=1.5, format="percent"
+                    ),
+                    "warning at": st.column_config.NumberColumn("warning at", format="percent"),
+                    "hierarchy": st.column_config.TextColumn("hierarchy", width="medium"),
+                    "scope": st.column_config.TextColumn("scope", width="small"),
+                },
+            )
+            picked = getattr(getattr(event, "selection", None), "rows", None) or []
+            if picked:
+                r = rows[picked[0]]
+                with st.container(border=True):
+                    st.markdown(f"**{r['limit_id']}** · {r['limit_type']} · {r['path']}")
+                    d1, d2, d3 = st.columns(3)
+                    d1.markdown(
+                        f"- base amount: {_lim_amt(r['amount'], r['unit'])}\n"
+                        f"- in force on the run: {_lim_amt(r['effective_amount'], r['unit'])}"
+                        + (f" (increase `{r['increase_id']}`)" if r["increase_id"] else "")
+                        + f"\n- warning threshold: {r['warning_threshold']:.0%}\n"
+                        f"- scope: {r['filters'] or 'whole node'}"
+                    )
+                    d2.markdown(
+                        f"- owner: {r['owner']}\n- approver: {r['approver'] or '—'}\n"
+                        f"- approval: {r['approval_status']}\n"
+                        f"- effective: {r['effective_from']} → {r['effective_to'] or 'open'}"
+                    )
+                    d3.markdown(
+                        f"- run status: {badge.get(r['status'], '⚪')} {r['status']}\n"
+                        f"- current: {_lim_amt(r['current'], r['unit'])}\n"
+                        f"- utilisation: {r['utilisation']:.0%}\n"
+                        if r["utilisation"] is not None
+                        else f"- run status: {r['status']}\n"
+                    )
+                    if r["trades_in_scope"] is not None:
+                        d3.markdown(f"- trades in scope: {r['trades_in_scope']:,}")
+                    if r["rationale"]:
+                        st.caption(f"Rationale: {r['rationale']}")
+    with tab_u:
+        st.caption("Utilisation stays on the Limits page until it moves into this module.")
+    with tab_b:
+        st.caption("The breach workflow stays on the Breaches page until it moves into this module.")
+    with tab_i:
+        st.caption("Temporary limit increases stay on the Breaches page until they move into this module.")
+

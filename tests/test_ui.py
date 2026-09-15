@@ -94,6 +94,7 @@ def app(db_path, monkeypatch):
         "VaR",
         "Stress",
         "Limits",
+        "Limit management",
         "Breaches",
         "Counterparty",
         "Capital",
@@ -159,3 +160,19 @@ def test_reference_page_shows_both_trees(app):
     assert any("Zero curves" in lab for lab in labels)
     text = " ".join(m.value for m in app.markdown)
     assert "USD" in text and "nodes" in text and "moneyness" in text
+
+
+def test_limit_management_hierarchy_table(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Limit management").run()
+    assert not app.exception, [e.value for e in app.exception]
+    table = app.dataframe[0].value
+    assert {"hierarchy", "limit", "type", "utilisation", "owner", "approval"} <= set(table.columns)
+    assert len(table) > 10 and table["hierarchy"].str.contains("›").any()
+    assert table["status"].str.contains("BREACH").any()
+    next(r for r in app.radio if r.label == "Group by").set_value("Limit type").run()
+    assert not app.exception, [e.value for e in app.exception]
+    types = list(app.dataframe[0].value["type"])
+    assert types == sorted(types)
+    next(t for t in app.multiselect if t.label == "Run status").set_value(["BREACH"]).run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert app.dataframe[0].value["status"].str.contains("BREACH").all()

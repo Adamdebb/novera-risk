@@ -365,6 +365,41 @@ class AuditEvent(ApiModel):
     payload: str | None = None
 
 
+# --- limit management ---------------------------------------------------------------------
+class LimitHierarchyRow(ApiModel):
+    """A limit definition placed in the firm hierarchy, with the selected run's figures."""
+
+    limit_id: str
+    limit_type: str
+    level: str
+    level_rank: int
+    entity_id: str
+    node_name: str
+    path: str = Field(description="Hierarchy path, e.g. Global Macro Bank › Macro › USD Rates")
+    filters: str = ""
+    unit: str
+    amount: float
+    warning_threshold: float
+    owner: str
+    approver: str = ""
+    approval_status: str
+    effective_from: str
+    effective_to: str | None = None
+    rationale: str = ""
+    effective_amount: float = Field(description="Amount in force on the run, after temporary increases")
+    increase_id: str | None = None
+    current: float | None = None
+    utilisation: float | None = None
+    status: str = Field(description="OK, WARNING, BREACH, NO_DATA or NO_RUN")
+    trades_in_scope: int | None = None
+
+
+class LimitHierarchy(ApiModel):
+    run_id: str | None = None
+    business_date: str | None = None
+    rows: list[LimitHierarchyRow]
+
+
 # --- breach workflow ----------------------------------------------------------------------
 class BreachRecord(ApiModel):
     breach_id: str

@@ -252,6 +252,81 @@ class RiskService:
             firm_id = ids[0]
         return self.repo.load_organisation(firm_id).model_dump(mode="json")
 
+    # --- limit management ---------------------------------------------------------------------
+    LEVEL_RANK = {"firm_id": 0, "business_id": 1, "desk_id": 2, "book_id": 3, "counterparty_id": 4}
+
+    def limit_hierarchy(self, run_id: str | None = None) -> dict[str, Any]:
+        """Every limit definition placed in the firm hierarchy, with the selected run's
+        utilisation and status beside it (NO_RUN when no run is stored)."""
+        defs = self.repo.load_limits()
+        ids = self.repo.firm_ids()
+        org = self.repo.load_organisation(ids[0]) if ids else None
+        businesses = {b.business_id: b.name for b in org.businesses} if org else {}
+        desks = {d.desk_id: d for d in org.desks} if org else {}
+        books = {b.book_id: b for b in org.books} if org else {}
+        firm_name = org.firm.name if org else ""
+        cps = {c.counterparty_id: c.name for c in self.repo.load_counterparties()}
+        try:
+            r = self.resolve(run_id)
+            live = {row["limit_id"]: row for row in self.limits(r.run_id)}
+            run_ref: dict[str, Any] = {"run_id": r.run_id, "business_date": r.business_date.isoformat()}
+        except RunNotFoundError:
+            live, run_ref = {}, {"run_id": None, "business_date": None}
+        share_types = {"CONCENTRATION", "LEVERAGE", "MARGIN_USAGE", "PB_CONCENTRATION"}
+        rows = []
+        for lim in defs:
+            level, entity = lim.scope.level.value, lim.scope.entity_id
+            if level == "firm_id":
+                path = [firm_name or entity]
+            elif level == "business_id":
+                path = [firm_name, businesses.get(entity, entity)]
+            elif level == "desk_id":
+                d = desks.get(entity)
+                business = businesses.get(d.business_id, d.business_id) if d else "?"
+                path = [firm_name, business, d.name if d else entity]
+            elif level == "book_id":
+                b = books.get(entity)
+                d = desks.get(b.desk_id) if b else None
+                business = businesses.get(d.business_id, "?") if d else "?"
+                path = [firm_name, business, d.name if d else "?", b.name if b else entity]
+            elif level == "counterparty_id":
+                path = ["Counterparties", cps.get(entity, entity)]
+            else:
+                path = [level.replace("_id", ""), entity]
+            scope = lim.scope.model_dump(exclude={"level", "entity_id"}, exclude_none=True)
+            cur = live.get(lim.limit_id, {})
+            rows.append(
+                {
+                    "limit_id": lim.limit_id,
+                    "limit_type": lim.limit_type.value,
+                    "level": level,
+                    "level_rank": self.LEVEL_RANK.get(level, 9),
+                    "entity_id": entity,
+                    "node_name": path[-1],
+                    "path": " › ".join(path),
+                    "filters": ", ".join(f"{k}={v}" for k, v in scope.items()),
+                    "unit": "share" if lim.limit_type.value in share_types else r.reporting_currency
+                    if run_ref["run_id"]
+                    else "reporting currency",
+                    "amount": lim.amount,
+                    "warning_threshold": lim.warning_threshold,
+                    "owner": lim.owner,
+                    "approver": lim.approver,
+                    "approval_status": lim.status.value,
+                    "effective_from": lim.effective_from.isoformat(),
+                    "effective_to": lim.effective_to.isoformat() if lim.effective_to else None,
+                    "rationale": lim.rationale,
+                    "effective_amount": cur.get("amount", lim.amount),
+                    "increase_id": cur.get("increase_id"),
+                    "current": cur.get("current"),
+                    "utilisation": cur.get("utilisation"),
+                    "status": cur.get("status", "NO_RUN"),
+                    "trades_in_scope": cur.get("trades_in_scope"),
+                }
+            )
+        rows.sort(key=lambda x: (x["level_rank"], x["path"], x["limit_type"], x["limit_id"]))
+        return {**run_ref, "rows": rows}
+
     def product_reference(self) -> dict[str, Any]:
         """What the platform prices, with which model and methodology record (from code)."""
         from novera.pricing.catalogue import product_reference
