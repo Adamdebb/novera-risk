@@ -368,6 +368,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.RiskFactorReference, client.get("/reference/risk-factors").json()),
         (s.MarketDataSources, client.get("/reference/market-data-sources").json()),
         (s.StressLibrary, client.get("/reference/stress-library").json()),
+        (s.RerunOptions, client.get("/admin/rerun/options").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))
@@ -545,3 +546,29 @@ def test_measure_catalogue_matches_methodology_records():
     ids = (re.match(r"^(MR|CR|REG|HF|DQ)-(\d{3})-", f.name) for f in docs.glob("*.md"))
     expected = {f"{m.group(1)}-{m.group(2)}" for m in ids if m}
     assert expected <= set(catalogued), f"records not catalogued: {sorted(expected - set(catalogued))}"
+
+
+def test_admin_rerun_endpoints(client):
+    opts = client.get("/admin/rerun/options").json()
+    assert opts["record"] == "OPS-002" and {x["name"] for x in opts["stages"]} >= {
+        "valuation",
+        "var",
+        "stress",
+        "limits",
+    }
+    r = client.post("/admin/rerun", json={"run_id": "latest", "stage": "nope", "actor": "Risk Control"})
+    assert r.status_code == 422 and "unknown stage" in r.text
+    r = client.post(
+        "/admin/rerun", json={"run_id": "latest", "stage": "stress", "actor": "Risk Control", "reason": "t"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (
+        body["run_type"] == "RERUN" and body["rerun"]["stage"] == "stress" and body["rerun"]["changed"] == {}
+    )
+    assert body["rerun"]["stale_stages"] == ["limits", "counterparty"]
+    runs = client.get("/runs").json()
+    assert any(x["run_id"] == body["run_id"] and x["run_type"] == "RERUN" for x in runs)
+    assert client.get("/runs/latest/summary").json()["run_id"] != body["run_id"]  # latest stays the EOD
+    assert client.get("/admin/rerun/options").json()["reruns"][0]["run_id"] == body["run_id"]
+    assert client.get(f"/runs/{body['run_id']}/stress").json()

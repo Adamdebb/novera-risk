@@ -46,7 +46,7 @@ src/novera/
   fund/                exposures, PB margin, factor betas, redemption stress, attribution, crowding (fund face)
   limits/              Limit definitions, utilisation, breach lifecycle, escalation
   data_quality/        Checks that answer "can I trust today's run?"
-  workflows/           End-of-day pipeline, run registry, audit events
+  workflows/           End-of-day pipeline, partial re-runs of a stage (OPS-002), run registry, audit events
   storage/             Repository layer. All SQL lives here.
   reporting/           Risk packs, tables, exports
   api/                 FastAPI app, response schemas (schemas.py), one error contract (errors.py), clients
@@ -82,6 +82,7 @@ uv run novera run eod         # governed EOD run, stores results and audit event
 uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
 uv run novera ask "..."       # Risk Copilot; scripted provider unless ANTHROPIC_API_KEY is set
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
+uv run novera rerun latest --stage stress --actor "Risk Control" --reason "..."   # one stage into a new RERUN run (OPS-002); Admin page does the same
 uv run novera alert test      # send one test alert through the configured channels (Slack, SMTP); `alert list` shows stored alerts
 uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
 uv run novera fetch           # real market data into the history (network, optional FRED key)

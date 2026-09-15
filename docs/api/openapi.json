@@ -8028,6 +8028,250 @@
         "title": "Repo",
         "type": "object"
       },
+      "RerunBody": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "latest",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "actor"
+        ],
+        "title": "RerunBody",
+        "type": "object"
+      },
+      "RerunOptions": {
+        "additionalProperties": true,
+        "description": "What an administrator can re-run and what has been re-run. Record OPS-002.",
+        "properties": {
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "reruns": {
+            "items": {
+              "$ref": "#/components/schemas/RerunRecord"
+            },
+            "title": "Reruns",
+            "type": "array"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/RerunStage"
+            },
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "stages",
+          "reruns"
+        ],
+        "title": "RerunOptions",
+        "type": "object"
+      },
+      "RerunRecord": {
+        "additionalProperties": true,
+        "description": "A RERUN run: the parent's results copied under a new run id with one stage recomputed.",
+        "properties": {
+          "business_date": {
+            "title": "Business Date",
+            "type": "string"
+          },
+          "config_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Hash"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "market_snapshot_id": {
+            "title": "Market Snapshot Id",
+            "type": "string"
+          },
+          "model_versions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Versions",
+            "type": "object"
+          },
+          "portfolio_snapshot_id": {
+            "title": "Portfolio Snapshot Id",
+            "type": "string"
+          },
+          "previous_market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Market Snapshot Id"
+          },
+          "reporting_currency": {
+            "title": "Reporting Currency",
+            "type": "string"
+          },
+          "rerun": {
+            "additionalProperties": true,
+            "description": "parent_run_id, stage, actor, reason, stale_stages, changed (before and after per summary key), seconds",
+            "title": "Rerun",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_type": {
+            "title": "Run Type",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/RunFigures"
+          },
+          "timings": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Timings",
+            "type": "object"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_type",
+          "business_date",
+          "portfolio_snapshot_id",
+          "market_snapshot_id",
+          "reporting_currency",
+          "model_versions",
+          "status",
+          "summary",
+          "rerun"
+        ],
+        "title": "RerunRecord",
+        "type": "object"
+      },
+      "RerunStage": {
+        "additionalProperties": true,
+        "properties": {
+          "dependents": {
+            "description": "Stages copied from the parent that are not recomputed",
+            "items": {
+              "type": "string"
+            },
+            "title": "Dependents",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "faces": {
+            "description": "bank, fund or both",
+            "items": {
+              "type": "string"
+            },
+            "title": "Faces",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "summary_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Summary Keys",
+            "type": "array"
+          },
+          "tables": {
+            "description": "Result tables the stage replaces on the new run",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tables",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "description",
+          "tables",
+          "dependents",
+          "summary_keys",
+          "faces"
+        ],
+        "title": "RerunStage",
+        "type": "object"
+      },
       "RiskArea": {
         "additionalProperties": true,
         "properties": {
@@ -11153,6 +11397,112 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/rerun": {
+      "post": {
+        "operationId": "rerun_stage_admin_rerun_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RerunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RerunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Rerun Stage"
+      }
+    },
+    "/admin/rerun/options": {
+      "get": {
+        "operationId": "rerun_options_admin_rerun_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RerunOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Rerun Options"
+      }
+    },
     "/agents/approve-csa": {
       "post": {
         "operationId": "agent_approve_csa_agents_approve_csa_post",

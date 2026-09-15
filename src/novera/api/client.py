@@ -47,6 +47,8 @@ class RiskClient(Protocol):
     def risk_factor_reference(self) -> dict[str, Any]: ...
     def market_data_sources(self) -> dict[str, Any]: ...
     def stress_library(self) -> dict[str, Any]: ...
+    def rerun_options(self) -> dict[str, Any]: ...
+    def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]: ...
 
 
 WRITE_METHODS = {
@@ -57,6 +59,7 @@ WRITE_METHODS = {
     "request_increase",
     "decide_increase",
     "cancel_increase",
+    "rerun_stage",
 }
 COPILOT_METHODS = {"ask", "commentary", "copilot_history", "copilot_provider"}
 PACK_METHODS = {"risk_pack"}
@@ -211,6 +214,12 @@ class HttpClient:
 
     def stress_library(self):
         return self._get("/reference/stress-library")
+
+    def rerun_options(self):
+        return self._get("/admin/rerun/options")
+
+    def rerun_stage(self, run_id, stage, actor, reason=""):
+        return self._post("/admin/rerun", run_id=run_id, stage=stage, actor=actor, reason=reason)
 
     def _post(self, path: str, **body: Any) -> Any:
         return self._check(self.http.post(path, json=body))

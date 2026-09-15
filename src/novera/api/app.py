@@ -106,6 +106,13 @@ def write_service() -> Iterator[RiskWriteService]:
 
 
 # --- request bodies --------------------------------------------------------------------------
+class RerunBody(BaseModel):
+    run_id: str = "latest"
+    stage: str
+    actor: str
+    reason: str = ""
+
+
 class ActionBody(BaseModel):
     actor: str = Field(min_length=1)
     comment: str = ""
@@ -340,6 +347,17 @@ def stress_library(svc: RiskService = Depends(service)):
 @app.get("/reference/counterparties", response_model=s.CounterpartyReference)
 def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()
+
+
+# --- administration -------------------------------------------------------------------------
+@app.get("/admin/rerun/options", response_model=s.RerunOptions)
+def rerun_options(svc: RiskService = Depends(service)):
+    return svc.rerun_options()
+
+
+@app.post("/admin/rerun", response_model=s.RerunRecord)
+def rerun_stage(body: RerunBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.rerun_stage(body.run_id, body.stage, body.actor, body.reason)
 
 
 # --- limit management -----------------------------------------------------------------------

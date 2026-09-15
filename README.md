@@ -85,6 +85,7 @@ uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breac
 uv run novera breach list
 uv run novera ask "Why did VaR change since yesterday?"
 uv run novera schedule --once      # advance one business day and run EOD, with alerts
+uv run novera rerun latest --stage stress --actor "Risk Control"   # re-run one stage into a new RERUN run; the parent is untouched
 uv run novera vendor-feed && uv run novera reconcile data/feeds/official_risk_2026-09-15.csv
 uv run novera run counterparty     # exposure, collateral, CVA, wrong-way on the latest run (~3 minutes)
 uv run novera run regulatory       # FRTB, SA-CCR, SIMM, BA-CVA, cash ladder on the latest run

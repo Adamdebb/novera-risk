@@ -415,6 +415,42 @@ def run_eod_cmd(
     typer.echo("  timings: " + ", ".join(f"{k} {v:.1f}s" for k, v in r.timings.items()))
 
 
+@app.command("rerun")
+def rerun_cmd(
+    run_id: str = typer.Argument("latest", help="Parent run id, or latest"),
+    stage: str = typer.Option(
+        ...,
+        help="valuation, sensitivities, var, backtest, stress, limits, concentration, pnl, regulatory, "
+        "counterparty, fund",
+    ),
+    actor: str = typer.Option("risk-control", help="Who asked for the re-run (audit trail)"),
+    reason: str = typer.Option("", help="Why (audit trail)"),
+    fund: bool = typer.Option(False, help="Use the hedge-fund database"),
+    workers: int = typer.Option(0, help="Processes for full-revaluation VaR (0 = all cores but one)"),
+) -> None:
+    """Re-run one EOD stage on a stored run into a new RERUN run; the parent run is untouched (OPS-002)."""
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.rerun import rerun_stage
+
+    with DuckDBRepository(_db(fund)) as repo:
+        rid = RiskService(repo).resolve(run_id).run_id
+        res = rerun_stage(repo, rid, stage, actor, reason, workers=workers or None)
+    r = res.run
+    typer.echo(
+        f"rerun {r.run_id}  stage {stage}  parent {res.parent.run_id}  {r.business_date}  {res.seconds:.1f}s"
+    )
+    typer.echo(
+        f"  copied {len(res.copied_tables)} result tables; "
+        f"not recomputed: {', '.join(res.stale_stages) or 'none'}"
+    )
+    if res.changed:
+        for k, v in res.changed.items():
+            typer.echo(f"  {k}: {v['before']} -> {v['after']}")
+    else:
+        typer.echo("  the stage reproduced the parent's numbers exactly")
+
+
 @breach_app.command("list")
 def breach_list(all_: bool = typer.Option(False, "--all", help="Include closed breaches")) -> None:
     """List breaches with their status and latest utilisation."""
