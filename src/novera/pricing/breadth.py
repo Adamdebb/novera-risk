@@ -22,6 +22,7 @@ from novera.domain.instruments import (
     Swaption,
 )
 from novera.domain.trades import Trade
+from novera.market_data.sabr import alpha_from_atm
 from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing.base import Cashflow, PricingResult, year_fraction_act365
 from novera.pricing.black import black_greeks, black_price
@@ -31,7 +32,7 @@ from novera.pricing.schedule import remaining_periods, year_fraction
 
 REPO_MODEL_VERSION = "1.0.0"
 IR_FUTURE_MODEL_VERSION = "1.0.0"
-SWAPTION_MODEL_VERSION = "1.0.0"
+SWAPTION_MODEL_VERSION = "1.1.0"
 COMMODITY_OPTION_MODEL_VERSION = "1.0.0"
 FUND_LOOKTHROUGH_MODEL_VERSION = "1.0.0"
 EXOTIC_MODEL_VERSION = "1.0.0"
@@ -138,7 +139,8 @@ def forward_swap(market: MarketSnapshot, ins: Swaption, as_of: date) -> tuple[fl
 
 
 def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
-    """European swaption under the normal (Bachelier) model on the forward swap rate."""
+    """European swaption under the normal (Bachelier) model on the forward swap rate, at the
+    normal SABR smile vol for the strike when the snapshot carries a smile (PR-012)."""
     ins = trade.instrument
     assert isinstance(ins, Swaption)
     if ins.expiry_date <= as_of:
@@ -148,7 +150,9 @@ def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricing
     fwd, annuity, maturity = forward_swap(market, ins, as_of)
     t = year_fraction_act365(as_of, ins.expiry_date)
     tenor_years = int(ins.swap_tenor.rstrip("Y"))
-    vol_bp = market.swaption_normal_vol_bp(ins.currency, t, tenor_years)
+    atm_bp = market.swaption_normal_vol_bp(ins.currency, t, tenor_years)
+    vol_bp = market.swaption_normal_vol_bp(ins.currency, t, tenor_years, forward=fwd, strike=ins.strike)
+    smile = market.swaption_smile(ins.currency, t, tenor_years)
     unit = annuity * bachelier_price(ins.payer, fwd, ins.strike, vol_bp / 1e4, t)
     sign = 1.0 if trade.direction is BuySell.BUY else -1.0
     sd = vol_bp / 1e4 * math.sqrt(t)
@@ -167,6 +171,16 @@ def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricing
             "forward_swap_rate": fwd,
             "annuity": annuity,
             "normal_vol_bp": vol_bp,
+            "atm_vol_bp": atm_bp,
+            **(
+                {
+                    "sabr_rho": smile[0],
+                    "sabr_nu": smile[1],
+                    "sabr_alpha_bp": alpha_from_atm(atm_bp, t, smile[0], smile[1]),
+                }
+                if smile is not None
+                else {}
+            ),
             "unit_price": unit,
             "years_to_expiry": t,
             "swap_years": float((maturity - ins.expiry_date).days / 365.0),

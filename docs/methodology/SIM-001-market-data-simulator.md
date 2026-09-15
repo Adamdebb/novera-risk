@@ -2,7 +2,7 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.1.0 |
+| Version          | 1.2.0 |
 | Owner            | Market Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.simulation.market_data` |
@@ -25,6 +25,11 @@ not a forecast and makes no claim about real markets.
   `lm = ln(K/F) / sqrt(T)`, `k = 2.5`; equity skew 0.30, FX skew 0.03, smile 0.10 / 0.12.
 - EUR/GBP is derived from EUR/USD and GBP/USD so triangular consistency holds.
 - Commodity curves: spot node times `(1 + (slope + tilt_t) * T)`.
+- Swaption smile (normal SABR, `β = 0`): per currency one mean-reverting path `x_t`
+  (long-run standard deviation 0.06) and one log path `y_t` (0.12). Node `ρ_t = clip(ρ_base(ccy,
+  expiry) · skew_mult_t + x_t, −0.9, 0.9)` and `ν_t = clip(ν_base(expiry) · tilt(tenor) ·
+  √vol_mult_t · e^{y_t}, 0.05, 1.5)`, so the skew steepens in the crash and the vol of vol
+  rises in both episodes. `α` is not simulated: the pricer implies it from the ATM cube.
 
 ## Inputs
 Base levels and vols in `simulation/reference_levels.py`; episodes in
@@ -63,3 +68,4 @@ and that the extension leaves the core bit-identical and joins without a jump.
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-14 | Initial model | Novera |
 | 1.1.0 | 2026-09-15 | Default horizon three to five years as core plus extension segments (decision 20.1) | Novera |
+| 1.2.0 | 2026-09-15 | Swaption SABR smile parameters, drawn after every earlier family (decision 21.1) | Novera |

@@ -33,6 +33,7 @@ def test_universe_shape() -> None:
         "COMMODITY_CURVE",
         "CREDIT_SPREAD",
         "CRYPTO_SPOT",
+        "SWAPTION_SMILE",
         "IMPLIED_VOL",
         "SWAPTION_VOL",
     }
@@ -46,7 +47,7 @@ def test_history_is_reproducible_and_clean(md) -> None:
     assert h["as_of"].nunique() == 261
     assert h["as_of"].max().date() == BD
     assert not h["value"].isna().any()
-    prices = h[~h["factor_id"].str.startswith("IR:")]
+    prices = h[~h["factor_id"].str.startswith(("IR:", "SWRHO:"))]  # rates and SABR rho may be negative
     assert (prices["value"] > 0).all()
     vols = h[h["factor_id"].str.startswith("VOL:")]
     assert vols["value"].between(0.02, 3.0).all()
@@ -135,11 +136,32 @@ def test_extension_keeps_the_core_history_identical_and_joins_continuously() -> 
     pd.testing.assert_frame_equal(b.loc[a.index], a)  # the last year is bit-identical
     assert b.index.max() == a.index.max() and b.index.min() < a.index.min()
     assert not b.isna().any().any()
-    rates = [c for c in b.columns if c.startswith("IR:")]
-    assert (b.drop(columns=rates) > 0).all().all()
+    signed = [c for c in b.columns if c.startswith(("IR:", "SWRHO:"))]  # rates and SABR rho may be negative
+    assert (b.drop(columns=signed) > 0).all().all()
     # The junction is an ordinary daily move: no factor jumps more than it ever moves elsewhere.
     change = b.diff().abs()
     junction = change.loc[a.index[0]]
     assert (junction <= change.drop(index=a.index[0]).max()).all()
     # Snapshots and planted problems still come from the core.
     assert longer.snapshot.as_of == BD and longer.planted == core.planted
+
+
+def test_swaption_smile_factors(md) -> None:
+    by_id = {f.factor_id: f for f in md.universe}
+    rho = sorted(k for k in by_id if k.startswith("SWRHO:"))
+    nu = sorted(k for k in by_id if k.startswith("SWNU:"))
+    assert len(rho) == len(nu) == 3 * 4 * 4
+    assert by_id[rho[0]].shock_type == "ABSOLUTE" and by_id[nu[0]].shock_type == "RELATIVE"
+    assert by_id[rho[0]].factor_type == "SWAPTION_SMILE" and by_id[rho[0]].expiry_years is not None
+    h = md.history
+    r, n = h[h["factor_id"].isin(rho)]["value"], h[h["factor_id"].isin(nu)]["value"]
+    assert r.between(-0.9, 0.9).all() and r.mean() < 0 and n.between(0.05, 1.5).all()
+    s = md.snapshot
+    atm = s.swaption_normal_vol_bp("USD", 1.0, 5.0)
+    fwd = 0.035
+    assert s.swaption_normal_vol_bp("USD", 1.0, 5.0, forward=fwd, strike=fwd) == pytest.approx(atm, rel=1e-9)
+    low = s.swaption_normal_vol_bp("USD", 1.0, 5.0, forward=fwd, strike=fwd - 0.01)
+    high = s.swaption_normal_vol_bp("USD", 1.0, 5.0, forward=fwd, strike=fwd + 0.01)
+    assert low > high  # negative rho: receivers struck low are richer
+    smile = s.swaption_smile("USD", 1.0, 5.0)
+    assert smile is not None and -0.9 < smile[0] < 0 < smile[1] < 1.5

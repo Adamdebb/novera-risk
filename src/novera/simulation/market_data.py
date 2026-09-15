@@ -14,6 +14,9 @@ Model (methodology record SIM-001):
   ``core_years``, drawn exactly as a run of that length would draw them, so the planted
   episodes and the limit calibration are unchanged) and an earlier extension with its own
   seed and no episodes, re-levelled so it joins the core continuously.
+- Swaption smiles: a normal SABR (beta = 0) rho and nu per cube node. Rho follows one
+  mean-reverting path per currency and steepens with the crash skew multiplier; nu follows
+  one log path per currency and rises with the episode vol multiplier.
 - The business-date snapshot plants two data-quality problems: a stale EUR/USD vol surface
   and a missing USD 7Y node.
 """
@@ -37,6 +40,7 @@ from novera.market_data.risk_factors import (
     eqidx_id,
     fx_id,
     ir_id,
+    swsmile_id,
     swvol_id,
     vol_id,
 )
@@ -158,6 +162,21 @@ def build_risk_factor_universe() -> list[RiskFactor]:
                         shock_type="RELATIVE",
                     )
                 )
+                for param in ("RHO", "NU"):
+                    out.append(
+                        RiskFactor(
+                            factor_id=swsmile_id(ccy, expiry, tenor, param),
+                            factor_type=RiskFactorType.SWAPTION_SMILE,
+                            asset_class="RATES",
+                            currency=ccy,
+                            underlying=ccy,
+                            tenor=tenor,
+                            tenor_years=TENOR_YEARS[tenor],
+                            expiry_years=TENOR_YEARS[expiry],
+                            unit="correlation" if param == "RHO" else "vol of vol",
+                            shock_type="ABSOLUTE" if param == "RHO" else "RELATIVE",
+                        )
+                    )
     for symbol in ref.CRYPTO:
         out.append(
             RiskFactor(
@@ -570,6 +589,32 @@ class _Sim:
                     node = np.clip(atm * term[ei] * shape, 0.03, 2.5)
                     self.series[vol_id(underlying, expiry, float(m))] = node
 
+    def _ou(self, stationary_std: float, kappa: float = 0.03) -> np.ndarray:
+        """Zero-mean mean-reverting daily path with the given long-run standard deviation."""
+        eps = self._noise()
+        sigma = stationary_std * np.sqrt(2.0 * kappa)
+        out = np.zeros(self.n)
+        cur = 0.0
+        for i in range(self.n):
+            cur += -kappa * cur + sigma * eps[i]
+            out[i] = cur
+        return out
+
+    def swaption_smiles(self) -> None:
+        """Normal SABR smile per cube node (SWRHO, SWNU). Drawn after every other family so
+        the cube and the rest of the history reproduce exactly."""
+        for ccy in ref.SWAPTION_CURRENCIES:
+            x = self._ou(0.06)
+            y = self._ou(0.12)
+            for e in ref.SWAPTION_EXPIRIES:
+                base_rho = ref.SWAPTION_SABR_RHO[ccy] + ref.SWAPTION_SABR_RHO_BY_EXPIRY[e]
+                rho = np.clip(base_rho * self.skew_mult + x, -0.9, 0.9)
+                for t in ref.SWAPTION_TENORS:
+                    base_nu = ref.SWAPTION_SABR_NU_BY_EXPIRY[e] * ref.SWAPTION_SABR_NU_BY_TENOR[t]
+                    nu = np.clip(base_nu * np.sqrt(self.vol_mult) * np.exp(y), 0.05, 1.5)
+                    self.series[swsmile_id(ccy, e, t, "RHO")] = rho
+                    self.series[swsmile_id(ccy, e, t, "NU")] = nu
+
     def simulate(self) -> None:
         """Draw every family for this segment, in an order fixed so earlier phases reproduce."""
         self.rates()
@@ -582,12 +627,15 @@ class _Sim:
         # Phase 6 families are drawn last so the Phase 1 history is reproduced exactly.
         self.credit(single_names=True)
         self.swaption_vols()
+        # The SABR smile (decision 21.1) is drawn after everything above for the same reason.
+        self.swaption_smiles()
 
     def prepend(self, earlier: _Sim) -> None:
         """Join an earlier segment in front of this one. ``earlier`` overlaps this segment by one
         day: it is re-levelled so that day equals this segment's first day (a shift for zero
-        rates, which can be negative; a scale for prices, spreads and vols), then the overlap
-        is dropped so the junction step is the earlier segment's own last daily move."""
+        rates and SABR rho, which can be negative; a scale for prices, spreads, vols and nu),
+        then the overlap is dropped so the junction step is the earlier segment's own last
+        daily move. Shifted rho is clipped back into its correlation bounds."""
         if earlier.dates[-1] != self.dates[0]:
             raise ValueError("the earlier segment must end on this segment's first day")
         shifted = {
@@ -595,7 +643,12 @@ class _Sim:
         }
         for fid, core in self.series.items():
             p = earlier.series[fid]
-            adj = p + (core[0] - p[-1]) if fid in shifted else p * (core[0] / p[-1])
+            if fid.startswith("SWRHO:"):
+                adj = np.clip(p + (core[0] - p[-1]), -0.9, 0.9)
+            elif fid in shifted:
+                adj = p + (core[0] - p[-1])
+            else:
+                adj = p * (core[0] / p[-1])
             self.series[fid] = np.concatenate([adj[:-1], core])
         self.dates = earlier.dates[:-1] + self.dates
         self.n = len(self.dates)

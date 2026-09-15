@@ -13,8 +13,8 @@ One-day 99% Value at Risk from an equally weighted window of 500 historical dail
 moves applied to today's snapshot, with every trade fully repriced under every scenario.
 
 ## Mathematical method
-For scenario `s`: ABSOLUTE factors shift by their observed one-day difference, RELATIVE
-factors scale by their observed one-day return. P&L_s = Σ_trades (PV_s − PV_0) in
+For scenario `s`: ABSOLUTE factors (zero rates, credit spreads, swaption SABR rho) shift by
+their observed one-day difference, RELATIVE factors scale by their observed one-day return. P&L_s = Σ_trades (PV_s − PV_0) in
 reporting currency. VaR = −Q_{1%}(P&L) with linear interpolation between order statistics.
 Ten-day VaR is reported by square-root-of-time scaling.
 

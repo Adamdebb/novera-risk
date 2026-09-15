@@ -32,7 +32,8 @@ depends on a factor not in its map would show zero sensitivity — the tests gua
 
 ## Limitations
 No cross-gamma. No vega by expiry bucket yet (surface-level only). Bumps are not
-re-calibrated (a vol bump does not re-fit the smile).
+re-calibrated (a vol bump does not re-fit the smile; the swaption VEGA row bumps the ATM cube
+with the SABR rho and nu held).
 
 ## Validation tests
 `tests/test_risk.py::test_sensitivity_signs_and_structure`; stress-versus-DV01 linearity

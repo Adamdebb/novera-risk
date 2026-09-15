@@ -166,19 +166,23 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             ProductType.SWAPTION,
             "European swaption",
             "swaption_bachelier",
-            "Bachelier on a normal volatility cube",
+            "Bachelier on a normal SABR smile cube",
             SWAPTION_MODEL_VERSION,
             "PR-012",
             "European swaption valuation",
             market_standard="Bachelier (normal) on a SABR-calibrated smile cube, OIS "
             "discounting, cash-settlement annuity convention where applicable.",
-            simplifications="The cube is quoted at the money and used for every strike, so "
-            "out-of-the-money swaptions carry no smile; single-curve forwards; cash and "
-            "physical settlement priced alike.",
+            simplifications="Normal SABR with beta fixed at zero: rho and nu per expiry and "
+            "tenor, alpha implied from the at-the-money cube; single-curve forwards; cash and "
+            "physical settlement priced alike; the vega rows bump the at-the-money cube with "
+            "rho and nu held, so smile-parameter risk appears in full-revaluation VaR only.",
             appropriateness=Appropriateness.KNOWN_WEAKNESS,
             validation="QuantLib benchmark: ql.BachelierSwaptionEngine within 0.2% and "
             "ql.bachelierBlackFormula (test_swaption_matches_quantlib_bachelier, "
-            "test_bachelier_matches_quantlib); payer minus receiver equals A(S-K).",
+            "test_bachelier_matches_quantlib); the smile against ql.SabrSmileSection in normal "
+            "vol within 1% across strikes (test_normal_sabr_matches_quantlib); the pricer reads "
+            "the smile vol at the strike (test_swaption_prices_off_the_sabr_smile); payer minus "
+            "receiver equals A(S-K).",
         ),
         ProductSpec(
             ProductType.FX_SPOT,

@@ -32,6 +32,7 @@ class RiskFactorType(StrEnum):
     CRYPTO_SPOT = "CRYPTO_SPOT"
     IMPLIED_VOL = "IMPLIED_VOL"
     SWAPTION_VOL = "SWAPTION_VOL"
+    SWAPTION_SMILE = "SWAPTION_SMILE"
 
 
 class RiskFactor(BaseModel):
@@ -104,3 +105,11 @@ def vol_id(underlying: str, expiry: str, moneyness: float) -> str:
 
 def swvol_id(ccy: str, expiry: str, tenor: str) -> str:
     return f"SWVOL:{ccy}:{expiry}:{tenor}"
+
+
+SWAPTION_SMILE_PREFIX: dict[str, str] = {"RHO": "SWRHO", "NU": "SWNU"}
+
+
+def swsmile_id(ccy: str, expiry: str, tenor: str, param: str) -> str:
+    """Normal SABR smile parameter node: ``SWRHO:USD:1Y:5Y`` or ``SWNU:USD:1Y:5Y``."""
+    return f"{SWAPTION_SMILE_PREFIX[param]}:{ccy}:{expiry}:{tenor}"

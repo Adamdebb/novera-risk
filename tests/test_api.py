@@ -151,7 +151,7 @@ def test_http_endpoints(client):
     swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
     assert swaption["methodology"] == "PR-012" and swaption["venue"] == "OTC"
     assert {f["name"] for f in swaption["fields"]} >= {"expiry_date", "swap_tenor", "strike", "payer"}
-    assert swaption["appropriateness"] == "known_weakness" and "smile" in swaption["simplifications"]
+    assert swaption["appropriateness"] == "known_weakness" and "single-curve" in swaption["simplifications"]
     inv = client.get("/reference/model-inventory").json()
     assert inv["record"] == "MV-001" and len(inv["rows"]) == 19
     assert set(inv["summary"]) == {"market_standard", "acceptable_simplification", "known_weakness"}

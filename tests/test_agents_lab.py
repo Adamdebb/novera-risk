@@ -118,7 +118,7 @@ def test_validation_report_reads_records_and_live_evidence(db_path, tmp_path):
 
 def test_parse_record_template_shape():
     d = parse_record(Path("docs/methodology/PR-012-swaption.md"))
-    assert d["record_id"] == "PR-012" and d["version"] == "1.0.0"
+    assert d["record_id"] == "PR-012" and d["version"] == "1.1.0"
     assert "test_swaption_matches_quantlib_bachelier" in d["tests"]
 
 

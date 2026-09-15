@@ -1,6 +1,6 @@
 """Shocks and scenarios applied to a market snapshot.
 
-ABSOLUTE factors (zero rates, credit spreads in bp) shift additively; RELATIVE factors
+ABSOLUTE factors (zero rates, credit spreads in bp, SABR rho) shift additively; RELATIVE factors
 (prices, levels, vols) scale multiplicatively by ``1 + shock``. Historical scenarios are
 the observed one-day changes in those same units.
 """
@@ -17,7 +17,7 @@ from novera.market_data.history import MarketHistory
 from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
 
-ABSOLUTE_PREFIXES = ("IR:", "CDS:")
+ABSOLUTE_PREFIXES = ("IR:", "CDS:", "SWRHO:")
 
 
 def shock_type_of(factor_id: str, universe: dict[str, RiskFactor] | None = None) -> str:
