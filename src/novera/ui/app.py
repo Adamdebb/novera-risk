@@ -1478,7 +1478,7 @@ elif page == "Reference data":
         "What the runs are priced against: the organisation and the counterparties, as stored. "
         "No run figures on this page."
     )
-    what = st.radio("Show", ["Organisation", "Counterparties"], horizontal=True, key="ref_what")
+    what = st.radio("Show", ["Organisation", "Counterparties", "Products"], horizontal=True, key="ref_what")
     q = st.text_input("Filter", placeholder="id or name, e.g. USD_RATES or Bank A", key="ref_filter")
     q = q.strip().lower()
 
@@ -1579,7 +1579,7 @@ elif page == "Reference data":
                 ):
                     for d, books in items:
                         render_desk(d, books, expanded=bool(q))
-    else:
+    elif what == "Counterparties":
         ref = client.counterparty_reference()
         csas = {c["csa_id"]: c for c in ref["csas"]}
         ns_by_cp: dict[str, list[dict]] = {}
@@ -1650,5 +1650,47 @@ elif page == "Reference data":
                     )
                     lines += cp_lines(sub, indent="    ")
                 st.markdown("\n".join(lines))
+    else:
+        ref = client.product_reference()
+        n_products = sum(len(a["products"]) for a in ref["asset_classes"])
+        st.markdown(
+            f"{len(ref['asset_classes'])} asset classes · {n_products} products · one pricer per product, "
+            "each governed by a methodology record in `docs/methodology/`"
+        )
+        for ac in ref["asset_classes"]:
+            ac_hit = _hit(ac["asset_class"], ac["name"])
+            prods = [
+                p
+                for p in ac["products"]
+                if ac_hit
+                or _hit(p["product_type"], p["name"], p["model"], p["model_label"], p["methodology"])
+            ]
+            if not prods:
+                continue
+            shown += 1
+            label = f"{ac['name']} · {ac['asset_class']} · {len(ac['products'])} products"
+            with st.expander(label, expanded=bool(q)):
+                for prod in prods:
+                    title = (
+                        f"{prod['name']} · {prod['product_type']} · {prod['venue'].lower()} · "
+                        f"{prod['model_label']}"
+                    )
+                    with st.expander(title, expanded=bool(q)):
+                        st.markdown(
+                            f"- venue: {prod['venue'].lower()}\n"
+                            f"- model: {prod['model_label']} · `{prod['model']}` v{prod['model_version']}\n"
+                            f"- methodology: `{prod['methodology']}` {prod['methodology_title']}\n"
+                            f"- instrument: `{prod['instrument_class']}`"
+                        )
+                        st.markdown("**Defining fields**")
+                        rows = []
+                        for f in prod["fields"]:
+                            line = f"- `{f['name']}` · {f['type']}"
+                            if not f["required"]:
+                                line += f" · default `{f['default']}`"
+                            if f["description"]:
+                                line += f" · {f['description']}"
+                            rows.append(line)
+                        st.markdown("\n".join(rows))
     if not shown:
         st.info("Nothing matches the filter.")

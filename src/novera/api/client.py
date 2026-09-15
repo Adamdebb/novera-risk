@@ -37,6 +37,7 @@ class RiskClient(Protocol):
     def audit(self, subject: str | None = None, limit: int = 100) -> list[dict[str, Any]]: ...
     def organisation(self, firm_id: str | None = None) -> dict[str, Any]: ...
     def counterparty_reference(self) -> dict[str, Any]: ...
+    def product_reference(self) -> dict[str, Any]: ...
 
 
 WRITE_METHODS = {
@@ -180,6 +181,9 @@ class HttpClient:
 
     def counterparty_reference(self):
         return self._get("/reference/counterparties")
+
+    def product_reference(self):
+        return self._get("/reference/products")
 
     def _post(self, path: str, **body: Any) -> Any:
         return self._check(self.http.post(path, json=body))

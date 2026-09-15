@@ -109,6 +109,11 @@ def test_http_endpoints(client):
     assert client.get("/organisation").json()["firm"]["firm_id"] == "GMB"
     assert client.get("/organisation", params={"firm_id": "GMB"}).json()["desks"]
     assert client.get("/organisation", params={"firm_id": "NOPE"}).status_code == 404
+    prods = client.get("/reference/products").json()["asset_classes"]
+    assert {a["asset_class"] for a in prods} == {"RATES", "FX", "EQUITY", "CREDIT", "COMMODITY", "DIGITAL_ASSET"}
+    swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
+    assert swaption["methodology"] == "PR-012" and swaption["venue"] == "OTC"
+    assert {f["name"] for f in swaption["fields"]} >= {"expiry_date", "swap_tenor", "strike", "payer"}
     ref = client.get("/reference/counterparties").json()
     assert ref["counterparties"] and ref["netting_sets"] and ref["csas"]
     assert {n["csa_id"] for n in ref["netting_sets"] if n["csa_id"]} <= {c["csa_id"] for c in ref["csas"]}
@@ -277,6 +282,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.LookthroughReport, client.get(f"/runs/{rid}/lookthrough").json()),
         (s.MarketDataProxies, client.get(f"/runs/{rid}/market-data-proxies").json()),
         (s.CounterpartyReference, client.get("/reference/counterparties").json()),
+        (s.ProductReference, client.get("/reference/products").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))
@@ -384,3 +390,24 @@ def test_cors_setting_parses_a_comma_list():
         "http://127.0.0.1:5173",
     ]
     assert Settings(cors_origins="").cors_origin_list == []
+
+
+def test_product_catalogue_matches_pricers_and_methodology(db_path):
+    """The catalogue is reference data read from code: it must name every product, the model
+    each pricer actually writes on valuation rows, and a methodology record that exists."""
+    from pathlib import Path
+
+    from novera.domain.enums import ProductType
+    from novera.pricing import PRICERS
+    from novera.pricing.catalogue import PRODUCT_CATALOGUE, instrument_classes
+
+    assert set(PRODUCT_CATALOGUE) == set(ProductType) == set(PRICERS) == set(instrument_classes())
+    docs = Path(__file__).resolve().parents[1] / "docs" / "methodology"
+    for spec in PRODUCT_CATALOGUE.values():
+        assert list(docs.glob(f"{spec.methodology}-*.md")), f"{spec.methodology} has no methodology record"
+    with DuckDBRepository(db_path, read_only=True) as repo:
+        v = RiskService(repo).valuation().dropna(subset=["model"])
+    seen = v.groupby("product_type")["model"].agg(lambda s: set(s))
+    assert len(seen) >= 10, "the test portfolio should span most products"
+    for pt, models in seen.items():
+        assert models == {PRODUCT_CATALOGUE[ProductType(pt)].model}, (pt, models)

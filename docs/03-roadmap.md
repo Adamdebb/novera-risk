@@ -149,7 +149,9 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       in-process clients, CORS setting, risk-pack download endpoint, committed OpenAPI file
       with a staleness test (decision log round 14)
 - [x] Reference data page: organisation tree (by business or legal entity) and counterparty
-      tree (netting sets, CSA terms) with a filter; `GET /reference/counterparties` (round 15)
+      tree (netting sets, CSA terms) and product tree (asset class → product: venue, model,
+      methodology record, defining fields) with a filter; `GET /reference/counterparties`,
+      `GET /reference/products` (round 15)
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
       for a full phase; morning overview and limits first
 
