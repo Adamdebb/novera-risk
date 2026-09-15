@@ -1475,8 +1475,8 @@ elif page == "Runs & audit":
 elif page == "Reference data":
     header("Reference data")
     st.caption(
-        "What the runs are priced against: the organisation and the counterparties, as stored. "
-        "No run figures on this page."
+        "What the runs are priced against: the organisation, the counterparties and the products, "
+        "as stored and as coded. No run figures on this page."
     )
     what = st.radio("Show", ["Organisation", "Counterparties", "Products"], horizontal=True, key="ref_what")
     q = st.text_input("Filter", placeholder="id or name, e.g. USD_RATES or Bank A", key="ref_filter")
@@ -1687,7 +1687,8 @@ elif page == "Reference data":
                         for f in prod["fields"]:
                             line = f"- `{f['name']}` · {f['type']}"
                             if not f["required"]:
-                                line += f" · default `{f['default']}`"
+                                empty = f["default"] in ("", None)
+                                line += " · optional" if empty else f" · default `{f['default']}`"
                             if f["description"]:
                                 line += f" · {f['description']}"
                             rows.append(line)
