@@ -25,8 +25,9 @@ def db_path(tmp_path_factory):
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=1.2, seed=77))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=77,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=150, seed=77, market_history=hist)
+    )
     with DuckDBRepository(path) as repo:
         repo.init_schema()
         repo.save_organisation(org)
@@ -44,8 +45,11 @@ def db_path(tmp_path_factory):
 @pytest.fixture(scope="module")
 def result(db_path, tmp_path_factory):
     with DuckDBRepository(db_path) as repo:
-        return run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=200), workers=1),
-                       runs_dir=tmp_path_factory.mktemp("runs"))
+        return run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=200), workers=1),
+            runs_dir=tmp_path_factory.mktemp("runs"),
+        )
 
 
 def test_run_record_and_verdict(result):
@@ -53,12 +57,26 @@ def test_run_record_and_verdict(result):
     assert r.status == "COMPLETED" and r.run_id.startswith("run_")
     assert r.verdict == "AMBER", [f.code for f in result.dq.findings]
     codes = {f.code for f in result.dq.findings}
-    assert {"MD_MISSING_FACTOR", "MD_STALE_FACTOR", "TRADE_INVALID", "TRADE_UNKNOWN_BOOK",
-            "TRADE_UNKNOWN_COUNTERPARTY"} <= codes
+    assert {
+        "MD_MISSING_FACTOR",
+        "MD_STALE_FACTOR",
+        "TRADE_INVALID",
+        "TRADE_UNKNOWN_BOOK",
+        "TRADE_UNKNOWN_COUNTERPARTY",
+    } <= codes
     missing = next(f for f in result.dq.findings if f.code == "MD_MISSING_FACTOR")
     assert missing.subject == "IR:USD:7Y" and missing.affected_trade_ids
-    assert {"valuation", "sensitivities", "var", "stress", "pnl_attribution", "monte_carlo", "backtest",
-            "concentration", "liquidity"} <= set(r.model_versions)
+    assert {
+        "valuation",
+        "sensitivities",
+        "var",
+        "stress",
+        "pnl_attribution",
+        "monte_carlo",
+        "backtest",
+        "concentration",
+        "liquidity",
+    } <= set(r.model_versions)
     assert r.summary["monte_carlo_var"] > 0 and r.summary["backtest_zone"] in ("GREEN", "AMBER", "RED")
     assert r.summary["liquidity_adjusted_var"] >= r.summary["var"]
     assert r.summary["var"] > 0 and r.summary["breaches"] >= 1
@@ -91,13 +109,18 @@ def test_results_persisted_and_reloadable(result, db_path):
         assert len(val) == len(result.valuation)
         assert len(repo.load_run_frame(rid, "sensitivities")) == len(result.sensitivities)
         summary = repo.load_run_frame(rid, "var_summary")
-        assert set(summary["method"]) == {"historical_full_revaluation", "delta_gamma_vega",
-                                          "monte_carlo_delta_gamma_vega"}
+        assert set(summary["method"]) == {
+            "historical_full_revaluation",
+            "delta_gamma_vega",
+            "monte_carlo_delta_gamma_vega",
+        }
         assert len(repo.load_run_frame(rid, "backtest_summary")) == 2
         assert not repo.load_run_frame(rid, "concentration").empty
         assert not repo.load_run_frame(rid, "liquidity_buckets").empty
         assert len(repo.load_run_frame(rid, "stress_summary")) == len(result.stress)
-        assert (repo.load_run_frame(rid, "limits")["status"] == "BREACH").sum() == result.run.summary["breaches"]
+        assert (repo.load_run_frame(rid, "limits")["status"] == "BREACH").sum() == result.run.summary[
+            "breaches"
+        ]
         assert len(repo.load_run_frame(rid, "dq_findings")) == len(result.dq.findings)
         assert repo.load_run_frame(rid, "nothing_here").empty
         events = repo.load_audit_events(subject=rid)
@@ -108,7 +131,11 @@ def test_results_persisted_and_reloadable(result, db_path):
 
 def test_rerun_is_reproducible(db_path, result, tmp_path_factory):
     with DuckDBRepository(db_path) as repo:
-        again = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=200), workers=1), persist=False)
+        again = run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=200), workers=1),
+            persist=False,
+        )
     assert again.run.run_id != result.run.run_id
     assert again.run.summary["var"] == pytest.approx(result.run.summary["var"])
     assert again.run.config_hash == result.run.config_hash
@@ -126,11 +153,26 @@ def test_coupon_between_dates_is_not_a_loss():
     values = {f"IR:USD:{t}": 0.04 for t in tenors}
     prev = MarketSnapshot(as_of=_d(2026, 5, 14), values=values)
     today = MarketSnapshot(as_of=_d(2026, 5, 16), values=values)
-    bond = GovernmentBond(instrument_id="B", currency="USD", issuer="UST", coupon_rate=0.05,
-                          issue_date=_d(2025, 11, 15), maturity_date=_d(2035, 11, 15))
-    t = Trade(trade_id="T", instrument=bond, direction=BuySell.BUY, quantity=100e6, trade_price=100,
-              trade_date=_d(2026, 1, 5), book_id="B", trader_id="T", counterparty_id="X",
-              clearing=ClearingType.EXCHANGE)
+    bond = GovernmentBond(
+        instrument_id="B",
+        currency="USD",
+        issuer="UST",
+        coupon_rate=0.05,
+        issue_date=_d(2025, 11, 15),
+        maturity_date=_d(2035, 11, 15),
+    )
+    t = Trade(
+        trade_id="T",
+        instrument=bond,
+        direction=BuySell.BUY,
+        quantity=100e6,
+        trade_price=100,
+        trade_date=_d(2026, 1, 5),
+        book_id="B",
+        trader_id="T",
+        counterparty_id="X",
+        clearing=ClearingType.EXCHANGE,
+    )
     pf = Portfolio([t], today, "USD")
     out = explain_pnl(pf, prev, [t])
     carry = out.steps.set_index("step")["pnl"]["CARRY"]

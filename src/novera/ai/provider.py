@@ -209,6 +209,11 @@ def _plan(q: str) -> list[tuple[str, dict[str, Any]]]:
         return [("limits", {"status": "BREACH"}), ("limits", {"status": "WARNING"}), ("breaches", {})]
     if any(
         k in ql
+        for k in ("look-through", "lookthrough", "look through", "etf", "mutual fund", "constituent", "prox")
+    ):
+        return [("lookthrough", {})]
+    if any(
+        k in ql
         for k in ("nav", "leverag", "prime broker", "redemption", "investor", "crowd", "strateg", "fund")
     ):
         return [("fund_overview", {})]
@@ -487,6 +492,28 @@ def _compose(question: str, results: list[tuple[str, dict[str, Any], dict[str, A
                         f"- Under {s0['scenario']}, current exposure goes from {_fmt_m(s0['current'])} to "
                         f"{_fmt_m(s0['stressed'])}."
                     )
+        elif name == "lookthrough":
+            if not res["fund_trades"]:
+                lines.append("No ETF or mutual-fund positions in this run.")
+            else:
+                lines.append(
+                    f"{res['fund_trades']} fund positions looked through: "
+                    + ", ".join(f"{x['fund']} {_fmt_m(x['exposure_m'])}" for x in res["by_fund_m"][:4])
+                    + "."
+                )
+                for c in res["constituents_m"][:4]:
+                    lines.append(
+                        f"- {c['constituent']}: {_fmt_m(c['direct_m'])} direct plus {_fmt_m(c['via_funds_m'])} "
+                        f"via funds ({c['via_funds_share']:.0%} of the total)."
+                    )
+                for fl in res["flags"][:3]:
+                    lines.append(f"- {fl}")
+            px = res["market_data_proxies"]
+            if px["applied"]:
+                lines.append(
+                    f"- Market data: {px['applied']} factor values were proxied before pricing "
+                    f"({', '.join(px['families'][:4])}); {px['kept_stale']} stale values kept as observed."
+                )
         elif name == "fund_overview":
             if "error" in res:
                 lines.append(f"- {res['error']}")

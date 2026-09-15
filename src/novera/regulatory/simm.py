@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from novera.simulation import reference_levels as _ref
+
 MODEL_VERSION = "1.0.0"
 
 # Risk weights per bp of sensitivity by tenor (regular-volatility currencies), in currency units per bp.
@@ -43,7 +45,8 @@ FX_RHO = 0.5
 CMD_RW = {"energy": 0.24, "natgas": 0.40, "precious": 0.19, "base": 0.21}
 CMD_RHO = {"energy": 0.9, "natgas": 0.9, "precious": 0.7, "base": 0.6}
 CMD_GAMMA = 0.2
-VEGA_RW = {"EQ": 0.3, "FX": 0.3}
+VEGA_RW = {"EQ": 0.3, "FX": 0.3, "CMD": 0.36, "IR": 0.16}
+COMMODITY_CODES = ("BRENT", "WTI", "NATGAS", "GOLD", "SILVER", "COPPER", "ALUMINIUM")
 VEGA_RHO = 0.5
 PRODUCT_CLASS_PSI = 0.0  # product classes (RatesFX, Credit, Equity, Commodity) are summed
 TENOR_YEARS = {
@@ -111,10 +114,7 @@ def simm_for_sensitivities(sens: pd.DataFrame, base_vols: dict[str, float]) -> d
     # Credit qualifying.
     cs = sens[sens["measure"] == "CS01"]
     if len(cs):
-        ws = {
-            u: v * CS_RW["IG" if ("IG" in u or "MAIN" in u) else "HY"]
-            for u, v in cs.groupby("underlying")["value"].sum().items()
-        }
+        ws = {u: v * CS_RW[_credit_quality(u)] for u, v in cs.groupby("underlying")["value"].sum().items()}
         out["CREDIT"] = _k(ws, lambda a, b: CS_RHO)
     # Equity.
     eq = sens[sens["measure"] == "EQ_DELTA"]
@@ -147,15 +147,29 @@ def simm_for_sensitivities(sens: pd.DataFrame, base_vols: dict[str, float]) -> d
         kbs = {b: _k(ws, lambda a, c, b=b: CMD_RHO[b]) for b, ws in kb.items()}
         sbs = {b: sum(ws.values()) for b, ws in kb.items()}
         out["COMMODITY"] = _across(kbs, sbs, CMD_GAMMA)
-    # Vega (equity and FX surfaces).
+    # Vega (equity, FX and commodity surfaces per vol point; swaption cubes per normal bp).
     vg = sens[sens["measure"] == "VEGA"]
     if len(vg):
         ws = {}
-        for u, v in vg.groupby("underlying")["value"].sum().items():
-            cls = "FX" if (u.endswith("USD") or u.startswith("USD")) else "EQ"
+        for (fid, u), v in vg.groupby(["factor_id", "underlying"])["value"].sum().items():
+            if str(fid).startswith("SWVOL:"):
+                ws[f"SWVOL:{u}"] = v * base_vols.get(f"SWVOL:{u}", 80.0) * VEGA_RW["IR"]
+                continue
+            if u in COMMODITY_CODES:
+                cls = "CMD"
+            elif u.endswith("USD") or u.startswith("USD"):
+                cls = "FX"
+            else:
+                cls = "EQ"
             ws[u] = v * 100 * base_vols.get(u, 0.2) * VEGA_RW[cls]
         out["VEGA"] = _k(ws, lambda a, b: VEGA_RHO)
     return out
+
+
+def _credit_quality(underlying: str) -> str:
+    if underlying in _ref.CDS_SINGLE_NAMES:
+        return _ref.CDS_SINGLE_NAMES[underlying][5]
+    return "IG" if ("IG" in underlying or "MAIN" in underlying) else "HY"
 
 
 def simm(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, float]) -> SIMMResult:

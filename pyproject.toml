@@ -62,6 +62,7 @@ select = ["E", "F", "I", "B", "UP", "N", "W"]
 "src/novera/reporting/pack.py" = ["E501"]
 "src/novera/ai/provider.py" = ["E501"]
 "src/novera/ai/tools.py" = ["E501"]
+"src/novera/pricing/exotic_formulas.py" = ["N806"]
 
 [tool.mypy]
 python_version = "3.11"

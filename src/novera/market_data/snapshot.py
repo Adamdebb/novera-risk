@@ -142,6 +142,37 @@ class MarketSnapshot(BaseModel):
         self._cache[ck] = surface
         return surface
 
+    def swaption_normal_vol_bp(self, currency: str, expiry_years: float, tenor_years: float) -> float:
+        """Bachelier vol in bp/yr, bilinear in (expiry, tenor) on the SWVOL cube, flat outside."""
+        ck = f"swv:{currency}"
+        grid = self._cache.get(ck)
+        if grid is None:
+            pts: dict[tuple[float, float], float] = {}
+            for k in self.factors_with_prefix(f"SWVOL:{currency}:"):
+                _, _, e, t = k.split(":")
+                pts[(TENOR_YEARS[e], TENOR_YEARS[t])] = self.values[k]
+            if not pts:
+                raise KeyError(f"no swaption vol cube for {currency}")
+            es = np.array(sorted({e for e, _ in pts}))
+            ts = np.array(sorted({t for _, t in pts}))
+            grid = (es, ts, np.array([[pts[(e, t)] for t in ts] for e in es]))
+            self._cache[ck] = grid
+        es, ts, vals = grid
+        x = float(np.clip(expiry_years, es[0], es[-1]))
+        y = float(np.clip(tenor_years, ts[0], ts[-1]))
+        i = int(np.clip(np.searchsorted(es, x, side="right") - 1, 0, max(len(es) - 2, 0)))
+        j = int(np.clip(np.searchsorted(ts, y, side="right") - 1, 0, max(len(ts) - 2, 0)))
+        i2, j2 = min(i + 1, len(es) - 1), min(j + 1, len(ts) - 1)
+        wx = 0.0 if es[i2] == es[i] else (x - es[i]) / (es[i2] - es[i])
+        wy = 0.0 if ts[j2] == ts[j] else (y - ts[j]) / (ts[j2] - ts[j])
+        v = (
+            vals[i, j] * (1 - wx) * (1 - wy)
+            + vals[i2, j] * wx * (1 - wy)
+            + vals[i, j2] * (1 - wx) * wy
+            + vals[i2, j2] * wx * wy
+        )
+        return float(v)
+
     def with_values(self, updates: dict[str, float]) -> MarketSnapshot:
         """Return a new snapshot with some factor values replaced (used by stress and bumping).
         Built fresh rather than copied so cached curves and surfaces are not inherited."""

@@ -7,6 +7,7 @@ from novera.data_quality.checks import (
     check_pnl_residuals,
     check_trades,
     check_valuation,
+    proxy_findings,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "check_pnl_residuals",
     "check_trades",
     "check_valuation",
+    "proxy_findings",
 ]

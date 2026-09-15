@@ -26,10 +26,13 @@ from novera.data_quality import (
     check_pnl_residuals,
     check_trades,
     check_valuation,
+    proxy_findings,
 )
 from novera.fund import run_fund
 from novera.limits import RiskInputs, effective_limits, expire_increases, monitor, sync_breaches
 from novera.market_data.history import MarketHistory
+from novera.market_data.proxies import MODEL_VERSION as PROXY_VERSION
+from novera.market_data.proxies import apply_proxies
 from novera.pricing import valuation as valuation_mod
 from novera.pricing.valuation import value_portfolio
 from novera.regulatory import run_regulatory
@@ -43,6 +46,7 @@ from novera.risk import (
     historical_var,
     liquidity,
     live_backtest,
+    look_through,
     monte_carlo_var,
     run_stress,
     static_backtest,
@@ -55,6 +59,7 @@ from novera.risk import var as var_mod
 from novera.risk.backtest import MODEL_VERSION as BACKTEST_VERSION
 from novera.risk.concentration import MODEL_VERSION as CONC_VERSION
 from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
+from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
 from novera.risk.stress import historical_episodes_from_simulation
@@ -73,6 +78,8 @@ MODEL_VERSIONS = {
     "backtest": BACKTEST_VERSION,
     "concentration": CONC_VERSION,
     "liquidity": LIQ_VERSION,
+    "lookthrough": LOOKTHROUGH_VERSION,
+    "market_data_proxies": PROXY_VERSION,
 }
 
 
@@ -87,6 +94,7 @@ class EODConfig:
     counterparty: bool | None = None  # None: follow settings.exposure_enabled
     regulatory: bool | None = None  # None: follow settings.regulatory_enabled
     exposure_paths: int | None = None  # None: settings.exposure_paths
+    proxies: bool | None = None  # None: follow settings.proxies_enabled
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +105,7 @@ class EODConfig:
             "counterparty": self.counterparty,
             "regulatory": self.regulatory,
             "exposure_paths": self.exposure_paths,
+            "proxies": self.proxies,
         }
 
 
@@ -189,11 +198,18 @@ def run_eod(
     )
     dq = DataQualityReport()
 
+    raw_market = market
+    proxies = None
+    if cfg.proxies if cfg.proxies is not None else settings.proxies_enabled:
+        proxies = apply_proxies(raw_market, universe_list, prev_market)
+        market = proxies.market
     with _timed(timings, "valuation"):
         val = value_portfolio(snapshot, market, org, reporting)
         pf = Portfolio(snapshot.trades, market, reporting, universe=universe)
     with _timed(timings, "dq_pre"):
-        dq.findings += check_market_data(market, universe_list, pf.index)
+        dq.findings += check_market_data(raw_market, universe_list, pf.index)
+        if proxies is not None:
+            dq.findings += proxy_findings(proxies, pf.index)
         dq.findings += check_trades(list(snapshot.trades), org, counterparties, netting_sets, market.as_of)
         dq.findings += check_valuation(val.table)
     with _timed(timings, "sensitivities"):
@@ -227,6 +243,7 @@ def run_eod(
             and (t.instrument.expiry_date - market.as_of).days > 300
         }
         liq = liquidity(val.table, hs.var, far)
+        lookthrough = look_through(list(snapshot.trades), market, reporting)
     with _timed(timings, "pnl"):
         pnl = None
         if prev_market is not None:
@@ -272,7 +289,19 @@ def run_eod(
             )
         breaches = int((limit_table["status"] == "BREACH").sum())
         warnings = int((limit_table["status"] == "WARNING").sum())
-    sync = sync_breaches(repo, run.run_id, market.as_of, limit_table) if persist else None
+    # Limits fed by the counterparty or fund engines are synced after those engines run, so the
+    # first pass neither raises them on stale inputs nor closes them for lack of a measure.
+    is_fund = org.firm.firm_type == "HEDGE_FUND"
+    do_cp = settings.exposure_enabled if cfg.counterparty is None else cfg.counterparty
+    deferred_types: set[str] = set()
+    if persist and do_cp:
+        deferred_types.add("COUNTERPARTY_EXPOSURE")
+    if persist and is_fund:
+        deferred_types |= {"LEVERAGE", "MARGIN_USAGE", "PB_CONCENTRATION"}
+    first_pass = (
+        limit_table[~limit_table["limit_type"].isin(deferred_types)] if len(limit_table) else limit_table
+    )
+    sync = sync_breaches(repo, run.run_id, market.as_of, first_pass) if persist else None
     if sync is not None:
         events += sync.events
     st = stress_table(stress, val.table)
@@ -295,6 +324,8 @@ def run_eod(
         "liquidity_horizon_days": liq.horizon_days,
         "concentration_flags": len(conc.flags),
         "liquidity_flags": len(liq.flags),
+        "lookthrough_flags": len(lookthrough.flags),
+        "fund_holdings": int(lookthrough.holdings["trade_id"].nunique()) if len(lookthrough.holdings) else 0,
         "worst_stress_id": worst["scenario_id"] if worst is not None else None,
         "worst_stress_name": worst["name"] if worst is not None else None,
         "worst_stress": float(worst["total"]) if worst is not None else None,
@@ -306,6 +337,7 @@ def run_eod(
         "breaches_back_within_limit": len(sync.back_within_limit) if sync else 0,
         "dq_findings": len(dq.findings),
         "dq_verdict": dq.verdict,
+        "md_proxies": len([a for a in proxies.actions if a.kind != "KEPT_STALE"]) if proxies else 0,
         "pnl_total": pnl.total if pnl else None,
         "pnl_steps": {r["step"]: float(r["pnl"]) for _, r in pnl.steps.iterrows()} if pnl else None,
     }
@@ -339,9 +371,16 @@ def run_eod(
                 pnl,
                 events,
                 runs_dir,
-                extras={"mc": mc, "bt_static": bt_static, "bt_live": bt_live, "conc": conc, "liq": liq},
+                extras={
+                    "mc": mc,
+                    "bt_static": bt_static,
+                    "bt_live": bt_live,
+                    "conc": conc,
+                    "liq": liq,
+                    "proxies": proxies,
+                    "lookthrough": lookthrough,
+                },
             )
-        is_fund = org.firm.firm_type == "HEDGE_FUND"
         pfe: dict[str, float] | None = None
         fund_metrics: dict[str, float] | None = None
         do_reg = (settings.regulatory_enabled if cfg.regulatory is None else cfg.regulatory) and not is_fund
@@ -349,7 +388,6 @@ def run_eod(
             with _timed(timings, "regulatory"):
                 reg = run_regulatory(repo, run.run_id, settings, runs_dir=runs_dir)
                 run.summary["regulatory"] = reg.summary()
-        do_cp = settings.exposure_enabled if cfg.counterparty is None else cfg.counterparty
         if do_cp:
             with _timed(timings, "counterparty"):
                 cp_run = run_counterparty(
@@ -400,7 +438,11 @@ def run_eod(
                 repo.save_run_frame(run.run_id, "limits", limit_table)
                 run.summary["breaches"] = int((limit_table["status"] == "BREACH").sum())
                 run.summary["warnings"] = int((limit_table["status"] == "WARNING").sum())
-                sync2 = sync_breaches(repo, run.run_id, market.as_of, limit_table)
+                second_pass = limit_table[limit_table["limit_type"].isin(deferred_types)]
+                sync2 = sync_breaches(repo, run.run_id, market.as_of, second_pass)
+                if sync2.events:
+                    repo.save_audit_events(sync2.events)  # first-pass events are already stored
+                events += sync2.events
                 if sync is not None:
                     sync.raised += sync2.raised
                     sync.auto_escalated += sync2.auto_escalated
@@ -425,6 +467,12 @@ def _persist(
     repo.save_run(run)
     if extras:
         mc, bts, btl, conc, liq = (extras[k] for k in ("mc", "bt_static", "bt_live", "conc", "liq"))
+        if extras.get("proxies") is not None:
+            repo.save_run_frame(rid, "md_proxies", extras["proxies"].table())
+        lt = extras.get("lookthrough")
+        if lt is not None:
+            repo.save_run_frame(rid, "lookthrough_holdings", lt.holdings)
+            repo.save_run_frame(rid, "lookthrough_constituents", lt.constituents)
         repo.save_run_frame(rid, "var_contributions_monte_carlo", mc.contributions.assign(method=mc.method))
         repo.save_run_frame(rid, "backtest_summary", pd.DataFrame([bts.summary(), btl.summary()]))
         repo.save_run_frame(rid, "backtest_series", bts.series.assign(kind=bts.kind))
@@ -449,7 +497,8 @@ def _persist(
             "risk_flags",
             pd.DataFrame(
                 [{"kind": "CONCENTRATION", "message": f} for f in conc.flags]
-                + [{"kind": "LIQUIDITY", "message": f} for f in liq.flags],
+                + [{"kind": "LIQUIDITY", "message": f} for f in liq.flags]
+                + [{"kind": "LOOKTHROUGH", "message": f} for f in (lt.flags if lt is not None else [])],
                 columns=["kind", "message"],
             ),
         )

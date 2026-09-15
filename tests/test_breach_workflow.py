@@ -1,4 +1,5 @@
 """Breach lifecycle, auto-escalation, close rules and the approval matrix."""
+
 from datetime import date, timedelta
 
 import pandas as pd
@@ -24,8 +25,14 @@ D1, D2, D3 = date(2026, 9, 11), date(2026, 9, 14), date(2026, 9, 15)
 
 
 def _limit(lid, level=HierarchyLevel.DESK, amount=100.0, owner="Head of USD Rates"):
-    return Limit(limit_id=lid, limit_type=LimitType.DV01, scope=LimitScope(level=level, entity_id="USD_RATES"),
-                 amount=amount, owner=owner, effective_from=date(2026, 1, 1))
+    return Limit(
+        limit_id=lid,
+        limit_type=LimitType.DV01,
+        scope=LimitScope(level=level, entity_id="USD_RATES"),
+        amount=amount,
+        owner=owner,
+        effective_from=date(2026, 1, 1),
+    )
 
 
 def _table(rows):
@@ -34,10 +41,22 @@ def _table(rows):
 
 
 def _row(lid, util, level="DESK"):
-    return {"limit_id": lid, "limit_type": "DV01", "level": level, "entity_id": "USD_RATES", "filters": "",
-            "amount": 100.0, "base_amount": 100.0, "increase_id": None, "current": util * 100, "utilisation": util,
-            "status": "BREACH" if util >= 1 else ("WARNING" if util >= 0.8 else "OK"), "warning_threshold": 0.8,
-            "owner": "Head of USD Rates", "trades_in_scope": 3}
+    return {
+        "limit_id": lid,
+        "limit_type": "DV01",
+        "level": level,
+        "entity_id": "USD_RATES",
+        "filters": "",
+        "amount": 100.0,
+        "base_amount": 100.0,
+        "increase_id": None,
+        "current": util * 100,
+        "utilisation": util,
+        "status": "BREACH" if util >= 1 else ("WARNING" if util >= 0.8 else "OK"),
+        "warning_threshold": 0.8,
+        "owner": "Head of USD Rates",
+        "trades_in_scope": 3,
+    }
 
 
 @pytest.fixture
@@ -113,8 +132,16 @@ def test_escalate_manually(repo):
 def test_increase_approval_matrix(repo):
     sync_breaches(repo, "run1", D1, _table([_row("L1", 1.1)]))
     b = repo.load_breaches(open_only=True)[0]
-    inc, _ = request_increase(repo, "L1", 120.0, D1 + timedelta(days=30), "Head of USD Rates",
-                              "novation pipeline, unwinds scheduled", effective_from=D1, breach_id=b.breach_id)
+    inc, _ = request_increase(
+        repo,
+        "L1",
+        120.0,
+        D1 + timedelta(days=30),
+        "Head of USD Rates",
+        "novation pipeline, unwinds scheduled",
+        effective_from=D1,
+        breach_id=b.breach_id,
+    )
     assert inc.status is IncreaseStatus.REQUESTED and not inc.needs_cro()
     with pytest.raises(WorkflowError, match="own increase"):
         decide_increase(repo, inc.increase_id, "Head of USD Rates", True)
@@ -124,8 +151,12 @@ def test_increase_approval_matrix(repo):
     assert ok.status is IncreaseStatus.APPROVED
     # Effective limit is raised while in force, and the breach can be closed against it.
     limits, ids = effective_limits(repo.load_limits(), repo.load_increases(status="APPROVED"), D2)
-    assert next(lim for lim in limits if lim.limit_id == "L1").amount == 120.0 and ids["L1"] == inc.increase_id
-    limits, ids = effective_limits(repo.load_limits(), repo.load_increases(status="APPROVED"), D1 + timedelta(days=60))
+    assert (
+        next(lim for lim in limits if lim.limit_id == "L1").amount == 120.0 and ids["L1"] == inc.increase_id
+    )
+    limits, ids = effective_limits(
+        repo.load_limits(), repo.load_increases(status="APPROVED"), D1 + timedelta(days=60)
+    )
     assert next(lim for lim in limits if lim.limit_id == "L1").amount == 100.0 and ids == {}
     closed, _ = close(repo, b.breach_id, "Head of USD Rates", "TEMPORARY_INCREASE_APPROVED", "", on=D2)
     assert closed.status is BreachStatus.CLOSED
@@ -135,13 +166,16 @@ def test_increase_approval_matrix(repo):
 
 
 def test_large_increase_needs_cro_and_firm_level_needs_cro(repo):
-    big, _ = request_increase(repo, "L1", 140.0, D1 + timedelta(days=10), "Head of USD Rates", "big", effective_from=D1)
+    big, _ = request_increase(
+        repo, "L1", 140.0, D1 + timedelta(days=10), "Head of USD Rates", "big", effective_from=D1
+    )
     assert big.needs_cro()
     with pytest.raises(WorkflowError, match="needs the CRO"):
         decide_increase(repo, big.increase_id, "Head of Market Risk", True)
     assert decide_increase(repo, big.increase_id, "CRO", True)[0].status is IncreaseStatus.APPROVED
-    firm, _ = request_increase(repo, "FIRM_VAR", 110.0, D1 + timedelta(days=10), "Head of Market Risk", "firm",
-                               effective_from=D1)
+    firm, _ = request_increase(
+        repo, "FIRM_VAR", 110.0, D1 + timedelta(days=10), "Head of Market Risk", "firm", effective_from=D1
+    )
     with pytest.raises(WorkflowError):
         decide_increase(repo, firm.increase_id, "Head of Market Risk", True)
     rejected, _ = decide_increase(repo, firm.increase_id, "CRO", False, "no")

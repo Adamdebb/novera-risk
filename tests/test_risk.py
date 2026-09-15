@@ -1,4 +1,5 @@
 """Risk engine tests: structural invariants, not magic numbers."""
+
 from datetime import date
 
 import numpy as np
@@ -38,8 +39,9 @@ def world():
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=2.2, seed=21))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=250, seed=21,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=250, seed=21, market_history=hist)
+    )
     universe = {f.factor_id: f for f in md.universe}
     val = value_portfolio(gen.snapshot, md.previous_snapshot, org, "USD")
     pf = Portfolio(gen.snapshot.trades, md.previous_snapshot, "USD", universe=universe)
@@ -101,11 +103,14 @@ def test_sensitivity_signs_and_structure(world, sens):
     # Options carry gamma and vega; linear products do not.
     gamma_ids = set(sens[sens.measure == "GAMMA"]["trade_id"])
     vega_ids = set(sens[sens.measure == "VEGA"]["trade_id"])
+    optional = ("FX_OPTION", "EQUITY_OPTION", "COMMODITY_OPTION", "EQUITY_EXOTIC", "SWAPTION")
     for tid in gamma_ids | vega_ids:
-        assert trades[tid].product_type.value in ("FX_OPTION", "EQUITY_OPTION"), tid
+        assert trades[tid].product_type.value in optional, tid
     assert vega_ids, "some options must show vega"
-    # Bought options have positive vega.
+    # Bought vanilla options and swaptions have positive vega (barriers and digitals need not).
     for tid in vega_ids:
+        if trades[tid].product_type.value == "EQUITY_EXOTIC":
+            continue
         v = sens[(sens.measure == "VEGA") & (sens.trade_id == tid)]["value"].sum()
         assert np.sign(v) == (1 if trades[tid].direction.value == "BUY" else -1), tid
     assert (sens[sens.measure == "THETA"]["bucket"] == "1D").all()
@@ -167,10 +172,13 @@ def test_historical_episode_scenarios(world):
     res = run_stress(world["pf"], sc, world["hist"])
     crash = res[0]
     assert crash.shocks["EQIDX:SPX"] < -0.15
-    eq = crash.by(world["val"], "asset_class").get("EQUITY", 0.0)
+    # Linear cash equity: the sign of the crash P&L follows the net delta (options and exotics
+    # are convex and can gain either way, so they are excluded from this check).
+    eq = crash.by(world["val"], "product_type").get("CASH_EQUITY", 0.0)
     sens = compute_sensitivities(world["pf"])
-    net_equity_delta = sens[sens.measure == "EQ_DELTA"]["value"].sum()
-    assert (eq < 0) == (net_equity_delta > 0), "a net-long equity book must lose in a crash"
+    cash_ids = set(world["val"][world["val"]["product_type"] == "CASH_EQUITY"]["trade_id"])
+    net_equity_delta = sens[(sens.measure == "EQ_DELTA") & sens.trade_id.isin(cash_ids)]["value"].sum()
+    assert (eq < 0) == (net_equity_delta > 0), "a net-long cash equity book must lose in a crash"
 
 
 def test_portfolio_skips_unpriceable(world):

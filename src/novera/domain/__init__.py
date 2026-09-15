@@ -18,9 +18,11 @@ from novera.domain.breaches import (
 from novera.domain.counterparties import CSA, Counterparty, CounterpartyType, NettingSet
 from novera.domain.enums import (
     AssetClass,
+    BarrierType,
     BuySell,
     ClearingType,
     DayCount,
+    ExoticStyle,
     Frequency,
     HierarchyLevel,
     OptionType,
@@ -30,10 +32,15 @@ from novera.domain.enums import (
     Venue,
 )
 from novera.domain.instruments import (
+    ETF,
+    BasketLeg,
     CashEquity,
     CDSIndex,
+    CDSSingleName,
     CommodityFuture,
+    CommodityOption,
     CryptoSpot,
+    EquityExotic,
     EquityIndexFuture,
     EquityOption,
     FXForward,
@@ -41,7 +48,11 @@ from novera.domain.instruments import (
     FXSpot,
     GovernmentBond,
     Instrument,
+    InterestRateFuture,
     InterestRateSwap,
+    MutualFund,
+    Repo,
+    Swaption,
 )
 from novera.domain.limits import Limit, LimitScope, LimitStatus, LimitType
 from novera.domain.organisation import Book, Business, Desk, Firm, LegalEntity, Organisation, Trader
@@ -72,6 +83,17 @@ __all__ = [
     "SwapSide",
     "TradeStatus",
     "Venue",
+    "BarrierType",
+    "ExoticStyle",
+    "ETF",
+    "BasketLeg",
+    "CDSSingleName",
+    "CommodityOption",
+    "EquityExotic",
+    "InterestRateFuture",
+    "MutualFund",
+    "Repo",
+    "Swaption",
     "CashEquity",
     "CDSIndex",
     "CommodityFuture",

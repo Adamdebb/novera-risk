@@ -39,6 +39,8 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
             ("USD_MACRO_RV", "GMB_NY", "USD Macro RV"),
             ("USD_SWAPS_FLOW", "GMB_NY", "USD Swaps Flow"),
             ("UST_CASH", "GMB_NY", "UST Cash"),
+            ("USD_REPO", "GMB_NY", "USD Repo Funding"),
+            ("USD_STIR", "GMB_NY", "USD STIR and Swaptions"),
         ],
     ),
     (
@@ -50,6 +52,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
         [
             ("EUR_SWAPS", "GMB_LN", "EUR Swaps"),
             ("EGB_CASH", "GMB_LN", "European Govies"),
+            ("EUR_STIR", "GMB_LN", "EUR STIR and Swaptions"),
         ],
     ),
     (
@@ -116,6 +119,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
             ("EU_INDEX", "GMB_LN", "European Index"),
             ("US_INDEX", "GMB_NY", "US Index"),
             ("INDEX_VOL", "GMB_LN", "Index Volatility"),
+            ("EQ_EXOTICS", "GMB_LN", "Equity Exotics"),
         ],
     ),
     (
@@ -128,6 +132,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
             ("US_CASH_EQ", "GMB_NY", "US Cash Equity"),
             ("EU_CASH_EQ", "GMB_LN", "European Cash Equity"),
             ("SN_OPTIONS", "GMB_NY", "Single Name Options"),
+            ("FUNDS_ETF", "GMB_NY", "ETF and Fund Trading"),
         ],
     ),
     (
@@ -139,6 +144,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
         [
             ("CDX_IG", "GMB_NY", "CDX IG Index"),
             ("ITRAXX_MAIN", "GMB_LN", "iTraxx Main"),
+            ("SN_CDS_IG", "GMB_NY", "Single Name CDS IG"),
         ],
     ),
     (
@@ -150,6 +156,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
         [
             ("CDX_HY", "GMB_NY", "CDX HY Index"),
             ("ITRAXX_XOVER", "GMB_LN", "iTraxx Crossover"),
+            ("SN_CDS_HY", "GMB_LN", "Single Name CDS HY"),
         ],
     ),
     (
@@ -161,6 +168,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
         [
             ("CRUDE", "GMB_LN", "Crude Oil"),
             ("NATGAS", "GMB_LN", "Natural Gas"),
+            ("ENERGY_OPTIONS", "GMB_LN", "Energy Options"),
         ],
     ),
     (
@@ -172,6 +180,7 @@ _DESKS: list[tuple[str, str, str, AssetClass, str, list[tuple[str, str, str]]]] 
         [
             ("PRECIOUS", "GMB_NY", "Precious Metals"),
             ("BASE_METALS", "GMB_LN", "Base Metals"),
+            ("METALS_OPTIONS", "GMB_NY", "Metals Options"),
         ],
     ),
     (

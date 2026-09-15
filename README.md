@@ -27,10 +27,13 @@ components that serve those capabilities.
 
 ## Status
 
-Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
+Phases 1 to 6 delivered. See `docs/03-roadmap.md`.
 
-- Simulated bank: 3 legal entities, 14 desks, 29 books, 30 counterparties, ~1,500 trades
-  across ten products, 1,190 risk factors with three years of correlated daily history.
+- Simulated bank: 3 legal entities, 14 desks, 38 books, 30 counterparties, ~1,500 trades
+  across nineteen products (bonds, swaps, repos, rates futures, swaptions, FX spot,
+  forwards and options, cash equity, index futures, equity options, barrier and digital
+  options, ETFs and mutual funds, commodity futures and options, CDS indices and single
+  names, crypto), ~1,400 risk factors with three years of correlated daily history.
 - Pricing benchmarked against QuantLib; sensitivities, historical VaR with a challenger,
   stress library, 79 seeded limits, P&L explain, data-quality verdict.
 - A governed end-of-day run stored with its run id, snapshot ids, model versions and
@@ -50,6 +53,9 @@ Phases 1 and 2 delivered, Phase 3 in progress. See `docs/03-roadmap.md`.
 - Hedge-fund face: a second simulated organisation with strategies, prime brokers, NAV and
   investors; leverage, broker margin, factor betas, redemption stress, strategy
   attribution and crowding.
+- Instrument breadth: every product priced by a benchmarked closed form (QuantLib or
+  analytic), funds seen through to their constituents, and stale or missing market data
+  proxied before pricing with an audit trail that travels with the run.
 - Operations: a scheduler that advances the simulated world and runs EOD with retries,
   alerts to Slack or email, an independent-challenger reconciliation that attributes the
   gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).

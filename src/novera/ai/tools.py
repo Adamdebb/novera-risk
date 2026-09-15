@@ -378,6 +378,41 @@ def build_tools(db_path: str) -> list[Tool]:
             ],
         }
 
+    def lookthrough_tool(run_id: str | None = None) -> dict:
+        repo, s = svc()
+        with repo:
+            r = s.resolve(run_id)
+            lt = s.lookthrough(r.run_id)
+            px = s.market_data_proxies(r.run_id)
+        return {
+            "run_id": r.run_id,
+            "fund_trades": lt["fund_trades"],
+            "flags": lt["flags"],
+            "by_fund_m": [
+                {
+                    "fund": x["fund"],
+                    "product": x["product_type"],
+                    "trades": x["trades"],
+                    "exposure_m": _m(x["exposure"]),
+                }
+                for x in lt["by_fund"][:10]
+            ],
+            "constituents_m": [
+                {
+                    "constituent": x["constituent"],
+                    "direct_m": _m(x["direct"]),
+                    "via_funds_m": _m(x["via_funds"]),
+                    "via_funds_share": round(x["via_funds_share"], 3),
+                }
+                for x in lt["constituents"][:12]
+            ],
+            "market_data_proxies": {
+                "applied": px["applied"],
+                "kept_stale": px["kept_stale"],
+                "families": sorted({":".join(a["factor_id"].split(":")[:2]) + ":" for a in px["actions"]}),
+            },
+        }
+
     def backtest_tool(run_id: str | None = None) -> dict:
         repo, s = svc()
         with repo:
@@ -707,6 +742,14 @@ def build_tools(db_path: str) -> list[Tool]:
             "static-portfolio test and the live series.",
             _obj({"run_id": RUN}),
             backtest_tool,
+        ),
+        Tool(
+            "lookthrough",
+            "Fund look-through: ETF and mutual-fund holdings decomposed into constituents, direct "
+            "versus via-fund exposure per constituent, and which market-data factors were proxied "
+            "(interpolated, rolled or re-levelled) before pricing.",
+            _obj({"run_id": RUN}),
+            lookthrough_tool,
         ),
         Tool(
             "counterparty_exposure",

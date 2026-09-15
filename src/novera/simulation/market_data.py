@@ -33,6 +33,7 @@ from novera.market_data.risk_factors import (
     eqidx_id,
     fx_id,
     ir_id,
+    swvol_id,
     vol_id,
 )
 from novera.market_data.snapshot import MarketSnapshot
@@ -124,6 +125,35 @@ def build_risk_factor_universe() -> list[RiskFactor]:
                 shock_type="ABSOLUTE",
             )
         )
+    for entity, (ccy, _, _, _, _, _) in ref.CDS_SINGLE_NAMES.items():
+        out.append(
+            RiskFactor(
+                factor_id=cds_id(entity),
+                factor_type=RiskFactorType.CREDIT_SPREAD,
+                asset_class="CREDIT",
+                currency=ccy,
+                underlying=entity,
+                unit="bp",
+                shock_type="ABSOLUTE",
+            )
+        )
+    for ccy in ref.SWAPTION_CURRENCIES:
+        for expiry in ref.SWAPTION_EXPIRIES:
+            for tenor in ref.SWAPTION_TENORS:
+                out.append(
+                    RiskFactor(
+                        factor_id=swvol_id(ccy, expiry, tenor),
+                        factor_type=RiskFactorType.SWAPTION_VOL,
+                        asset_class="RATES",
+                        currency=ccy,
+                        underlying=ccy,
+                        tenor=tenor,
+                        tenor_years=TENOR_YEARS[tenor],
+                        expiry_years=TENOR_YEARS[expiry],
+                        unit="bp",
+                        shock_type="RELATIVE",
+                    )
+                )
     for symbol in ref.CRYPTO:
         out.append(
             RiskFactor(
@@ -160,6 +190,7 @@ def _vol_underlyings() -> list[tuple[str, str, str]]:
     out = [(t, v[1], "EQUITY") for t, v in ref.EQUITIES.items()]
     out += [(i, v[1], "EQUITY") for i, v in ref.EQUITY_INDICES.items()]
     out += [(p, p[4:], "FX") for p in ref.FX_SPOT]
+    out += [(c, "USD", "COMMODITY") for c in ref.COMMODITY_VOL_CODES]
     return out
 
 
@@ -406,6 +437,7 @@ class _Sim:
             self.eq_returns[ticker] = r
 
     def commodities(self) -> None:
+        self.cmd_returns: dict[str, np.ndarray] = {}
         energy_f, metal_f = self._noise(), self._noise()
         for code, (_, _, price, vol, _, _) in ref.COMMODITIES.items():
             if code in ("BRENT", "WTI", "NATGAS"):
@@ -414,7 +446,8 @@ class _Sim:
                 beta, common, w, drift = -0.15, metal_f, 0.5, self.drift["gold"]
             else:
                 beta, common, w, drift = 0.45, metal_f, 0.4, self.drift["energy"] * 0.3
-            spot, _ = self._lognormal_path(price, vol, beta, drift, common, w)
+            spot, r = self._lognormal_path(price, vol, beta, drift, common, w)
+            self.cmd_returns[code] = r
             slope = ref.COMMODITY_SLOPE[code]
             tilt = np.cumsum(self.rng.normal(0, 0.002, self.n))
             tilt -= 0.02 * np.cumsum(tilt) / np.arange(1, self.n + 1)  # keep it bounded-ish
@@ -422,11 +455,20 @@ class _Sim:
                 t = TENOR_YEARS[tenor]
                 self.series[cmd_id(code, tenor)] = spot * (1 + (slope + tilt) * t)
 
-    def credit(self) -> None:
-        for family, (_, _, _, spread_bp, _) in ref.CDS_INDICES.items():
-            vol = 0.38 if "IG" in family or "MAIN" in family else 0.32
+    def credit(self, single_names: bool = False) -> None:
+        """Index spreads, or (second pass, drawn after every Phase 1 group so their random
+        streams are unchanged) single names: wider spreads, higher vol and a weaker loading on
+        the global factor so index hedges leave idiosyncratic basis."""
+        if single_names:
+            names = {e: (v[3], 0.45 if v[5] == "IG" else 0.55, 0.45) for e, v in ref.CDS_SINGLE_NAMES.items()}
+        else:
+            names = {
+                f: (v[3], 0.38 if "IG" in f or "MAIN" in f else 0.32, 0.65)
+                for f, v in ref.CDS_INDICES.items()
+            }
+        for family, (spread_bp, vol, load) in names.items():
             eps = self._noise()
-            z = -0.65 * self.g + np.sqrt(1 - 0.65**2) * eps
+            z = -load * self.g + np.sqrt(1 - load**2) * eps
             log_s = np.log(spread_bp)
             path = np.zeros(self.n)
             cur = log_s
@@ -444,11 +486,40 @@ class _Sim:
             path, _ = self._lognormal_path(price, vol, 0.35, self.drift["crypto"], cf, 0.75, 0.25)
             self.series[crypto_id(symbol)] = path
 
+    def swaption_vols(self) -> None:
+        """Normal vol cube: one log-vol path per currency, correlated with the rates level
+        shock, with a hump at 1Y expiry and a decline in tenor."""
+        exp_shape = {"3M": 1.05, "1Y": 1.10, "2Y": 1.04, "5Y": 0.95}
+        ten_shape = {"2Y": 1.08, "5Y": 1.00, "10Y": 0.94, "30Y": 0.85}
+        for ccy in ref.SWAPTION_CURRENCIES:
+            base = ref.SWAPTION_NORMAL_VOL_BP[ccy]
+            move = np.abs(np.diff(self.series[ir_id(ccy, "5Y")], prepend=self.series[ir_id(ccy, "5Y")][0]))
+            std = move / (np.std(move) + 1e-12)
+            eps = self._noise()
+            z = 0.35 * (std - std.mean()) + np.sqrt(1 - 0.35**2) * eps
+            log_v = np.log(base)
+            cur = log_v
+            atm = np.zeros(self.n)
+            for i in range(self.n):
+                cur += 0.5 * self.sq * z[i] + self.drift["vol"][i] * 0.6 - 0.01 * (cur - log_v)
+                atm[i] = cur
+            atm = np.exp(atm)
+            for e in ref.SWAPTION_EXPIRIES:
+                for t in ref.SWAPTION_TENORS:
+                    self.series[swvol_id(ccy, e, t)] = np.clip(atm * exp_shape[e] * ten_shape[t], 20.0, 400.0)
+
     def vols(self) -> None:
         expiries = np.array([TENOR_YEARS[e] for e in ref.VOL_EXPIRIES])
         mny = np.array(ref.VOL_MONEYNESS)
         for underlying, _, ac in _vol_underlyings():
-            if ac == "EQUITY":
+            if ac == "COMMODITY":
+                base_vol = ref.COMMODITIES[underlying][3]
+                ret = self.cmd_returns[underlying]
+                # Energy vol rises when prices rise (supply shocks); metals behave like equities.
+                energy = underlying in ("BRENT", "WTI", "NATGAS")
+                vov, corr, skew, smile = 0.55, (0.25 if energy else -0.35), (-0.10 if energy else 0.15), 0.12
+                term = np.array([1.08, 1.03, 1.0, 0.97, 0.95])
+            elif ac == "EQUITY":
                 base_vol = (
                     ref.EQUITY_INDICES[underlying][3]
                     if underlying in ref.EQUITY_INDICES
@@ -490,6 +561,9 @@ class _Sim:
         self.credit()
         self.crypto()
         self.vols()
+        # Phase 6 families are drawn last so the Phase 1 history is reproduced exactly.
+        self.credit(single_names=True)
+        self.swaption_vols()
         universe = build_risk_factor_universe()
         ids = [f.factor_id for f in universe]
         missing = [i for i in ids if i not in self.series]

@@ -32,10 +32,20 @@ def test_instrument_union_round_trips(swap_trade: Trade) -> None:
 
 def test_fx_currency_must_be_quote() -> None:
     with pytest.raises(ValidationError, match="quote currency"):
-        FXForward(instrument_id="x", currency="EUR", pair="EUR/USD",
-                  settlement_date=date(2026, 12, 15), forward_rate=1.1)
-    ok = FXForward(instrument_id="x", currency="USD", pair="EUR/USD",
-                   settlement_date=date(2026, 12, 15), forward_rate=1.1)
+        FXForward(
+            instrument_id="x",
+            currency="EUR",
+            pair="EUR/USD",
+            settlement_date=date(2026, 12, 15),
+            forward_rate=1.1,
+        )
+    ok = FXForward(
+        instrument_id="x",
+        currency="USD",
+        pair="EUR/USD",
+        settlement_date=date(2026, 12, 15),
+        forward_rate=1.1,
+    )
     assert ok.base_currency == "EUR" and ok.quote_currency == "USD"
 
 
@@ -66,8 +76,12 @@ def test_signed_quantity(bond_trade: Trade, equity_trade: Trade) -> None:
 def test_organisation_integrity(organisation: Organisation) -> None:
     h = organisation.hierarchy_for_book("EU_INDEX")
     assert h == {
-        "book_id": "EU_INDEX", "desk_id": "INDEX_EQ", "business_id": "MACRO",
-        "firm_id": "GMB", "legal_entity_id": "GMB_LN", "desk_asset_class": "EQUITY",
+        "book_id": "EU_INDEX",
+        "desk_id": "INDEX_EQ",
+        "business_id": "MACRO",
+        "firm_id": "GMB",
+        "legal_entity_id": "GMB_LN",
+        "desk_asset_class": "EQUITY",
         "region": "EMEA",
     }
     bad = organisation.model_dump()
@@ -87,9 +101,12 @@ def test_snapshot_id_is_content_hash(snapshot: PortfolioSnapshot) -> None:
 
 def test_limit_effectiveness() -> None:
     lim = Limit(
-        limit_id="L1", limit_type=LimitType.DV01,
+        limit_id="L1",
+        limit_type=LimitType.DV01,
         scope=LimitScope(level=HierarchyLevel.DESK, entity_id="USD_RATES", tenor_bucket="10Y"),
-        amount=5_000_000, owner="Head of Rates", effective_from=date(2026, 1, 1),
+        amount=5_000_000,
+        owner="Head of Rates",
+        effective_from=date(2026, 1, 1),
         effective_to=date(2026, 12, 31),
     )
     assert lim.is_effective(date(2026, 9, 11))

@@ -402,6 +402,53 @@ class RiskService:
             "flags": [x["message"] for x in _records(flags) if x.get("kind") == "CONCENTRATION"],
         }
 
+    def lookthrough(self, run_id: str | None = None) -> dict[str, Any]:
+        """ETF and mutual-fund holdings decomposed into constituents (MR-014)."""
+        r = self.resolve(run_id)
+        try:
+            holdings = self.repo.load_run_frame(r.run_id, "lookthrough_holdings")
+            cons = self.repo.load_run_frame(r.run_id, "lookthrough_constituents")
+        except Exception:  # noqa: BLE001 - runs made before Phase 6 have no look-through frames
+            holdings, cons = pd.DataFrame(), pd.DataFrame()
+        flags = self.repo.load_run_frame(r.run_id, "risk_flags")
+        by_fund = (
+            _records(
+                holdings.groupby(["fund", "product_type"], as_index=False)
+                .agg(
+                    trades=("trade_id", "nunique"),
+                    exposure=("exposure", "sum"),
+                    constituents=("constituent", "nunique"),
+                )
+                .sort_values("exposure", key=abs, ascending=False)
+            )
+            if len(holdings)
+            else []
+        )
+        return {
+            "run_id": r.run_id,
+            "fund_trades": int(holdings["trade_id"].nunique()) if len(holdings) else 0,
+            "by_fund": by_fund,
+            "holdings": _records(holdings),
+            "constituents": _records(cons),
+            "flags": [x["message"] for x in _records(flags) if x.get("kind") == "LOOKTHROUGH"],
+        }
+
+    def market_data_proxies(self, run_id: str | None = None) -> dict[str, Any]:
+        """What the run proxied before pricing, from what and why (MD-002)."""
+        r = self.resolve(run_id)
+        try:
+            actions = self.repo.load_run_frame(r.run_id, "md_proxies")
+        except Exception:  # noqa: BLE001
+            actions = pd.DataFrame()
+        applied = actions[actions["kind"] != "KEPT_STALE"] if len(actions) else actions
+        return {
+            "run_id": r.run_id,
+            "raw_market_snapshot_id": r.market_snapshot_id,
+            "applied": int(len(applied)),
+            "kept_stale": int(len(actions) - len(applied)),
+            "actions": _records(actions),
+        }
+
     def liquidity(self, run_id: str | None = None) -> dict[str, Any]:
         r = self.resolve(run_id)
         flags = self.repo.load_run_frame(r.run_id, "risk_flags")

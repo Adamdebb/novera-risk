@@ -24,8 +24,17 @@ def test_universe_shape() -> None:
     ids = [f.factor_id for f in u]
     assert len(ids) == len(set(ids))
     types = {f.factor_type.value for f in u}
-    assert types == {"IR_ZERO", "FX_SPOT", "EQUITY_SPOT", "EQUITY_INDEX", "COMMODITY_CURVE",
-                     "CREDIT_SPREAD", "CRYPTO_SPOT", "IMPLIED_VOL"}
+    assert types == {
+        "IR_ZERO",
+        "FX_SPOT",
+        "EQUITY_SPOT",
+        "EQUITY_INDEX",
+        "COMMODITY_CURVE",
+        "CREDIT_SPREAD",
+        "CRYPTO_SPOT",
+        "IMPLIED_VOL",
+        "SWAPTION_VOL",
+    }
     assert "IR:USD:10Y" in ids and "VOL:SPX:3M:0.90" in ids and "CMD:BRENT:3Y" in ids
 
 
@@ -75,8 +84,9 @@ def test_planted_data_quality_problems(md) -> None:
     stale = s.stale_factors()
     assert stale and all(k.startswith("VOL:EURUSD:") for k in stale)
     assert len(s.zero_curve("USD").tenors) == 11
-    clean = generate_market_data(MarketSimConfig(end_date=BD, years=0.3, seed=1,
-                                                 plant_data_quality_problems=False))
+    clean = generate_market_data(
+        MarketSimConfig(end_date=BD, years=0.3, seed=1, plant_data_quality_problems=False)
+    )
     assert clean.snapshot.stale_factors() == [] and clean.snapshot.has("IR:USD:7Y")
 
 

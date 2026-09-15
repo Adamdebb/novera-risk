@@ -239,6 +239,12 @@ class HttpClient:
     def liquidity(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/liquidity")
 
+    def lookthrough(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/lookthrough")
+
+    def market_data_proxies(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/market-data-proxies")
+
     def backtest(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/backtest")
 

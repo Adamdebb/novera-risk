@@ -1,5 +1,6 @@
 """Headless run of the Streamlit dashboard over a stored run: every page must render
 without exceptions and show figures from the run."""
+
 from datetime import date
 from pathlib import Path
 
@@ -30,8 +31,9 @@ def db_path(tmp_path_factory):
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=1.0, seed=8))
     hist = MarketHistory.from_long(md.history)
-    gen = generate_portfolio(org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=100, seed=8,
-                                                           market_history=hist))
+    gen = generate_portfolio(
+        org, cp, TradeGeneratorConfig(business_date=AS_OF, n_trades=100, seed=8, market_history=hist)
+    )
     with DuckDBRepository(path) as repo:
         repo.init_schema()
         repo.save_organisation(org)
@@ -43,20 +45,29 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
-        res = run_eod(repo, EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=120), workers=1),
-                      runs_dir=tmp_path_factory.mktemp("runs"))
+        res = run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=120), workers=1),
+            runs_dir=tmp_path_factory.mktemp("runs"),
+        )
         from novera.reconciliation import reconcile
         from novera.simulation.vendor_feed import VendorFeedConfig, generate_vendor_feed
 
-        csv, meta = generate_vendor_feed(repo, res.run.run_id, tmp_path_factory.mktemp("feed"),
-                                         VendorFeedConfig(var_window_days=100))
+        csv, meta = generate_vendor_feed(
+            repo, res.run.run_id, tmp_path_factory.mktemp("feed"), VendorFeedConfig(var_window_days=100)
+        )
         reconcile(repo, res.run.run_id, csv, meta)
         from novera.counterparty_risk import ExposureSimConfig, run_counterparty
         from novera.regulatory import run_regulatory
 
         run_regulatory(repo, res.run.run_id, runs_dir=tmp_path_factory.mktemp("runs2"))
-        run_counterparty(repo, res.run.run_id, ExposureSimConfig(paths=20), runs_dir=tmp_path_factory.mktemp("cpr"),
-                         workers=1)
+        run_counterparty(
+            repo,
+            res.run.run_id,
+            ExposureSimConfig(paths=20),
+            runs_dir=tmp_path_factory.mktemp("cpr"),
+            workers=1,
+        )
     return path
 
 
@@ -74,11 +85,28 @@ def app(db_path, monkeypatch):
     get_settings.cache_clear()
 
 
-@pytest.mark.parametrize("page", ["Overview", "Copilot", "Drill-down", "VaR", "Stress", "Limits", "Breaches",
-                                  "Counterparty", "Capital", "P&L explain", "Data quality",
-                                  "Concentration & liquidity", "Compare runs", "Challenger", "Risk pack",
-                                  "Alerts & jobs", "Runs & audit"])
-
+@pytest.mark.parametrize(
+    "page",
+    [
+        "Overview",
+        "Copilot",
+        "Drill-down",
+        "VaR",
+        "Stress",
+        "Limits",
+        "Breaches",
+        "Counterparty",
+        "Capital",
+        "P&L explain",
+        "Data quality",
+        "Concentration & liquidity",
+        "Compare runs",
+        "Challenger",
+        "Risk pack",
+        "Alerts & jobs",
+        "Runs & audit",
+    ],
+)
 def test_every_page_renders(app, page):
     radio = next(r for r in app.sidebar.radio if r.label == "View")
     radio.set_value(page).run()

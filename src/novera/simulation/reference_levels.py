@@ -375,3 +375,110 @@ CRYPTO: dict[str, tuple[str, float, float]] = {
     "BTC": ("COINBASE", 62000.0, 0.60),
     "ETH": ("COINBASE", 2450.0, 0.70),
 }
+
+# --- Phase 6 breadth -------------------------------------------------------------------------
+# Single-name CDS: entity -> (currency, name, sector, spread bp, recovery, rating bucket)
+CDS_SINGLE_NAMES: dict[str, tuple[str, str, str, float, float, str]] = {
+    "FORD": ("USD", "Ford Motor Credit", "Autos", 165.0, 0.40, "HY"),
+    "GM": ("USD", "General Motors", "Autos", 140.0, 0.40, "IG"),
+    "BOEING": ("USD", "Boeing Co", "Industrials", 125.0, 0.40, "IG"),
+    "ATT": ("USD", "AT&T Inc", "Telecoms", 85.0, 0.40, "IG"),
+    "CARNIVAL": ("USD", "Carnival Corp", "Leisure", 260.0, 0.35, "HY"),
+    "TEVA": ("USD", "Teva Pharmaceutical", "Healthcare", 210.0, 0.35, "HY"),
+    "DBK": ("EUR", "Deutsche Bank AG", "Financials", 95.0, 0.40, "IG"),
+    "VW": ("EUR", "Volkswagen AG", "Autos", 120.0, 0.40, "IG"),
+    "ENEL": ("EUR", "Enel SpA", "Utilities", 70.0, 0.40, "IG"),
+    "CASINO": ("EUR", "Casino Guichard", "Retail", 480.0, 0.25, "HY"),
+}
+
+# Swaption cube: currencies, expiries, underlying swap tenors and base normal vol (bp/yr).
+SWAPTION_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "GBP")
+SWAPTION_EXPIRIES: tuple[str, ...] = ("3M", "1Y", "2Y", "5Y")
+SWAPTION_TENORS: tuple[str, ...] = ("2Y", "5Y", "10Y", "30Y")
+SWAPTION_NORMAL_VOL_BP: dict[str, float] = {"USD": 95.0, "EUR": 78.0, "GBP": 92.0}
+
+# Commodity vol surfaces are built for these codes (moneyness grid shared with equities).
+COMMODITY_VOL_CODES: tuple[str, ...] = ("BRENT", "WTI", "NATGAS", "GOLD", "SILVER", "COPPER")
+
+# Interest-rate futures: currency -> (index, exchange, contract notional)
+IR_FUTURES: dict[str, tuple[str, str, float]] = {
+    "USD": ("USD-SOFR-3M", "CME", 1_000_000.0),
+    "EUR": ("EUR-EURIBOR-3M", "EUREX", 1_000_000.0),
+    "GBP": ("GBP-SONIA-3M", "ICE", 1_000_000.0),
+}
+
+# Repo collateral: currency -> haircut. Repo rates are struck at the fair curve rate.
+REPO_HAIRCUT: dict[str, float] = {"USD": 0.02, "EUR": 0.02, "GBP": 0.02, "JPY": 0.03}
+
+# ETFs: code -> (exchange, currency, name, weights by (kind, underlying), tracking spread, nav0)
+ETFS: dict[str, tuple[str, str, str, dict[tuple[str, str], float], float, float]] = {
+    "USTECH": (
+        "NASDAQ",
+        "USD",
+        "US Technology ETF",
+        {("EQ", "AAPL"): 0.30, ("EQ", "MSFT"): 0.30, ("EQ", "NVDA"): 0.25, ("EQ", "TSLA"): 0.15},
+        -0.0005,
+        100.0,
+    ),
+    "EUBLUE": (
+        "XETRA",
+        "EUR",
+        "Europe Blue Chip ETF",
+        {
+            ("EQ", "SAP"): 0.25,
+            ("EQ", "ASML"): 0.25,
+            ("EQ", "SIE"): 0.20,
+            ("EQ", "TTE"): 0.15,
+            ("EQ", "BNP"): 0.15,
+        },
+        -0.0008,
+        50.0,
+    ),
+    "GLBNRG": (
+        "NYSE",
+        "USD",
+        "Global Energy ETF",
+        {("EQ", "XOM"): 0.40, ("EQ", "SHEL"): 0.30, ("EQ", "TTE"): 0.30},
+        -0.0006,
+        40.0,
+    ),
+    "GOLDTR": ("NYSE", "USD", "Physical Gold ETF", {("CMD", "GOLD"): 1.0}, -0.0004, 250.0),
+    "SPXTR": ("NYSE", "USD", "S&P 500 Index ETF", {("EQIDX", "SPX"): 1.0}, -0.0003, 560.0),
+}
+
+# Mutual funds: code -> (manager, currency, name, weights, cash share, nav0, notice days)
+MUTUAL_FUNDS: dict[str, tuple[str, str, str, dict[tuple[str, str], float], float, float, int]] = {
+    "MF_GLOBAL_EQ": (
+        "Meridian Asset Management",
+        "USD",
+        "Global Equity Fund",
+        {("EQIDX", "SPX"): 0.45, ("EQIDX", "SX5E"): 0.20, ("EQIDX", "FTSE"): 0.10, ("EQIDX", "NKY"): 0.20},
+        0.05,
+        25.0,
+        1,
+    ),
+    "MF_EU_INCOME": (
+        "Helvetia Funds",
+        "EUR",
+        "European Income Fund",
+        {
+            ("EQ", "TTE"): 0.20,
+            ("EQ", "BNP"): 0.20,
+            ("EQ", "SIE"): 0.20,
+            ("EQ", "NESN"): 0.20,
+            ("EQ", "HSBA"): 0.15,
+        },
+        0.05,
+        15.0,
+        3,
+    ),
+    "MF_US_GROWTH": (
+        "Meridian Asset Management",
+        "USD",
+        "US Growth Fund",
+        {("EQ", "NVDA"): 0.30, ("EQ", "TSLA"): 0.20, ("EQ", "AAPL"): 0.20, ("EQIDX", "NDX"): 0.27},
+        0.03,
+        60.0,
+        1,
+    ),
+}

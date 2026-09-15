@@ -166,7 +166,7 @@ def reconcile(
     window = int(meta.get("var", {}).get("window_days", 0) or 0)
     our_window = int(run.config.get("var", {}).get("window_days", 500))
     if window and window != our_window and len(common_ok):
-        market = repo.load_market_snapshot(run.market_snapshot_id)
+        market = repo.load_run_market(run.run_id)
         universe = {f.factor_id: f for f in repo.load_risk_factors()}
         hist = MarketHistory.from_long(repo.load_market_history())
         ids = set(common_ok["trade_id"])

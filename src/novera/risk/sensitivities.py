@@ -7,8 +7,8 @@ Conventions (all in reporting currency, signed as P&L for the stated move):
     EQ_DELTA      P&L for +1% in an equity or index spot
     CMD_DELTA     P&L for +1% across a commodity curve
     CRYPTO_DELTA  P&L for +1% in a crypto spot
-    VEGA          P&L for +1 vol point across a surface
-    GAMMA         PV(+1%) + PV(-1%) - 2 PV, per spot factor with options on it
+    VEGA          P&L for +1 vol point across a surface (+1bp normal vol for a swaption cube)
+    GAMMA         PV(+1%) + PV(-1%) - 2 PV, per spot factor or commodity curve with options on it
     THETA         PV(as_of + 1 day) - PV(as_of), market unchanged
 """
 
@@ -36,6 +36,8 @@ BUMPS = {
 }
 
 COLUMNS = ["trade_id", "measure", "factor_id", "bucket", "underlying", "bump", "value"]
+OPTION_PRODUCTS = ("FX_OPTION", "EQUITY_OPTION", "EQUITY_EXOTIC", "COMMODITY_OPTION")
+SWAPTION_VEGA_BUMP_BP = 1.0
 
 
 @dataclass
@@ -95,9 +97,7 @@ def compute_sensitivities(pf: Portfolio, cfg: SensitivityConfig | None = None) -
             up = pf.pnl_under_shocks({fid: bump})
             rows += _rows(up, measure, fid, "", fid.split(":")[1], bump)
             if cfg.gamma and up:
-                option_ids = {
-                    tid for tid in up if pf.by_id[tid].product_type.value in ("FX_OPTION", "EQUITY_OPTION")
-                }
+                option_ids = {tid for tid in up if pf.by_id[tid].product_type.value in OPTION_PRODUCTS}
                 if option_ids:
                     down = pf.pnl_under_shocks({fid: -bump})
                     gamma = {tid: up.get(tid, 0.0) + down.get(tid, 0.0) for tid in option_ids}
@@ -106,7 +106,14 @@ def compute_sensitivities(pf: Portfolio, cfg: SensitivityConfig | None = None) -
     commodities = sorted({f.split(":")[1] for f in base.factors_with_prefix("CMD:")})
     for code in commodities:
         shocks = shocks_for_prefix(base, f"CMD:{code}:", BUMPS["CMD_DELTA"])
-        rows += _rows(pf.pnl_under_shocks(shocks), "CMD_DELTA", f"CMD:{code}:", "", code, BUMPS["CMD_DELTA"])
+        up = pf.pnl_under_shocks(shocks)
+        rows += _rows(up, "CMD_DELTA", f"CMD:{code}:", "", code, BUMPS["CMD_DELTA"])
+        if cfg.gamma and up:
+            option_ids = {tid for tid in up if pf.by_id[tid].product_type.value == "COMMODITY_OPTION"}
+            if option_ids:
+                down = pf.pnl_under_shocks(shocks_for_prefix(base, f"CMD:{code}:", -BUMPS["CMD_DELTA"]))
+                gamma = {tid: up.get(tid, 0.0) + down.get(tid, 0.0) for tid in option_ids}
+                rows += _rows(gamma, "GAMMA", f"CMD:{code}:", "", code, BUMPS["GAMMA"])
 
     if cfg.vega:
         underlyings = sorted({f.split(":")[1] for f in base.factors_with_prefix("VOL:")})
@@ -114,6 +121,13 @@ def compute_sensitivities(pf: Portfolio, cfg: SensitivityConfig | None = None) -
             # Vol nodes are RELATIVE factors in the snapshot; +1 vol point is +0.01/vol relative per node.
             shocks = {f: BUMPS["VEGA"] / base.values[f] for f in base.factors_with_prefix(f"VOL:{u}:")}
             rows += _rows(pf.pnl_under_shocks(shocks), "VEGA", f"VOL:{u}:", "", u, BUMPS["VEGA"])
+        # Swaption cubes are quoted in normal bp: +1bp across the cube, stored with bump 1.0.
+        for ccy in sorted({f.split(":")[1] for f in base.factors_with_prefix("SWVOL:")}):
+            fids = base.factors_with_prefix(f"SWVOL:{ccy}:")
+            shocks = {f: SWAPTION_VEGA_BUMP_BP / base.values[f] for f in fids}
+            rows += _rows(
+                pf.pnl_under_shocks(shocks), "VEGA", f"SWVOL:{ccy}:", "NORMAL_1BP", ccy, SWAPTION_VEGA_BUMP_BP
+            )
 
     if cfg.theta:
         tomorrow = pf.as_of + timedelta(days=1)

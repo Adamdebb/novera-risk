@@ -275,6 +275,49 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 
 ---
 
+## Round 12 — Phase 6 instrument breadth (2026-09-14)
+
+### 12.1 Products
+- Options: all eight (repo/reverse repo, IR future, swaption, single-name CDS, commodity option,
+  ETF, mutual fund, equity barrier and digital) ★ · the four flow products first (repo, IR
+  future, swaption, single-name CDS) · the four investor products first (ETF, mutual fund,
+  commodity option, exotics)
+- Choice: **All eight**
+- Where: `domain/instruments.py`, `pricing/breadth.py`, `pricing/exotic_formulas.py`,
+  PR-010 to PR-016; nine new bank books (USD_REPO, USD_STIR, EUR_STIR, SN_CDS_IG, SN_CDS_HY,
+  ENERGY_OPTIONS, METALS_OPTIONS, FUNDS_ETF, EQ_EXOTICS); fund strategies hold the new
+  products in their existing books.
+- Revisit: the day-1 limit calibration moved with the larger book (see 4.3 and "second look" 5).
+
+### 12.2 Funds
+- Options: look-through to constituents ★ · price funds as a single equity-like factor per
+  fund · look-through for ETFs only, single factor for mutual funds
+- Choice: **Look-through to constituents** (synthetic baskets; pricing, sensitivities and VaR see
+  through automatically; MR-014 reports direct versus via-fund exposure)
+- Where: `pricing/breadth.py` (PR-015), `risk/lookthrough.py` (MR-014), dashboard
+  "Concentration & liquidity", Copilot tool `lookthrough`
+
+### 12.3 Exotics
+- Options: closed-form barrier and digital under Black–Scholes, benchmarked to QuantLib ★ ·
+  Monte Carlo under local vol · both
+- Choice: **Closed form, QuantLib-benchmarked** (Reiner–Rubinstein barriers, cash-or-nothing
+  digitals, all cases within 1e-8 of QuantLib; residual risk add-on in FRTB SA)
+- Where: `pricing/exotic_formulas.py`, PR-016, `regulatory/frtb_sa.py`
+- Revisit: barrier risk near the barrier is understated under flat vol; a Monte Carlo
+  challenger would be the natural Phase 7 model-risk item.
+
+### 12.4 Market-data proxies
+- Options: proxy stale or missing factors with an audit trail ★ · keep pricing off the raw
+  snapshot and only flag · proxy silently
+- Choice: **Proxy with an audit trail** (interpolate missing nodes, roll missing singles,
+  re-level stale families with a proxy family; INFO findings; raw snapshot kept as the run's
+  market snapshot id; every downstream engine rebuilds the same proxied market from the stored
+  actions)
+- Where: `market_data/proxies.py`, MD-002, `NOVERA_PROXIES_ENABLED`, run frame `md_proxies`,
+  dashboard "Data quality"
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -295,3 +338,7 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 6. **Three-year history** (2.4): a five-year history would give a longer backtest.
 7. **Synthetic parameters** (9.3, 11.2, HF-002, HF-006): volume, spread, margin schedules,
    crowding scores and capital risk weights are assumptions; each record says so.
+8. **Swaption cube without a strike smile** (12.1): every strike prices off the at-the-money
+   normal vol; a SABR-style smile is the obvious upgrade.
+9. **Re-levelling stale data with a proxy family** (12.4): the basis between the stale family
+   and its proxy is not measured; a bank would back-test the proxy choice.

@@ -331,6 +331,16 @@ def liquidity(run_id: str, svc: RiskService = Depends(service)):
     return _guard(svc.liquidity, run_id)
 
 
+@app.get("/runs/{run_id}/lookthrough")
+def lookthrough(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.lookthrough, run_id)
+
+
+@app.get("/runs/{run_id}/market-data-proxies")
+def market_data_proxies(run_id: str, svc: RiskService = Depends(service)):
+    return _guard(svc.market_data_proxies, run_id)
+
+
 @app.get("/runs/{run_id}/backtest")
 def backtest(run_id: str, svc: RiskService = Depends(service)):
     return _guard(svc.backtest, run_id)

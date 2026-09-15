@@ -139,7 +139,7 @@ def taylor_pnl_matrix(pf: Portfolio, sens: pd.DataFrame, scen: pd.DataFrame) -> 
     def shock_series(fid: str) -> np.ndarray | None:
         if fid.endswith(":"):  # family: mean move across nodes
             members = [c for c in scen.columns if c.startswith(fid)]
-            if fid.startswith("VOL:"):
+            if fid.startswith(("VOL:", "SWVOL:")):  # vol points (or normal bp) from relative moves
                 base_vols = np.array([pf.base.values[m] for m in members])
                 return (scen[members].to_numpy() * base_vols).mean(axis=1)
             return scen[members].to_numpy().mean(axis=1) if members else None
@@ -151,7 +151,8 @@ def taylor_pnl_matrix(pf: Portfolio, sens: pd.DataFrame, scen: pd.DataFrame) -> 
         x = shock_series(fid)
         if x is None:
             continue
-        units = x / BUMPS.get(measure, 1.0)
+        bump = float(grp["bump"].iloc[0]) if measure == "VEGA" else BUMPS.get(measure, 1.0)
+        units = x / bump
         for _, r in grp.iterrows():
             j = pos.get(r["trade_id"])
             if j is None:
