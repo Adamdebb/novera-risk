@@ -41,3 +41,13 @@ model version, so it can be reviewed like any other output.
 
 Each pricer and risk method exposes `MODEL_VERSION`. The run record stores all versions.
 A change to a method that alters numbers bumps the version and the methodology record.
+
+## Model inventory
+
+`docs/methodology/MV-001` lists every product with the model used, the market-standard
+model, the simplifications, a rating (market standard, acceptable simplification, known
+weakness) and the validation test. The table is rendered from the pricer catalogue in code
+and a test fails when it is stale, so the inventory cannot say one thing and the pricer
+another. Where QuantLib offers the market-standard model, the error of a simplification is
+measured by a test and quoted in the record rather than assumed. The rating is set by the
+methodology owner; AI may quote it, never change it.

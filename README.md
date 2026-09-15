@@ -34,8 +34,10 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
   forwards and options, cash equity, index futures, equity options, barrier and digital
   options, ETFs and mutual funds, commodity futures and options, CDS indices and single
   names, crypto), ~1,400 risk factors with three years of correlated daily history.
-- Pricing benchmarked against QuantLib; sensitivities, historical VaR with a challenger,
-  stress library, 79 seeded limits, P&L explain, data-quality verdict.
+- Pricing written in Python and benchmarked against QuantLib, with a model inventory that
+  rates each product's model against the market standard and measures the gap where one
+  exists; sensitivities, historical VaR with a challenger, stress library, 79 seeded limits,
+  P&L explain, data-quality verdict.
 - A governed end-of-day run stored with its run id, snapshot ids, model versions and
   audit events. A FastAPI API and a Streamlit morning dashboard over the stored run.
 - Breach workflow with auto-escalation and an approval matrix for temporary limit

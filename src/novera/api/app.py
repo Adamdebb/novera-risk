@@ -314,6 +314,11 @@ def product_reference(svc: RiskService = Depends(service)):
     return svc.product_reference()
 
 
+@app.get("/reference/model-inventory", response_model=s.ModelInventory)
+def model_inventory(svc: RiskService = Depends(service)):
+    return svc.model_inventory()
+
+
 @app.get("/reference/measures", response_model=s.MeasureReference)
 def measure_reference(svc: RiskService = Depends(service)):
     return svc.measure_reference()

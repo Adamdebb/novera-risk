@@ -476,6 +476,12 @@ class RiskService:
 
         return product_reference()
 
+    def model_inventory(self) -> dict[str, Any]:
+        """Model used, market standard, simplifications and rating per product (MV-001)."""
+        from novera.pricing.catalogue import model_inventory
+
+        return model_inventory()
+
     def measure_reference(self) -> dict[str, Any]:
         """Every risk measure by area, with its methodology record (from code)."""
         from novera.risk.catalogue import measure_reference

@@ -137,6 +137,10 @@ def test_http_endpoints(client):
     swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
     assert swaption["methodology"] == "PR-012" and swaption["venue"] == "OTC"
     assert {f["name"] for f in swaption["fields"]} >= {"expiry_date", "swap_tenor", "strike", "payer"}
+    assert swaption["appropriateness"] == "known_weakness" and "smile" in swaption["simplifications"]
+    inv = client.get("/reference/model-inventory").json()
+    assert inv["record"] == "MV-001" and len(inv["rows"]) == 19
+    assert set(inv["summary"]) == {"market_standard", "acceptable_simplification", "known_weakness"}
     areas = client.get("/reference/measures").json()["areas"]
     assert [a["area"] for a in areas] == ["MARKET", "COUNTERPARTY", "REGULATORY", "FUND", "CONTROL"]
     var = next(m for a in areas for m in a["measures"] if m["methodology"] == "MR-002")
@@ -312,6 +316,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.MarketDataProxies, client.get(f"/runs/{rid}/market-data-proxies").json()),
         (s.CounterpartyReference, client.get("/reference/counterparties").json()),
         (s.ProductReference, client.get("/reference/products").json()),
+        (s.ModelInventory, client.get("/reference/model-inventory").json()),
         (s.LimitHierarchy, client.get("/limits/hierarchy").json()),
         (s.TradeExtractOptions, client.get(f"/runs/{rid}/trade-extract/options").json()),
         (s.MeasureReference, client.get("/reference/measures").json()),
@@ -434,12 +439,34 @@ def test_product_catalogue_matches_pricers_and_methodology(db_path):
 
     from novera.domain.enums import ProductType
     from novera.pricing import PRICERS
-    from novera.pricing.catalogue import PRODUCT_CATALOGUE, instrument_classes
+    from novera.pricing.catalogue import (
+        PRODUCT_CATALOGUE,
+        Appropriateness,
+        instrument_classes,
+        model_inventory,
+    )
 
     assert set(PRODUCT_CATALOGUE) == set(ProductType) == set(PRICERS) == set(instrument_classes())
     docs = Path(__file__).resolve().parents[1] / "docs" / "methodology"
     for spec in PRODUCT_CATALOGUE.values():
         assert list(docs.glob(f"{spec.methodology}-*.md")), f"{spec.methodology} has no methodology record"
+        for col in ("market_standard", "simplifications", "validation"):
+            assert getattr(spec, col).strip(), f"{spec.product_type}: inventory column {col} is empty"
+        assert isinstance(spec.appropriateness, Appropriateness)
+    # The inventory (MV-001) is rendered from the same catalogue; the committed table must be current.
+    import subprocess
+    import sys
+
+    inv = model_inventory()
+    assert inv["record"] == "MV-001" and len(inv["rows"]) == len(ProductType)
+    assert sum(inv["summary"].values()) == len(ProductType)
+    assert list(docs.glob("MV-001-*.md")), "MV-001 has no methodology record"
+    r = subprocess.run(
+        [sys.executable, str(docs.parents[1] / "scripts" / "export_model_inventory.py"), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
     with DuckDBRepository(db_path, read_only=True) as repo:
         v = RiskService(repo).valuation().dropna(subset=["model"])
     seen = v.groupby("product_type")["model"].agg(lambda s: set(s))

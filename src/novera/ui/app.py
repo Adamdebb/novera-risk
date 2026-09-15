@@ -1445,7 +1445,7 @@ elif page == "Reference data":
     )
     what = st.radio(
         "Show",
-        ["Organisation", "Counterparties", "Products", "Risk measures", "Risk factors"],
+        ["Organisation", "Counterparties", "Products", "Model inventory", "Risk measures", "Risk factors"],
         horizontal=True,
         key="ref_what",
     )
@@ -1650,7 +1650,11 @@ elif page == "Reference data":
                             f"- venue: {prod['venue'].lower()}\n"
                             f"- model: {prod['model_label']} · `{prod['model']}` v{prod['model_version']}\n"
                             f"- methodology: `{prod['methodology']}` {prod['methodology_title']}\n"
-                            f"- instrument: `{prod['instrument_class']}`"
+                            f"- instrument: `{prod['instrument_class']}`\n"
+                            f"- market standard: {prod['market_standard']}\n"
+                            f"- simplifications: {prod['simplifications']}\n"
+                            f"- rating: **{prod['appropriateness_label']}** (MV-001)\n"
+                            f"- validation: {prod['validation']}"
                         )
                         st.markdown("**Defining fields**")
                         rows = []
@@ -1663,6 +1667,54 @@ elif page == "Reference data":
                                 line += f" · {f['description']}"
                             rows.append(line)
                         st.markdown("\n".join(rows))
+    elif what == "Model inventory":
+        inv = client.model_inventory()
+        counts = inv["summary"]
+        st.markdown(
+            f"Record `{inv['record']}` v{inv['version']} · {len(inv['rows'])} products · "
+            f"{counts.get('market_standard', 0)} market standard · "
+            f"{counts.get('acceptable_simplification', 0)} acceptable simplification · "
+            f"{counts.get('known_weakness', 0)} known weakness. The rating says how far the model "
+            "used sits from what a desk would expect; the simplifications column says exactly where. "
+            "Read from code, checked against `docs/methodology/MV-001` by the test suite."
+        )
+        rows = [
+            r
+            for r in inv["rows"]
+            if _hit(r["product_type"], r["name"], r["model"], r["asset_class_name"], r["appropriateness"])
+        ]
+        shown = len(rows)
+        if rows:
+            table = pd.DataFrame(
+                [
+                    {
+                        "asset class": r["asset_class_name"],
+                        "product": r["name"],
+                        "model used": f"{r['model_label']} (v{r['model_version']})",
+                        "rating": r["appropriateness_label"],
+                        "market standard": r["market_standard"],
+                        "simplifications": r["simplifications"],
+                        "validation": r["validation"],
+                        "record": r["methodology"],
+                    }
+                    for r in rows
+                ]
+            )
+            shade = {
+                "Market standard": "background-color: rgba(46, 160, 67, 0.18)",
+                "Acceptable simplification": "background-color: rgba(210, 153, 34, 0.18)",
+                "Known weakness": "background-color: rgba(218, 54, 51, 0.18)",
+            }
+            st.dataframe(
+                table.style.map(lambda v: shade.get(v, ""), subset=["rating"]),
+                use_container_width=True,
+                hide_index=True,
+                height=min(80 + 36 * len(table), 800),
+            )
+            st.caption(
+                "Known weaknesses: EUR swaps on a single curve (measured gap in PR-002), "
+                "swaptions without a strike smile, barrier options on one flat vol."
+            )
     elif what == "Risk measures":
         ref = client.measure_reference()
         n_measures = sum(len(a["measures"]) for a in ref["areas"])

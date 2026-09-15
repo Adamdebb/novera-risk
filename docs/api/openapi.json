@@ -5951,6 +5951,121 @@
         "title": "MeasureSpec",
         "type": "object"
       },
+      "ModelInventory": {
+        "additionalProperties": true,
+        "description": "One row per product: model used, market standard, simplifications, appropriateness\nrating and how the implementation is validated. Record MV-001; read from code.",
+        "properties": {
+          "record": {
+            "description": "Methodology record id of the inventory, MV-001",
+            "title": "Record",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ModelInventoryRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Product count per appropriateness rating",
+            "title": "Summary",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "version",
+          "rows",
+          "summary"
+        ],
+        "title": "ModelInventory",
+        "type": "object"
+      },
+      "ModelInventoryRow": {
+        "additionalProperties": true,
+        "properties": {
+          "appropriateness": {
+            "description": "market_standard, acceptable_simplification or known_weakness",
+            "title": "Appropriateness",
+            "type": "string"
+          },
+          "appropriateness_label": {
+            "title": "Appropriateness Label",
+            "type": "string"
+          },
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "asset_class_name": {
+            "title": "Asset Class Name",
+            "type": "string"
+          },
+          "market_standard": {
+            "title": "Market Standard",
+            "type": "string"
+          },
+          "methodology": {
+            "description": "Pricing methodology record id, e.g. PR-002",
+            "title": "Methodology",
+            "type": "string"
+          },
+          "model": {
+            "description": "Model name written on every valuation row",
+            "title": "Model",
+            "type": "string"
+          },
+          "model_label": {
+            "title": "Model Label",
+            "type": "string"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "product_type": {
+            "title": "Product Type",
+            "type": "string"
+          },
+          "simplifications": {
+            "title": "Simplifications",
+            "type": "string"
+          },
+          "validation": {
+            "title": "Validation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_type",
+          "name",
+          "asset_class",
+          "asset_class_name",
+          "model",
+          "model_label",
+          "model_version",
+          "methodology",
+          "market_standard",
+          "simplifications",
+          "appropriateness",
+          "appropriateness_label",
+          "validation"
+        ],
+        "title": "ModelInventoryRow",
+        "type": "object"
+      },
       "MutualFund": {
         "additionalProperties": false,
         "description": "Open-ended fund priced by look-through with a cash sleeve; dealt through a transfer agent.",
@@ -6743,6 +6858,15 @@
       "ProductSpec": {
         "additionalProperties": true,
         "properties": {
+          "appropriateness": {
+            "description": "market_standard, acceptable_simplification or known_weakness (MV-001)",
+            "title": "Appropriateness",
+            "type": "string"
+          },
+          "appropriateness_label": {
+            "title": "Appropriateness Label",
+            "type": "string"
+          },
           "asset_class": {
             "title": "Asset Class",
             "type": "string"
@@ -6764,6 +6888,11 @@
               }
             ],
             "title": "Instrument Class"
+          },
+          "market_standard": {
+            "description": "The model a desk or validation team would expect",
+            "title": "Market Standard",
+            "type": "string"
           },
           "methodology": {
             "description": "Methodology record id, e.g. PR-012",
@@ -6795,6 +6924,16 @@
             "title": "Product Type",
             "type": "string"
           },
+          "simplifications": {
+            "description": "Where the model used departs from the standard",
+            "title": "Simplifications",
+            "type": "string"
+          },
+          "validation": {
+            "description": "External benchmark or analytic identity, and the test",
+            "title": "Validation",
+            "type": "string"
+          },
           "venue": {
             "title": "Venue",
             "type": "string"
@@ -6809,7 +6948,12 @@
           "model_label",
           "model_version",
           "methodology",
-          "methodology_title"
+          "methodology_title",
+          "market_standard",
+          "simplifications",
+          "appropriateness",
+          "appropriateness_label",
+          "validation"
         ],
         "title": "ProductSpec",
         "type": "object"
@@ -12722,6 +12866,54 @@
           }
         },
         "summary": "Measure Reference"
+      }
+    },
+    "/reference/model-inventory": {
+      "get": {
+        "operationId": "model_inventory_reference_model_inventory_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelInventory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Model Inventory"
       }
     },
     "/reference/products": {

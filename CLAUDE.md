@@ -93,6 +93,7 @@ uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload
 uv run python scripts/export_openapi.py   # refresh docs/api/openapi.json after any API change (a test checks it)
+uv run python scripts/export_model_inventory.py   # refresh the MV-001 table after changing the pricer catalogue (a test checks it)
 ```
 If `uv run` fails with `ModuleNotFoundError: No module named 'novera'`, Python skipped the
 editable `.pth` file because macOS flagged it hidden after a uv rebuild. Fix:
