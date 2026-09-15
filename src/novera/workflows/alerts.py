@@ -72,7 +72,7 @@ def _alert(
         subject,
         title,
         body,
-        recipients,
+        list(dict.fromkeys(r for r in recipients if r)),  # one line per role, in order
         run_id,
     )
 
