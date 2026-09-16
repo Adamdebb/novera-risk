@@ -97,6 +97,7 @@ def app(db_path, monkeypatch):
         "Stress library",
         "Limit management",
         "Breaches",
+        "Sign-off",
         "Counterparty",
         "Capital",
         "P&L explain",

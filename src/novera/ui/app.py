@@ -61,10 +61,11 @@ labels = {
 with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
-    run_id = st.selectbox("Run", list(labels), format_func=labels.get)
+    default_run = next((i for i, r in enumerate(runs) if r["run_type"] == "EOD"), 0)  # not a re-run
+    run_id = st.selectbox("Run", list(labels), index=default_run, format_func=labels.get)
     pages = ["Overview", "Copilot", "Drill-down", "Trade extract", "VaR", "Stress", "Stress library"]
     pages += ["Limit management"]
-    pages += ["Breaches"]
+    pages += ["Breaches", "Sign-off"]
     pages += ["Counterparty"]
     pages += ["Fund"] if is_fund else ["Capital"]
     pages += [
@@ -91,11 +92,19 @@ ccy = summary["reporting_currency"]
 verdict_colour = {"GREEN": "🟢", "AMBER": "🟠", "RED": "🔴"}.get(summary["verdict"], "⚪")
 
 
+RELEASE_BADGE = {"RELEASED": "✅", "BLOCKED": "⛔", "PENDING": "⏳", "NO_POLICY": "—"}
+
+
 def header(title: str) -> None:
     st.title(title)
+    try:
+        rel = load("signoff_status", run_id)
+        release = f" · release {RELEASE_BADGE.get(rel['release_status'], '')} {rel['release_status']}"
+    except Exception:  # noqa: BLE001 - a run type outside sign-off simply shows no release
+        release = ""
     st.caption(
         f"Business date {summary['business_date']} · run {run_id} · verdict {verdict_colour} "
-        f"{summary['verdict']} · portfolio {summary['portfolio_snapshot_id']} · market "
+        f"{summary['verdict']}{release} · portfolio {summary['portfolio_snapshot_id']} · market "
         f"{summary['market_snapshot_id']} · models "
         f"{', '.join(f'{k} {v}' for k, v in summary['model_versions'].items())}"
     )
@@ -480,8 +489,48 @@ elif page == "Admin":
         "Operational configurations for risk control. Every action names an actor and is written "
         "to the audit trail. Nothing here edits a stored run."
     )
-    config = st.selectbox("Configuration", ["Partial re-run of a single stage"])
-    if config == "Partial re-run of a single stage":
+    config = st.selectbox("Configuration", ["Sign-off policy", "Partial re-run of a single stage"])
+    if config == "Sign-off policy":
+        from novera.api.errors import ApiError
+
+        st.markdown(
+            "Choose the metrics that must be signed before a run is released (OPS-003). The policy "
+            "applies to every run not yet released; a change is audited with the sets before and after."
+        )
+        pol = client.signoff_policy()
+        face = "fund" if is_fund else "bank"
+        metrics = [m for m in pol["metrics"] if face in m["faces"]]
+        required_here = [m["metric_id"] for m in metrics if m["required"]]
+        st.caption(
+            f"Current policy ({pol['source']}): {', '.join(required_here) or 'nothing required'}"
+            + (
+                f" · last changed by {metrics[0]['updated_by']} at {str(metrics[0]['updated_at'])[:19]}"
+                if metrics and metrics[0]["updated_by"]
+                else ""
+            )
+        )
+        with st.form("signoff_policy"):
+            chosen = []
+            cols = st.columns(2)
+            for i, m in enumerate(metrics):
+                if cols[i % 2].checkbox(
+                    f"{m['title']} · {m['record']} · signer {m['signer']}",
+                    value=m["required"],
+                    key=f"pol_{m['metric_id']}",
+                ):
+                    chosen.append(m["metric_id"])
+            c1, c2 = st.columns(2)
+            actor = c1.text_input("Acting as", value="Chief Risk Officer", key="pol_actor")
+            comment = c2.text_input("Comment", key="pol_comment")
+            go = st.form_submit_button("Save policy")
+        if go:
+            try:
+                res = client.set_signoff_policy(actor.strip(), chosen, comment.strip())
+                st.success(f"Policy saved: {', '.join(res['required']) or 'nothing required'}.")
+                st.cache_data.clear()
+            except ApiError as e:
+                st.error(str(e))
+    elif config == "Partial re-run of a single stage":
         st.markdown(
             "Re-run one stage of the EOD workflow on a stored run. The result is a new run of type "
             "RERUN with the parent's results copied and only that stage recomputed from the same "
@@ -560,6 +609,124 @@ elif page == "Admin":
             )
         else:
             st.caption("No re-run yet.")
+
+elif page == "Sign-off":
+    header("Sign-off and release")
+    from novera.api.errors import ApiError
+
+    st.caption(
+        "Named people sign each metric the policy requires; the run is released when every required "
+        "metric is signed. The value seen is frozen with the signature and every action is audited. "
+        "Nothing here edits the run (OPS-003)."
+    )
+    so = client.signoff_status(run_id)
+
+    def fmt_value(v: dict) -> str:
+        parts = []
+        for k, x in v.items():
+            if isinstance(x, dict):
+                inner = {
+                    kk: xx
+                    for kk, xx in x.items()
+                    if isinstance(xx, (int, float)) and not isinstance(xx, bool)
+                }
+                parts.append(
+                    f"{k}: "
+                    + ", ".join(
+                        f"{kk} {money(xx, digits=2) if abs(xx) >= 1e5 else xx}"
+                        for kk, xx in list(inner.items())[:4]
+                    )
+                )
+            elif isinstance(x, float) and abs(x) >= 1e5:
+                parts.append(f"{k} {money(x, digits=2)}")
+            elif x is not None:
+                parts.append(f"{k} {x}")
+        return " · ".join(parts)
+
+    badge = RELEASE_BADGE.get(so["release_status"], "")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Release", f"{badge} {so['release_status']}")
+    c2.metric("Required metrics signed", f"{so['signed_required']} / {so['required_total']}")
+    c3.metric("Verdict", f"{verdict_colour} {so['verdict']}", "override" if so["override"] else None)
+    c4.metric("Released by", so["released_by"] or "—", (so["released_at"] or "")[:19] or None)
+    status_icon = {"SIGNED": "🟢 signed", "REJECTED": "🔴 rejected", "PENDING": "⚪ pending"}
+    rows = [
+        {
+            "metric": m["title"],
+            "id": m["metric_id"],
+            "required": "required" if m["required"] else "optional",
+            "status": status_icon.get(m["status"], m["status"]),
+            "actor": m["actor"] or "",
+            "at": (m["at"] or "")[:19],
+            "comment": m["comment"] or "",
+            "value": fmt_value(m["value"]),
+            "expected signer": m["signer"],
+        }
+        for m in sorted(so["metrics"], key=lambda m: (not m["required"], m["metric_id"]))
+    ]
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    by_id = {m["metric_id"]: m for m in so["metrics"]}
+    order = [r["id"] for r in rows]
+    with st.form("signoff"):
+        c1, c2 = st.columns([2, 1])
+        metric = c1.selectbox(
+            "Metric",
+            order,
+            format_func=lambda k: (
+                f"{by_id[k]['title']} ({'required' if by_id[k]['required'] else 'optional'})"
+            ),
+        )
+        action = c2.radio("Action", ["Sign", "Reject"], horizontal=True)
+        c3, c4 = st.columns(2)
+        actor = c3.text_input("Acting as", value="Head of Market Risk")
+        comment = c4.text_input("Comment", placeholder="mandatory for a rejection or a RED override")
+        go = st.form_submit_button("Record")
+    if go:
+        try:
+            fn = client.sign_metric if action == "Sign" else client.reject_metric
+            res = fn(run_id, metric, actor.strip(), comment.strip())
+            st.success(f"{metric} {action.lower()}ed by {actor}; release {res['release_status']}.")
+            st.cache_data.clear()
+            st.rerun()
+        except ApiError as e:
+            st.error(str(e))
+
+    st.subheader("Sign-off trail")
+    trail = [
+        e
+        for e in client.audit(subject=run_id, limit=200)
+        if str(e.get("event_type", "")).startswith(("METRIC_", "RUN_RELEASE"))
+    ]
+    if trail:
+        st.dataframe(
+            pd.DataFrame(trail)[["at", "actor", "event_type", "payload"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.caption("No sign-off action on this run yet.")
+
+    st.subheader("Release queue")
+    q = client.signoff_queue(20)
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "business_date": r["business_date"],
+                    "run_id": r["run_id"],
+                    "verdict": r["verdict"],
+                    "release": f"{RELEASE_BADGE.get(r['release_status'], '')} {r['release_status']}",
+                    "signed": f"{r['signed_required']} / {r['required_total']}",
+                    "pending": ", ".join(r["pending"]),
+                    "released by": r["released_by"] or "",
+                }
+                for r in q
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 elif page == "Counterparty":
     header("Counterparty risk")

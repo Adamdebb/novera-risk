@@ -221,3 +221,63 @@ def test_partial_rerun_of_a_stage(db_path, result, tmp_path):
         lim = rerun_stage(repo, parent.run_id, "limits", "Risk Control", runs_dir=tmp_path)
         assert lim.changed == {} and lim.run.summary["breaches"] == parent.summary["breaches"]
         assert len(repo.load_breaches(open_only=False)) == breaches_before
+
+
+def test_signoff_policy_release_and_override(db_path, result):
+    from novera.limits.workflow import WorkflowError
+    from novera.workflows import signoff
+
+    run = result.run
+    with DuckDBRepository(db_path) as repo:
+        pol = signoff.policy(repo)
+        assert pol["source"] == "defaults" and "VAR" in pol["required"] and "BACKTEST" not in pol["required"]
+        st = signoff.status(repo, run)
+        assert st["release_status"] == "PENDING" and st["face"] == "bank"
+        assert "FUND" not in {m["metric_id"] for m in st["metrics"]}
+        with pytest.raises(WorkflowError):
+            signoff.sign(repo, run, "VAR", "")
+        with pytest.raises(WorkflowError):
+            signoff.sign(repo, run, "FUND", "CRO")  # fund metric on the bank face
+        with pytest.raises(WorkflowError):
+            signoff.reject(repo, run, "VAR", "Head of Market Risk", "")  # a rejection needs a comment
+        st = signoff.sign(repo, run, "VAR", "Head of Market Risk", "reviewed against yesterday")
+        var = next(m for m in st["metrics"] if m["metric_id"] == "VAR")
+        assert var["status"] == "SIGNED" and var["actor"] == "Head of Market Risk"
+        assert var["value"]["var"] == run.summary["var"]  # the value seen is frozen with the signature
+        with pytest.raises(WorkflowError):
+            signoff.sign(repo, run, "VAR", "Someone else")  # already signed
+        st = signoff.reject(repo, run, "STRESS", "Head of Market Risk", "worst scenario looks wrong")
+        assert st["release_status"] == "BLOCKED"
+        st = signoff.sign(repo, run, "STRESS", "Head of Market Risk", "re-checked, fine")
+        assert st["release_status"] == "PENDING"
+        with pytest.raises(WorkflowError):
+            signoff.set_policy(repo, "CRO", ["NOPE"])
+        pol = signoff.set_policy(repo, "CRO", ["VAR", "STRESS", "LIMITS"], "demo policy")
+        assert pol["source"] == "stored" and pol["required"] == ["VAR", "STRESS", "LIMITS"]
+        st = signoff.status(repo, run)
+        assert st["release_status"] == "PENDING" and st["pending"] == ["LIMITS"]
+        st = signoff.sign(repo, run, "LIMITS", "Head of Market Risk")
+        assert st["release_status"] == "RELEASED" and st["released_by"] == "Head of Market Risk"
+        assert repo.load_release(run.run_id) is not None
+        types = set(repo.load_audit_events(subject=run.run_id)["event_type"])
+        assert {"METRIC_SIGNED", "METRIC_REJECTED", "RUN_RELEASED"} <= types
+        # Withdrawing a required signature withdraws the release.
+        st = signoff.reject(repo, run, "VAR", "CRO", "found an issue in the USD book")
+        assert st["release_status"] == "BLOCKED" and repo.load_release(run.run_id) is None
+        assert "RUN_RELEASE_WITHDRAWN" in set(repo.load_audit_events(subject=run.run_id)["event_type"])
+        # A RED verdict makes the data-quality sign-off an override that needs a comment.
+        red = repo.load_run(run.run_id)
+        red.verdict = "RED"
+        repo.save_run(red)
+        with pytest.raises(WorkflowError):
+            signoff.sign(repo, red, "DATA_QUALITY", "Head of Market Risk Control")
+        st = signoff.sign(
+            repo, red, "DATA_QUALITY", "Head of Market Risk Control", "stale surface proxied; accepted"
+        )
+        assert next(m for m in st["metrics"] if m["metric_id"] == "DATA_QUALITY")["override"]
+        red.verdict = run.verdict
+        repo.save_run(red)
+        q = signoff.queue(repo)
+        assert q and q[0]["run_id"] == run.run_id and q[0]["release_status"] == "BLOCKED"
+        assert repo.load_run(run.run_id).summary == run.summary  # sign-off never edits the run
+        assert "SIGNOFF_POLICY_CHANGED" in set(repo.load_audit_events(subject="signoff_policy")["event_type"])

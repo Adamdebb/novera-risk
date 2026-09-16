@@ -441,6 +441,75 @@ class MarketDataSources(ApiModel):
     summary: dict[str, int] = Field(description="Factor and family counts per status")
 
 
+class SignoffMetricPolicy(ApiModel):
+    metric_id: str
+    title: str
+    description: str
+    record: str
+    signer: str = Field(description="Role expected to sign; informational until authentication exists")
+    default_required: bool
+    keys: list[str] = Field(description="Run-summary keys frozen with a signature")
+    faces: list[str]
+    required: bool
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class SignoffPolicy(ApiModel):
+    """Which metrics must be signed before a run is released. Record OPS-003."""
+
+    record: str
+    source: str = Field(description="stored, or defaults when no policy has been saved")
+    metrics: list[SignoffMetricPolicy]
+    required: list[str]
+
+
+class SignoffMetric(ApiModel):
+    metric_id: str
+    title: str
+    description: str
+    record: str
+    signer: str
+    required: bool
+    status: str = Field(description="PENDING, SIGNED or REJECTED")
+    actor: str | None = None
+    at: str | None = None
+    comment: str | None = None
+    override: bool = False
+    value: dict[str, Any] = Field(description="The frozen value when signed or rejected, else the live one")
+
+
+class SignoffStatus(ApiModel):
+    """Sign-off state of one run: every metric of its face and the release status."""
+
+    record: str
+    run_id: str
+    run_type: str
+    business_date: str
+    verdict: str
+    face: str
+    release_status: str = Field(description="RELEASED, BLOCKED or PENDING")
+    released_at: str | None = None
+    released_by: str | None = None
+    override: bool = False
+    required_total: int
+    signed_required: int
+    pending: list[str]
+    metrics: list[SignoffMetric]
+
+
+class SignoffQueueRow(ApiModel):
+    run_id: str
+    business_date: str
+    verdict: str
+    release_status: str
+    signed_required: int
+    required_total: int
+    pending: list[str]
+    released_by: str | None = None
+    released_at: str | None = None
+
+
 class RerunStage(ApiModel):
     name: str
     title: str

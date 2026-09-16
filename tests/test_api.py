@@ -369,6 +369,8 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.MarketDataSources, client.get("/reference/market-data-sources").json()),
         (s.StressLibrary, client.get("/reference/stress-library").json()),
         (s.RerunOptions, client.get("/admin/rerun/options").json()),
+        (s.SignoffStatus, client.get("/runs/latest/signoff").json()),
+        (s.SignoffPolicy, client.get("/admin/signoff/policy").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))
@@ -572,3 +574,23 @@ def test_admin_rerun_endpoints(client):
     assert client.get("/runs/latest/summary").json()["run_id"] != body["run_id"]  # latest stays the EOD
     assert client.get("/admin/rerun/options").json()["reruns"][0]["run_id"] == body["run_id"]
     assert client.get(f"/runs/{body['run_id']}/stress").json()
+
+
+def test_signoff_endpoints(client):
+    st = client.get("/runs/latest/signoff").json()
+    assert st["record"] == "OPS-003" and st["release_status"] == "PENDING" and st["required_total"] >= 5
+    r = client.post("/runs/latest/signoff/VAR/sign", json={"actor": "Head of Market Risk", "comment": "ok"})
+    assert r.status_code == 200, r.text
+    assert next(m for m in r.json()["metrics"] if m["metric_id"] == "VAR")["status"] == "SIGNED"
+    assert client.post("/runs/latest/signoff/VAR/sign", json={"actor": "x"}).status_code == 409
+    assert client.post("/runs/latest/signoff/STRESS/reject", json={"actor": "x"}).status_code == 409
+    assert client.post("/runs/latest/signoff/NOPE/sign", json={"actor": "x"}).status_code == 409
+    assert client.get("/admin/signoff/policy").json()["source"] == "defaults"
+    r = client.post("/admin/signoff/policy", json={"actor": "CRO", "required": ["VAR"], "comment": "narrow"})
+    assert r.status_code == 200 and r.json()["required"] == ["VAR"] and r.json()["source"] == "stored"
+    st = client.get("/runs/latest/signoff").json()
+    assert st["release_status"] == "RELEASED" and st["released_by"] == "Head of Market Risk"
+    q = client.get("/signoff/queue").json()
+    assert q and q[0]["run_id"] == st["run_id"] and q[0]["release_status"] == "RELEASED"
+    events = client.get("/audit", params={"subject": st["run_id"]}).json()
+    assert any(e["event_type"] == "METRIC_SIGNED" for e in events)
