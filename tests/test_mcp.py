@@ -1,4 +1,4 @@
-"""MCP server (AI-004): the Copilot tools over stdio, audited, read-only by default."""
+"""MCP server (AI-004): the Analyst tools over stdio, audited, read-only by default."""
 
 import json
 import os

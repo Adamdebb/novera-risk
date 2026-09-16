@@ -38,7 +38,7 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    (window), with the rerun that verifies the window effect.
 7b. **Operations** (30 s). Alerts & jobs page: the scheduled job that advanced the world
    and ran EOD, the alerts it raised, and where real market data has replaced synthetic.
-8. **Risk Copilot** (2 min). Five example buttons on the Copilot page; open the tool-call
+8. **Novera Analyst** (2 min). Five example buttons on the Analyst page; open the tool-call
    expander under an answer to show the run id and the exact numbers it read. "Why did VaR increase today?" then "Which books are closest
    to their limits?" then "What if equities fall 20 percent and vol rises 15 points?"
    Each answer cites run IDs and tool calls.

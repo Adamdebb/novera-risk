@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS limit_increase (
     expires_on DATE NOT NULL,
     payload JSON NOT NULL
 );
-CREATE TABLE IF NOT EXISTS copilot_answer (
+CREATE TABLE IF NOT EXISTS analyst_answer (
     answer_id VARCHAR PRIMARY KEY,
     asked_at TIMESTAMP NOT NULL,
     run_id VARCHAR,
@@ -314,6 +314,17 @@ class DuckDBRepository:
         for stmt in SCHEMA.strip().split(";"):
             if stmt.strip():
                 self._conn.execute(stmt)
+        self._migrate_legacy_tables()
+
+    def _migrate_legacy_tables(self) -> None:
+        """Carry stored rows across a rename. `copilot_answer` became `analyst_answer` on
+        2026-09-16 (Round 26); databases built before then keep their answer history."""
+        legacy = self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'copilot_answer'"
+        ).fetchone()
+        if legacy:
+            self._conn.execute("INSERT OR REPLACE INTO analyst_answer SELECT * FROM copilot_answer")
+            self._conn.execute("DROP TABLE copilot_answer")
 
     # --- organisation --------------------------------------------------------------
     def save_organisation(self, org: Organisation) -> None:
@@ -822,10 +833,10 @@ class DuckDBRepository:
         ).fetchone()
         return self.load_portfolio_snapshot(row[0]) if row else None
 
-    # --- copilot ---------------------------------------------------------------------
-    def save_copilot_answer(self, d: dict) -> None:
+    # --- analyst ---------------------------------------------------------------------
+    def save_analyst_answer(self, d: dict) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO copilot_answer VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO analyst_answer VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 d["answer_id"],
                 d["at"],
@@ -839,13 +850,13 @@ class DuckDBRepository:
             ],
         )
 
-    def load_copilot_answers(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
+    def load_analyst_answers(self, limit: int = 50, session_id: str | None = None) -> list[dict]:
         if not self._conn.execute(
-            "SELECT 1 FROM information_schema.tables WHERE table_name = 'copilot_answer'"
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'analyst_answer'"
         ).fetchone():
             return []
         q = (
-            "SELECT payload FROM copilot_answer"
+            "SELECT payload FROM analyst_answer"
             + (" WHERE session_id = ?" if session_id else "")
             + " ORDER BY asked_at DESC LIMIT ?"
         )

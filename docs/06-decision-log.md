@@ -801,6 +801,35 @@ are defaults to confirm.
 
 ---
 
+## Round 26 — The assistant is named Novera Analyst (2026-09-16)
+
+Context: while drafting CV text the owner noted that "Risk Copilot" is read as Microsoft
+Copilot by most people, and in a bank could raise a false "is this built on Microsoft?"
+question. Asked for alternatives, picked **Novera Analyst**, and asked for the rename.
+
+### 26.1 Name
+- Options: Novera Analyst ★ · Ask Novera · Risk Desk · Novera Explain · Novera Lens
+- Choice: **Novera Analyst**, because everyone understands what a good junior analyst does:
+  you ask, they go to the numbers, they come back with a sourced answer. It sets the right
+  expectation (reports, never decides), fits ADR 0003, and is not claimed by a major vendor.
+  Per ADR 0005 the code reads `f"{settings.platform_name} Analyst"`, so a rename of the
+  platform renames the assistant.
+- Rejected: Advisor (implies advice, which it does not give), Navigator and Pilot (crowded,
+  and Pilot is a step from Copilot), Assistant alone (generic), Agent (already used for the
+  four agents of AI-002).
+
+### 26.2 Scope of the rename
+- Choice: **everything, including the API and storage.** Module `ai/analyst.py`, classes
+  `Analyst` and `AnalystAnswer`, routes `/analyst/*` (OpenAPI regenerated), client methods
+  `analyst_history` and `analyst_provider`, dashboard page "Analyst", CLI help, audit actor
+  `analyst` and event type `ANALYST_ANSWER`, methodology record `AI-001-novera-analyst.md`,
+  test `tests/test_analyst.py`. Earlier rounds of this log keep the old name as history.
+- Storage: table `copilot_answer` became `analyst_answer`; `init_schema` copies the rows of a
+  legacy table across and drops it, so databases built before the rename keep their answer
+  history the next time they are opened for writing (any EOD run or question). The demo
+  databases were migrated on the day.
+- Reversal: the same substitution backwards; old audit rows keep `COPILOT_ANSWER`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).

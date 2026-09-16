@@ -89,7 +89,7 @@ def app(db_path, monkeypatch):
     "page",
     [
         "Overview",
-        "Copilot",
+        "Analyst",
         "Drill-down",
         "Trade extract",
         "VaR",

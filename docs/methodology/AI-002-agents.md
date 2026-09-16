@@ -54,4 +54,4 @@ as a subprocess and can take minutes.
 ## Validation tests
 `test_breach_investigation_attaches_note_with_evidence`, `test_scenario_suggestion_runs_engine`,
 `test_validation_report_reads_records_and_live_evidence`, `test_parse_record_template_shape`,
-`test_copilot_routes_to_agents`, `test_scripted_provider_draft_is_templated`.
+`test_analyst_routes_to_agents`, `test_scripted_provider_draft_is_templated`.

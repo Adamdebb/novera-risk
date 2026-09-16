@@ -1,4 +1,4 @@
-"""Copilot tools: the same service methods the API exposes, wrapped as tool definitions.
+"""Analyst tools: the same service methods the API exposes, wrapped as tool definitions.
 
 Every tool returns compact JSON with the run id it read from, so answers can cite it.
 The model never sees the database; it only sees these results (ADR 0003).

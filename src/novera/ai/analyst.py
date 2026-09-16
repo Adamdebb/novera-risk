@@ -1,4 +1,4 @@
-"""The Risk Copilot: a tool-calling loop over the stored run, with every answer recorded.
+"""The Analyst: a tool-calling loop over the stored run, with every answer recorded.
 
 Governance (docs/04-governance.md): the model only sees tool results; it never computes
 a number; every answer is stored with the question, the tool calls and their results, the
@@ -21,8 +21,9 @@ from novera.workflows.runs import AuditEvent, new_run_id
 
 MAX_TURNS = 8
 
-SYSTEM_PROMPT = """You are the Risk Copilot of {platform}, a market and counterparty risk platform for a
-trading firm. You help risk managers, desk heads and the CRO understand stored risk results.
+SYSTEM_PROMPT = """You are {platform} Analyst, the question-answering assistant of {platform}, a market and
+counterparty risk platform for a trading firm. You help risk managers, desk heads and the CRO understand
+stored risk results.
 
 Rules you must follow:
 - Every number you state must come from a tool result in this conversation. Never estimate,
@@ -52,7 +53,7 @@ class ToolCall:
 
 
 @dataclass
-class CopilotAnswer:
+class AnalystAnswer:
     answer_id: str
     question: str
     answer: str
@@ -101,7 +102,7 @@ def make_provider(settings: Settings | None = None) -> Provider:
     return ScriptedProvider()
 
 
-class Copilot:
+class Analyst:
     def __init__(
         self, db_path: str, provider: Provider | None = None, settings: Settings | None = None
     ) -> None:
@@ -141,7 +142,7 @@ class Copilot:
         history: list[dict[str, Any]] | None = None,
         session_id: str | None = None,
         persist: bool = True,
-    ) -> CopilotAnswer:
+    ) -> AnalystAnswer:
         t0 = time.perf_counter()
         context, resolved = self._context(run_id)
         system = SYSTEM_PROMPT.format(platform=self.settings.platform_name, context=context)
@@ -183,7 +184,7 @@ class Copilot:
                 and json.loads(c.output).get("run_id")
             }
         )
-        ans = CopilotAnswer(
+        ans = AnalystAnswer(
             new_run_id("ans"),
             question,
             text,
@@ -201,15 +202,15 @@ class Copilot:
             self.store(ans)
         return ans
 
-    def store(self, ans: CopilotAnswer) -> None:
+    def store(self, ans: AnalystAnswer) -> None:
         with DuckDBRepository(self.db_path) as repo:
-            repo.init_schema()  # idempotent: databases created before the copilot table gain it here
-            repo.save_copilot_answer(ans.to_dict())
+            repo.init_schema()  # idempotent: databases created before the analyst table gain it here
+            repo.save_analyst_answer(ans.to_dict())
             repo.save_audit_events(
                 [
                     AuditEvent.now(
-                        "copilot",
-                        "COPILOT_ANSWER",
+                        "analyst",
+                        "ANALYST_ANSWER",
                         ans.answer_id,
                         question=ans.question[:500],
                         provider=ans.provider,
@@ -221,7 +222,7 @@ class Copilot:
                 ]
             )
 
-    def commentary(self, run_id: str | None = None, persist: bool = True) -> CopilotAnswer:
+    def commentary(self, run_id: str | None = None, persist: bool = True) -> AnalystAnswer:
         """Draft the morning risk commentary for a run."""
         q = (
             "Draft the morning risk commentary for this run for the head of market risk: headline risk and "
@@ -233,4 +234,4 @@ class Copilot:
 
     def history(self, limit: int = 50) -> list[dict[str, Any]]:
         with DuckDBRepository(self.db_path, read_only=True) as repo:
-            return repo.load_copilot_answers(limit)
+            return repo.load_analyst_answers(limit)

@@ -63,7 +63,7 @@ with st.sidebar:
     st.caption(f"{settings.platform_tagline} · {firm_name}")
     default_run = next((i for i, r in enumerate(runs) if r["run_type"] == "EOD"), 0)  # not a re-run
     run_id = st.selectbox("Run", list(labels), index=default_run, format_func=labels.get)
-    pages = ["Overview", "Copilot", "Drill-down", "Trade extract", "VaR", "Stress", "Stress library"]
+    pages = ["Overview", "Analyst", "Drill-down", "Trade extract", "VaR", "Stress", "Stress library"]
     pages += ["Limit management"]
     pages += ["Breaches", "Sign-off"]
     pages += ["Counterparty"]
@@ -167,9 +167,9 @@ if page == "Overview":
                 fn = st.error if r["severity"] in ("CRITICAL", "MAJOR") else st.info
                 fn(f"**{r['code']}** {r['message']} ({r['affected_trades']} trades) · owner {r['owner']}")
 
-elif page == "Copilot":
-    header("Risk Copilot")
-    prov = client.copilot_provider()
+elif page == "Analyst":
+    header(f"{settings.platform_name} Analyst")
+    prov = client.analyst_provider()
     if prov["provider"] == "scripted":
         st.info(
             "Running the scripted provider: answers are templated from stored numbers. Set "
@@ -180,9 +180,9 @@ elif page == "Copilot":
             f"Provider {prov['provider']} · model {prov['model']} · answers cite run ids and are stored "
             "with their tool calls."
         )
-    if "copilot_chat" not in st.session_state:
-        st.session_state.copilot_chat = []
-        st.session_state.copilot_session = f"ui_{run_id}"
+    if "analyst_chat" not in st.session_state:
+        st.session_state.analyst_chat = []
+        st.session_state.analyst_session = f"ui_{run_id}"
     examples = [
         "Why did VaR change since yesterday?",
         "Which books are closest to their limits?",
@@ -195,7 +195,7 @@ elif page == "Copilot":
     for col, ex in zip(cols, examples, strict=True):
         if col.button(ex, key=f"ex_{ex[:20]}"):
             picked = ex
-    for turn in st.session_state.copilot_chat:
+    for turn in st.session_state.analyst_chat:
         with st.chat_message(turn["role"]):
             st.markdown(turn["content"])
             if turn.get("tool_calls"):
@@ -209,16 +209,16 @@ elif page == "Copilot":
                         )
     question = st.chat_input("Ask about this run") or picked
     if question:
-        st.session_state.copilot_chat.append({"role": "user", "content": question})
+        st.session_state.analyst_chat.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
         with st.chat_message("assistant"), st.spinner("Reading the run…"):
             if question.lower().startswith("draft the morning commentary"):
                 ans = client.commentary(run_id)
             else:
-                ans = client.ask(question, run_id=run_id, session_id=st.session_state.copilot_session)
+                ans = client.ask(question, run_id=run_id, session_id=st.session_state.analyst_session)
             st.markdown(ans["answer"])
-        st.session_state.copilot_chat.append(
+        st.session_state.analyst_chat.append(
             {
                 "role": "assistant",
                 "content": ans["answer"],
