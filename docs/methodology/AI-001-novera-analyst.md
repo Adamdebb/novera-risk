@@ -1,4 +1,4 @@
-# Risk Copilot  (ID: AI-001)
+# Novera Analyst  (ID: AI-001)
 
 | Field | Value |
 |---|---|
@@ -39,6 +39,6 @@ provider only understands the demo question patterns. The model cannot see trade
 data unless a tool returns it, by design.
 
 ## Validation tests
-`tests/test_copilot.py`: loop feeds tool results back and stores the record; tool errors
+`tests/test_analyst.py`: loop feeds tool results back and stores the record; tool errors
 return as results, never raise; what-if reprices through the engine; scripted planner
 covers the demo questions.

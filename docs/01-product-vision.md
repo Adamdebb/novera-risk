@@ -36,7 +36,7 @@ breadth, not the moat.
 4. **Risk simulation**: historical, hypothetical and cross-asset stress; what-if trades.
 5. **Risk control**: limit hierarchy, utilisation, breach lifecycle, escalation, audit.
 6. **Risk intelligence**: ranked material risks, concentrations, liquidity and early warnings.
-7. **Risk Copilot**: natural-language access via tool calls to the engine and database.
+7. **Novera Analyst**: natural-language access via tool calls to the engine and database.
 
 ## Two audiences, one engine
 
@@ -58,7 +58,7 @@ breadth, not the moat.
 4. **Can I trust today's VaR?** Data-quality report: stale surfaces, missing curve nodes,
    unpriced trades, unexplained P&L.
 5. **Counterparty what-if**: change a CSA threshold, re-run exposure, compare runs.
-6. **Risk Copilot**: "Why did VaR increase?" answered from sourced numbers with run IDs.
+6. **Novera Analyst**: "Why did VaR increase?" answered from sourced numbers with run IDs.
 
 ## Claims we make
 

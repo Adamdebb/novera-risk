@@ -12,7 +12,7 @@ until a customer forces it. The UI is a thin client over a typed API so it can b
                                  |
        +-------------------------+---------------------------+
        |                         |                           |
-   WORKFLOWS               RISK COPILOT (ai/)          REPORTING
+   WORKFLOWS               NOVERA ANALYST (ai/)          REPORTING
    EOD pipeline            tools -> api/services       risk packs
    run registry            never computes              exports
    audit events                  |

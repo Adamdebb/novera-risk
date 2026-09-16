@@ -879,7 +879,7 @@ class RunComparison(ApiModel):
     breaches: list[BreachRecord]
 
 
-# --- Risk Copilot and agents --------------------------------------------------------------
+# --- Analyst and agents --------------------------------------------------------------
 class ToolCall(ApiModel):
     name: str
     input: dict[str, Any] = Field(default_factory=dict)
@@ -888,7 +888,7 @@ class ToolCall(ApiModel):
     output: str | None = None
 
 
-class CopilotAnswer(ApiModel):
+class AnalystAnswer(ApiModel):
     answer_id: str
     question: str
     answer: str

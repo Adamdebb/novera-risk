@@ -32,7 +32,7 @@ Rating scale:
 | Known weakness | A departure that can misstate value or risk for part of the book. The gap is measured where a reference implementation exists; an upgrade is on the roadmap. |
 
 A rating is a methodology judgment recorded here, not a validation opinion: the owner sets
-it, the simplifications column says exactly where the departure is, and the Copilot and
+it, the simplifications column says exactly where the departure is, and the Analyst and
 agents may quote it but never change it (governance rule: AI does not act as model
 validation).
 

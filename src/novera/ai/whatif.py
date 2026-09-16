@@ -1,4 +1,4 @@
-"""Ad-hoc what-if scenarios for the Copilot: shock named factor groups and reprice the
+"""Ad-hoc what-if scenarios for the Analyst: shock named factor groups and reprice the
 stored run's portfolio through the deterministic engine. The engine computes, the model
 only asks (ADR 0003)."""
 
@@ -135,7 +135,7 @@ def what_if(
         f"{s.target} {s.size:+g}{'%' if s.unit == 'pct' else (' bp' if s.unit == 'bp' else ' vol pts')}"
         for s in shocks
     )
-    sc = StressScenario("whatif", name, "Copilot what-if", "HYPOTHETICAL", tuple(rules))
+    sc = StressScenario("whatif", name, "Analyst what-if", "HYPOTHETICAL", tuple(rules))
     res = run_stress(pf, [sc])[0]
     keys = val.set_index("trade_id")
     by_group = res.by(val, by)

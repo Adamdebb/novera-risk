@@ -1,7 +1,7 @@
-"""MCP server: the Risk Copilot's tools over the Model Context Protocol (AI-004).
+"""MCP server: the Analyst's tools over the Model Context Protocol (AI-004).
 
 `novera mcp` runs a local stdio server (one process per client, no network port) that
-exposes the same read-only tools the Copilot uses, plus the what-if engine. Any MCP client
+exposes the same read-only tools the Analyst uses, plus the what-if engine. Any MCP client
 (Claude Desktop, Claude Code, a firm's own agent) can then ask questions of the stored run
 while the model runs wherever the firm decided: the server never calls a model itself.
 
@@ -100,7 +100,7 @@ def build_server(db_path: str | None = None, allow_agents: bool = False, setting
         if tool.name in WRITE_TOOLS and not allow_agents:
             continue
         server.add_tool(_wrap(tool, db_path, settings), name=tool.name, description=tool.description)
-        # Advertise the Copilot's own JSON schema (argument descriptions, enums) rather than the
+        # Advertise the Analyst's own JSON schema (argument descriptions, enums) rather than the
         # one derived from the Python signature; validation still goes through the signature.
         registered = server._tool_manager.get_tool(tool.name)  # noqa: SLF001
         if registered is not None:

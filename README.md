@@ -5,7 +5,7 @@
 Novera is a working prototype of how a modern market and counterparty risk function can
 operate. It runs a deterministic, auditable risk engine over a simulated multi-asset
 trading organisation, then adds the layer most institutions lack: automated monitoring,
-explanation, scenario investigation, exception management and an AI Risk Copilot that
+explanation, scenario investigation, exception management and Novera Analyst, an AI assistant that
 works only from validated numbers.
 
 > We have enough risk numbers. The problem is turning them into decisions.
@@ -20,7 +20,7 @@ works only from validated numbers.
 | Simulation          | What happens under historical and hypothetical stress       |
 | Control             | Which limits are breached, who owns them, what happens next |
 | Intelligence        | Which risks matter most today                               |
-| Copilot             | Ask the platform in plain language, get sourced answers     |
+| Analyst             | Ask the platform in plain language, get sourced answers     |
 
 Individual measures such as VaR, expected shortfall, Greeks, DV01, CS01, PFE and CVA are
 components that serve those capabilities.
@@ -42,7 +42,7 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
   audit events. A FastAPI API and a Streamlit morning dashboard over the stored run.
 - Breach workflow with auto-escalation and an approval matrix for temporary limit
   increases, and run-to-run comparison. Two simulated business days out of the box.
-- Risk Copilot: ask questions in plain language, get answers built only from stored run
+- Novera Analyst: ask questions in plain language, get answers built only from stored run
   results and engine what-ifs, every answer recorded with its tool calls. Works without
   an API key through a scripted provider; set `ANTHROPIC_API_KEY` for Claude.
 - Three VaR methods (historical full revaluation, delta-gamma-vega challenger, Monte

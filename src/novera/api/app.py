@@ -506,30 +506,30 @@ def compare(run_a: str, run_b: str, by: str = "asset_class", svc: RiskService = 
     return svc.compare(run_a, run_b, by)
 
 
-# --- Risk Copilot --------------------------------------------------------------------------------
-@app.post("/copilot/ask", response_model=s.CopilotAnswer)
-def copilot_ask(body: AskBody):
-    from novera.ai import Copilot
+# --- Analyst --------------------------------------------------------------------------------
+@app.post("/analyst/ask", response_model=s.AnalystAnswer)
+def analyst_ask(body: AskBody):
+    from novera.ai import Analyst
 
-    return Copilot(settings.db_path).ask(body.question, body.run_id, session_id=body.session_id).to_dict()
-
-
-@app.post("/copilot/commentary", response_model=s.CopilotAnswer)
-def copilot_commentary(run_id: str | None = None):
-    from novera.ai import Copilot
-
-    return Copilot(settings.db_path).commentary(run_id).to_dict()
+    return Analyst(settings.db_path).ask(body.question, body.run_id, session_id=body.session_id).to_dict()
 
 
-@app.get("/copilot/history", response_model=list[s.CopilotAnswer])
-def copilot_history(limit: int = 50):
-    from novera.ai import Copilot
+@app.post("/analyst/commentary", response_model=s.AnalystAnswer)
+def analyst_commentary(run_id: str | None = None):
+    from novera.ai import Analyst
 
-    return Copilot(settings.db_path).history(limit)
+    return Analyst(settings.db_path).commentary(run_id).to_dict()
 
 
-@app.get("/copilot/provider", response_model=s.ProviderInfo)
-def copilot_provider():
+@app.get("/analyst/history", response_model=list[s.AnalystAnswer])
+def analyst_history(limit: int = 50):
+    from novera.ai import Analyst
+
+    return Analyst(settings.db_path).history(limit)
+
+
+@app.get("/analyst/provider", response_model=s.ProviderInfo)
+def analyst_provider():
     from novera.ai import make_provider
 
     p = make_provider(settings)

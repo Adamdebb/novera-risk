@@ -683,15 +683,15 @@ def breach_decide_increase(
 
 @app.command()
 def ask(
-    question: str = typer.Argument(..., help="Question for the Risk Copilot"),
+    question: str = typer.Argument(..., help="Question for the Analyst"),
     run_id: str = typer.Option(None, help="Run to answer about (default latest)"),
     show_tools: bool = typer.Option(False, help="Print the tool calls made"),
     fund: bool = typer.Option(False, help="Use the hedge-fund database"),
 ) -> None:
-    """Ask the Risk Copilot. Answers come only from stored run results (ADR 0003)."""
-    from novera.ai import Copilot
+    """Ask the Analyst. Answers come only from stored run results (ADR 0003)."""
+    from novera.ai import Analyst
 
-    c = Copilot(_db(fund))
+    c = Analyst(_db(fund))
     a = c.ask(question, run_id)
     typer.echo(a.answer)
     typer.echo(
@@ -915,7 +915,7 @@ def mcp(
     allow_agents: bool = typer.Option(False, help="Expose the agent tool, which writes notes to breaches"),
     transport: str = typer.Option("stdio", help="stdio (default, one process per client) or streamable-http"),
 ) -> None:
-    """MCP server exposing the Copilot's read-only tools and the what-if engine (AI-004).
+    """MCP server exposing the Analyst's read-only tools and the what-if engine (AI-004).
 
     Register it with an MCP client, e.g. for Claude Code:
     claude mcp add novera -- uv run --directory <repo> novera mcp

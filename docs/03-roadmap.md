@@ -65,7 +65,7 @@ backtesting (MR-011), the daily risk pack (RP-001) and the morning dashboard.
       write endpoints on the API and actions in the dashboard; `novera breach` CLI
 - [x] Second simulated business day (new trades, one concentration swap unwound) so the
       day-on-day story is real: three breaches auto-escalate, EM FX breaches on a new trade
-- [x] Risk Copilot (AI-001), pulled forward from Phase 7: tool-calling over the stored run with
+- [x] Novera Analyst (AI-001), pulled forward from Phase 7: tool-calling over the stored run with
       a what-if engine, stored answers with tool calls and run ids, Claude Opus 5 or a scripted
       provider without credentials; API, `novera ask` and a chat page
 - [x] Scheduler and alerts (OPS-001): `novera schedule` with retries, job log, day advance
@@ -91,7 +91,7 @@ measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
 - [x] Wrong-way risk indicator (CR-004) with the planted sovereign and corporate cases
 - [x] Counterparty limits now on peak PFE95 after collateral; watchlist flag; current
       exposure under every stress scenario
-- [x] Counterparty page, API, Copilot tool, `novera run counterparty`, EOD integration
+- [x] Counterparty page, API, Analyst tool, `novera run counterparty`, EOD integration
 - [ ] Initial margin (SIMM-lite) and CCP exposure: Phase 5
 
 ## Phase 5 — Segment modules (delivered)
@@ -101,13 +101,13 @@ measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
   multiplier and the P&L attribution test (REG-002); SA-CCR EAD and RWA (REG-003);
   SIMM-lite initial margin feeding the exposure engine (REG-004); BA-CVA capital
   (REG-005); funding cash ladder (REG-006); capital attributed to desks; Capital page,
-  API, Copilot tool, `novera run regulatory`.
+  API, Analyst tool, `novera run regulatory`.
 - **Hedge fund (HF)**: a second simulated organisation, Meridian Multi-Strategy Fund, with
   strategies, prime brokers, a NAV and an investor register (`novera simulate --template
   hedge_fund`, separate database, firm selector in the dashboard); exposures and leverage
   (HF-001), prime-broker margin replication (HF-002), factor betas (HF-003), redemption
   stress (HF-004), strategy attribution (HF-005), crowding (HF-006); fund limits on
-  leverage, margin usage and broker concentration; Fund page, API, Copilot tool.
+  leverage, margin usage and broker concentration; Fund page, API, Analyst tool.
 - Not done: IPV as a separate module (covered by the challenger), ICAAP and ILAAP
   document generation, CCP exposure.
 
@@ -133,7 +133,7 @@ strike concentration reporting and volatility calibration tools.
 
 ## Phase 7 — AI and automation (delivered 2026-09-15)
 
-Risk Copilot with tool calling and commentary (Phase 3), plus four agents that gather
+Novera Analyst with tool calling and commentary (Phase 3), plus four agents that gather
 evidence deterministically and draft from it: breach investigation (note attached to
 the breach with contributors, changes and an engine-sized remediation), scenario
 suggestion (proposals sized by the history, run through the engine), model-validation

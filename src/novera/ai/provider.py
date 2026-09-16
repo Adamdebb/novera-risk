@@ -3,7 +3,7 @@
 ``AnthropicProvider`` calls the Claude API. ``ScriptedProvider`` is a deterministic stand-in
 that plans tool calls from keywords and writes the answer from the tool results, so the
 platform demos and tests without credentials. Both speak the Messages API content-block
-shape so the Copilot loop is identical.
+shape so the Analyst loop is identical.
 """
 
 from __future__ import annotations

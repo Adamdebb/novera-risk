@@ -12,11 +12,11 @@
 `novera mcp` runs a Model Context Protocol server over stdio: the client (Claude Desktop,
 Claude Code, a firm's own agent) starts it as a child process and exchanges JSON-RPC
 messages over the process pipes, so there is no network port and one server per client.
-The server registers the Copilot's tool registry (`ai/tools.py`) unchanged: eighteen
+The server registers the Analyst's tool registry (`ai/tools.py`) unchanged: eighteen
 read-only tools over the stored run plus `what_if`, which prices a hypothetical shock in
 memory through the engine (MR-005). The `agent` tool, which writes notes to breaches, is
 registered only with `--allow-agents`. Tool schemas advertised to the client are the
-Copilot's own JSON schemas (argument descriptions and enums), so a model sees the same
+Analyst's own JSON schemas (argument descriptions and enums), so a model sees the same
 contract either way.
 
 ## Governance
@@ -40,7 +40,7 @@ Claude Desktop: add the same command to `claude_desktop_config.json` under `mcpS
 stdio only by default (`--transport streamable-http` exists for a network deployment but
 carries no authentication of its own; put it behind the firm's gateway). Tool outputs are
 capped to keep the client's context small; long tables are truncated the same way the
-Copilot truncates them.
+Analyst truncates them.
 
 ## Validation tests
 `test_server_registers_read_only_tools_by_default`, `test_stdio_round_trip_and_audit`

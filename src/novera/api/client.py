@@ -85,7 +85,7 @@ WRITE_METHODS = {
     "set_var_setup",
     "apply_var_template",
 }
-COPILOT_METHODS = {"ask", "commentary", "copilot_history", "copilot_provider"}
+ANALYST_METHODS = {"ask", "commentary", "analyst_history", "analyst_provider"}
 PACK_METHODS = {"risk_pack"}
 
 
@@ -120,14 +120,14 @@ class LocalClient:
         return Path(path).read_bytes()
 
     def _dispatch(self, name: str, *a: Any, **kw: Any) -> Any:
-        if name in COPILOT_METHODS:
-            from novera.ai import Copilot, make_provider
+        if name in ANALYST_METHODS:
+            from novera.ai import Analyst, make_provider
 
-            if name == "copilot_provider":
+            if name == "analyst_provider":
                 p = make_provider()
                 return {"provider": p.name, "model": p.model}
-            c = Copilot(self.db_path)
-            if name == "copilot_history":
+            c = Analyst(self.db_path)
+            if name == "analyst_history":
                 return c.history(*a, **kw)
             return getattr(c, name)(*a, **kw).to_dict()
         if name in AGENT_METHODS:
@@ -349,7 +349,7 @@ class HttpClient:
     def ask(self, question, run_id=None, session_id=None):
         return self._check(
             self.http.post(
-                "/copilot/ask",
+                "/analyst/ask",
                 json={"question": question, "run_id": run_id, "session_id": session_id},
                 timeout=300,
             )
@@ -357,14 +357,14 @@ class HttpClient:
 
     def commentary(self, run_id=None):
         return self._check(
-            self.http.post("/copilot/commentary", params={"run_id": run_id} if run_id else None, timeout=300)
+            self.http.post("/analyst/commentary", params={"run_id": run_id} if run_id else None, timeout=300)
         )
 
-    def copilot_history(self, limit=50):
-        return self._get("/copilot/history", limit=limit)
+    def analyst_history(self, limit=50):
+        return self._get("/analyst/history", limit=limit)
 
-    def copilot_provider(self):
-        return self._get("/copilot/provider")
+    def analyst_provider(self):
+        return self._get("/analyst/provider")
 
     # --- agents and lab (long-running: generous timeouts) ---
     def _post_long(self, path, **body):

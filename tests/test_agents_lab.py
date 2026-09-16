@@ -162,7 +162,7 @@ def test_csa_ingestion_round_trip(db_path, tmp_path):
     reject_csa(db_path, note2.note_id, "someone", "unknown counterparty")
 
 
-def test_copilot_routes_to_agents(db_path):
+def test_analyst_routes_to_agents(db_path):
     assert _plan("suggest scenarios I should run today")[0][0] == "agent"
     assert _plan("investigate brc_abc123_def456 for me")[0] == (
         "agent",

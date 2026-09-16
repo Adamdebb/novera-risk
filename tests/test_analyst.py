@@ -1,11 +1,11 @@
-"""Risk Copilot: tool loop, scripted planner, what-if engine, governance record."""
+"""Analyst: tool loop, scripted planner, what-if engine, governance record."""
 
 import json
 from datetime import date
 
 import pytest
 
-from novera.ai import Copilot, ScriptedProvider
+from novera.ai import Analyst, ScriptedProvider
 from novera.ai.provider import ProviderResponse, TextBlock, ToolUseBlock, _plan, _plan_what_if
 from novera.ai.tools import build_tools, execute
 from novera.ai.whatif import Shock, what_if
@@ -28,7 +28,7 @@ D1, D2 = date(2026, 9, 11), date(2026, 9, 14)
 
 @pytest.fixture(scope="module")
 def db_path(tmp_path_factory):
-    path = tmp_path_factory.mktemp("copilot") / "c.duckdb"
+    path = tmp_path_factory.mktemp("analyst") / "c.duckdb"
     org = build_global_macro_bank()
     cp = build_counterparty_universe(org)
     md = generate_market_data(
@@ -98,7 +98,7 @@ class FakeProvider:
 
 
 def test_loop_feeds_tool_results_and_stores_answer(db_path):
-    c = Copilot(db_path, provider=FakeProvider())
+    c = Analyst(db_path, provider=FakeProvider())
     a = c.ask("What is VaR?")
     assert a.turns == 2 and len(a.tool_calls) == 1 and a.tool_calls[0].name == "run_summary"
     assert a.answer.startswith("VaR is ") and a.run_ids_cited == [a.run_id]
@@ -107,7 +107,7 @@ def test_loop_feeds_tool_results_and_stores_answer(db_path):
     assert hist[0]["answer_id"] == a.answer_id and hist[0]["tool_calls"][0]["name"] == "run_summary"
     with DuckDBRepository(db_path, read_only=True) as repo:
         ev = repo.load_audit_events(subject=a.answer_id)
-    assert list(ev["event_type"]) == ["COPILOT_ANSWER"]
+    assert list(ev["event_type"]) == ["ANALYST_ANSWER"]
 
 
 def test_tools_execute_and_errors_are_returned_not_raised(db_path):
@@ -168,7 +168,7 @@ def test_scripted_planner_and_answers(db_path):
     assert _plan("Why did VaR increase?")[0][0] == "compare_runs"
     assert _plan("which desks are closest to limits")[0][0] == "limits"
     assert _plan("show me IRS_000201")[0] == ("trade", {"trade_id": "IRS_000201"})
-    c = Copilot(db_path, provider=ScriptedProvider())
+    c = Analyst(db_path, provider=ScriptedProvider())
     for q in [
         "Why did VaR change since yesterday?",
         "Which books are closest to their limits?",

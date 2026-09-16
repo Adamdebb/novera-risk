@@ -5,7 +5,7 @@ Working notes for AI-assisted development. Read fully before changing code.
 ## What this is
 A demonstrable prototype of how a modern market-risk function operates: a deterministic
 risk engine over a simulated global trading organisation, wrapped in workflow automation,
-governance and an AI Risk Copilot. Target audiences: investment banks and hedge funds.
+governance and Novera Analyst, an AI assistant. Target audiences: investment banks and hedge funds.
 Read `docs/01-product-vision.md` for positioning, `docs/03-roadmap.md` for what is
 in scope now, `docs/07-eod-workflow.md` for what one run does step by step, and `docs/06-decision-log.md` before proposing to change a past choice. Do not build ahead of the current phase.
 
@@ -50,7 +50,7 @@ src/novera/
   storage/             Repository layer. All SQL lives here.
   reporting/           Risk packs, tables, exports
   api/                 FastAPI app, response schemas (schemas.py), one error contract (errors.py), clients
-  ai/                  Risk Copilot: tools, prompts, provider adapter, agents/ (AI-002/003). Never computes.
+  ai/                  Novera Analyst: tools, prompts, provider adapter, agents/ (AI-002/003). Never computes.
   lab/                 Portfolio Lab: sandbox organisations with chosen planted problems (LAB-001)
   ui/                  Streamlit thin client
 ```
@@ -80,7 +80,7 @@ uv run novera --help          # CLI
 uv run novera simulate        # simulated bank, portfolio, market data, limits
 uv run novera run eod         # governed EOD run, stores results and audit events (--business-date)
 uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
-uv run novera ask "..."       # Risk Copilot; scripted provider unless ANTHROPIC_API_KEY is set
+uv run novera ask "..."       # Novera Analyst; scripted provider unless ANTHROPIC_API_KEY is set
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
 uv run novera rerun latest --stage stress --actor "Risk Control" --reason "..."   # one stage into a new RERUN run (OPS-002); Admin page does the same
 uv run novera signoff status / sign VAR --actor "Head of Market Risk" / reject ... --comment / policy --require VAR,STRESS   # sign-off and release (OPS-003)

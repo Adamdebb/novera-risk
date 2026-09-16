@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from novera.ai.copilot import make_provider
+from novera.ai.analyst import make_provider
 from novera.ai.provider import Provider
 from novera.config import Settings, get_settings
 from novera.storage.duckdb_repository import DuckDBRepository
