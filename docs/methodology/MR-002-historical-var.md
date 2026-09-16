@@ -2,15 +2,18 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.risk.var.historical_var` |
-| Last validated | 2026-09-14 |
+| Last validated | 2026-09-16 |
 
 ## Definition
 One-day 99% Value at Risk from an equally weighted window of 500 historical daily factor
 moves applied to today's snapshot, with every trade fully repriced under every scenario.
+The confidence level and the window are those of the measure in the firm's VaR setup
+(OPS-004); the defaults above are what the platform produces until a setup is saved. The
+same code with decaying weights is MR-015 and over a fixed window MR-016.
 
 ## Mathematical method
 For scenario `s`: ABSOLUTE factors (zero rates, credit spreads, swaption SABR rho) shift by
@@ -33,4 +36,11 @@ universe definition.
 
 ## Validation tests
 `test_historical_var_properties`: shape, positivity, ES ≥ VaR, exact additivity of
-contributions, sub-additivity of standalone group VaR.
+contributions, sub-additivity of standalone group VaR. `test_var_measures_share_matrices_and_validate`:
+the default setup reproduces this record's figures.
+
+## Change history
+| Version | Date | Change | Author |
+|---------|------|--------|--------|
+| 1.0.0 | 2026-09-14 | Historical simulation, full revaluation, 99% over 500 days | Novera |
+| 1.1.0 | 2026-09-16 | Confidence and window from the VaR setup; shared scenario builder with MR-015 and MR-016 | Novera |

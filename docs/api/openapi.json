@@ -8708,6 +8708,17 @@
             ],
             "title": "Es"
           },
+          "es_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Es Confidence"
+          },
           "fund": {
             "anyOf": [
               {
@@ -8863,6 +8874,17 @@
               }
             ]
           },
+          "stressed_var": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stressed Var"
+          },
           "unpriced_trades": {
             "default": 0,
             "title": "Unpriced Trades",
@@ -8878,6 +8900,45 @@
               }
             ],
             "title": "Var"
+          },
+          "var_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Confidence of the headline VaR measure",
+            "title": "Var Confidence"
+          },
+          "var_measure_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Headline measure of the VaR setup (OPS-004)",
+            "title": "Var Measure Id"
+          },
+          "var_measures": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Value of every measure of the run's VaR setup by measure id",
+            "title": "Var Measures"
           },
           "var_scaled": {
             "anyOf": [
@@ -11587,6 +11648,283 @@
         "title": "ValidationBody",
         "type": "object"
       },
+      "VarMeasureDescribed": {
+        "additionalProperties": true,
+        "properties": {
+          "compute": {
+            "description": "FULL_REVALUATION or SENSITIVITY (delta-gamma-vega)",
+            "title": "Compute",
+            "type": "string"
+          },
+          "confidence": {
+            "description": "0.99 for 99%",
+            "title": "Confidence",
+            "type": "number"
+          },
+          "decay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lambda for weighted historical scenarios",
+            "title": "Decay"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "goal": {
+            "description": "LIMIT feeds the limits of the metric's type; INFORMATION is reported only",
+            "title": "Goal",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "limit_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Type"
+          },
+          "measure_id": {
+            "default": "",
+            "description": "Derived from the parameters when empty",
+            "title": "Measure Id",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "metric": {
+            "description": "VAR, ES or STRESSED_VAR",
+            "title": "Metric",
+            "type": "string"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "shocks": {
+            "description": "HISTORICAL, HISTORICAL_WEIGHTED or MONTE_CARLO",
+            "title": "Shocks",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO date: fixed window (stressed VaR)",
+            "title": "Window Start"
+          },
+          "window_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Years back from the valuation date",
+            "title": "Window Years"
+          }
+        },
+        "required": [
+          "goal",
+          "metric",
+          "confidence",
+          "shocks",
+          "compute",
+          "label",
+          "method",
+          "record",
+          "window_days"
+        ],
+        "title": "VarMeasureDescribed",
+        "type": "object"
+      },
+      "VarMeasureScenarioRow": {
+        "additionalProperties": true,
+        "properties": {
+          "measure_id": {
+            "title": "Measure Id",
+            "type": "string"
+          },
+          "portfolio_pnl": {
+            "title": "Portfolio Pnl",
+            "type": "number"
+          },
+          "scenario_date": {
+            "title": "Scenario Date",
+            "type": "string"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "measure_id",
+          "scenario_date",
+          "portfolio_pnl",
+          "weight"
+        ],
+        "title": "VarMeasureScenarioRow",
+        "type": "object"
+      },
+      "VarMeasureSpec": {
+        "additionalProperties": true,
+        "description": "One row of the firm's VaR matrix (OPS-004).",
+        "properties": {
+          "compute": {
+            "description": "FULL_REVALUATION or SENSITIVITY (delta-gamma-vega)",
+            "title": "Compute",
+            "type": "string"
+          },
+          "confidence": {
+            "description": "0.99 for 99%",
+            "title": "Confidence",
+            "type": "number"
+          },
+          "decay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lambda for weighted historical scenarios",
+            "title": "Decay"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "goal": {
+            "description": "LIMIT feeds the limits of the metric's type; INFORMATION is reported only",
+            "title": "Goal",
+            "type": "string"
+          },
+          "measure_id": {
+            "default": "",
+            "description": "Derived from the parameters when empty",
+            "title": "Measure Id",
+            "type": "string"
+          },
+          "metric": {
+            "description": "VAR, ES or STRESSED_VAR",
+            "title": "Metric",
+            "type": "string"
+          },
+          "shocks": {
+            "description": "HISTORICAL, HISTORICAL_WEIGHTED or MONTE_CARLO",
+            "title": "Shocks",
+            "type": "string"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO date: fixed window (stressed VaR)",
+            "title": "Window Start"
+          },
+          "window_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Years back from the valuation date",
+            "title": "Window Years"
+          }
+        },
+        "required": [
+          "goal",
+          "metric",
+          "confidence",
+          "shocks",
+          "compute"
+        ],
+        "title": "VarMeasureSpec",
+        "type": "object"
+      },
       "VarRow": {
         "additionalProperties": true,
         "properties": {
@@ -11653,12 +11991,189 @@
         "title": "VarScenarioRow",
         "type": "object"
       },
+      "VarSetup": {
+        "additionalProperties": true,
+        "description": "The VaR measures produced daily, which feed limits and which are for information.\nRecord OPS-004.",
+        "properties": {
+          "base_window_days": {
+            "title": "Base Window Days",
+            "type": "integer"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Measure id of the run's official VaR",
+            "title": "Headline"
+          },
+          "history_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History End"
+          },
+          "history_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Start"
+          },
+          "measures": {
+            "items": {
+              "$ref": "#/components/schemas/VarMeasureDescribed"
+            },
+            "title": "Measures",
+            "type": "array"
+          },
+          "options": {
+            "$ref": "#/components/schemas/VarSetupOptions"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "source": {
+            "description": "stored, or defaults when no setup has been saved",
+            "title": "Source",
+            "type": "string"
+          },
+          "stress_window": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most volatile year of the stored history, used by the bank template",
+            "title": "Stress Window"
+          },
+          "templates": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/VarMeasureDescribed"
+              },
+              "type": "array"
+            },
+            "title": "Templates",
+            "type": "object"
+          }
+        },
+        "required": [
+          "record",
+          "source",
+          "measures",
+          "templates",
+          "options",
+          "base_window_days"
+        ],
+        "title": "VarSetup",
+        "type": "object"
+      },
+      "VarSetupBody": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "measures": {
+            "items": {
+              "$ref": "#/components/schemas/VarMeasureSpec"
+            },
+            "title": "Measures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actor",
+          "measures"
+        ],
+        "title": "VarSetupBody",
+        "type": "object"
+      },
+      "VarSetupOptions": {
+        "additionalProperties": true,
+        "properties": {
+          "computes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Computes",
+            "type": "array"
+          },
+          "goals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Goals",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "shocks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Shocks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "goals",
+          "metrics",
+          "shocks",
+          "computes"
+        ],
+        "title": "VarSetupOptions",
+        "type": "object"
+      },
       "VarSummaryRow": {
         "additionalProperties": true,
+        "description": "One VaR measure of the run. Runs made before the VaR setup existed carry the method\ncolumns only.",
         "properties": {
           "confidence": {
             "title": "Confidence",
             "type": "number"
+          },
+          "decay": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decay"
           },
           "es": {
             "title": "Es",
@@ -11686,13 +12201,93 @@
             ],
             "title": "Es Scaled"
           },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "LIMIT or INFORMATION",
+            "title": "Goal"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "limit_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Type"
+          },
+          "measure_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measure Id"
+          },
           "method": {
             "title": "Method",
             "type": "string"
           },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "VAR, ES or STRESSED_VAR",
+            "title": "Metric"
+          },
           "scenarios": {
             "title": "Scenarios",
             "type": "integer"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The measure's own figure: ES for an ES row, else VaR",
+            "title": "Value"
           },
           "var": {
             "title": "Var",
@@ -11723,6 +12318,28 @@
           "window_days": {
             "title": "Window Days",
             "type": "integer"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
           }
         },
         "required": [
@@ -11734,6 +12351,29 @@
           "scenarios"
         ],
         "title": "VarSummaryRow",
+        "type": "object"
+      },
+      "VarTemplateBody": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "template": {
+            "title": "Template",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "template"
+        ],
+        "title": "VarTemplateBody",
         "type": "object"
       },
       "WrongWayRow": {
@@ -12010,6 +12650,168 @@
           }
         },
         "summary": "Set Signoff Policy"
+      }
+    },
+    "/admin/var/setup": {
+      "get": {
+        "operationId": "var_setup_admin_var_setup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VarSetup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Var Setup"
+      },
+      "post": {
+        "operationId": "set_var_setup_admin_var_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VarSetupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VarSetup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Set Var Setup"
+      }
+    },
+    "/admin/var/template": {
+      "post": {
+        "operationId": "apply_var_template_admin_var_template_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VarTemplateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VarSetup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Apply Var Template"
       }
     },
     "/agents/approve-csa": {
@@ -17248,6 +18050,22 @@
           },
           {
             "in": "query",
+            "name": "measure_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Measure Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "desk_id",
             "required": false,
             "schema": {
@@ -17326,6 +18144,85 @@
           }
         },
         "summary": "Var"
+      }
+    },
+    "/runs/{run_id}/var/measure-scenarios": {
+      "get": {
+        "operationId": "var_measure_scenarios_runs__run_id__var_measure_scenarios_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "measure_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Measure Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VarMeasureScenarioRow"
+                  },
+                  "title": "Response Var Measure Scenarios Runs  Run Id  Var Measure Scenarios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Var Measure Scenarios"
       }
     },
     "/runs/{run_id}/var/scenarios": {

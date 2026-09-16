@@ -35,17 +35,15 @@ from novera.risk import (
     compute_sensitivities,
     concentration,
     explain_pnl,
-    historical_var,
     liquidity,
     live_backtest,
     look_through,
-    monte_carlo_var,
     run_stress,
     static_backtest,
     stress_table,
-    taylor_var,
 )
 from novera.risk.stress import historical_episodes_from_simulation
+from novera.risk.var_measures import DEFAULT_MEASURES, MeasureSet, VaRMeasure, compute_measures
 from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.eod import (
@@ -119,24 +117,32 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         "var",
         "VaR and ES",
-        "Historical simulation with the delta-gamma-vega challenger and Monte Carlo, including "
-        "the scenario matrices (MR-002 to MR-004, MR-010).",
+        "Every measure of the run's VaR setup (OPS-004): historical, weighted and stressed VaR, "
+        "ES, the delta-gamma-vega challenger and Monte Carlo, including the scenario matrices "
+        "(MR-002 to MR-004, MR-010, MR-015, MR-016).",
         (
             "var_summary",
             "var_contributions",
             "var_contributions_challenger",
             "var_contributions_monte_carlo",
+            "var_measure_contributions",
+            "var_measure_scenarios",
             "var_scenarios",
         ),
         ("backtest", "limits", "concentration", "regulatory", "fund"),
         (
             "var",
             "es",
+            "es_confidence",
             "var_scaled",
             "var_scenario_date",
+            "var_confidence",
+            "var_measure_id",
+            "stressed_var",
             "challenger_var",
             "monte_carlo_var",
             "monte_carlo_es",
+            "var_measures",
         ),
     ),
     Stage(
@@ -240,6 +246,7 @@ class _Inputs:
         self.cfg = EODConfig(
             firm_id=c.get("firm_id", "GMB"),
             var=VaRConfig(**c.get("var", {})),
+            var_measures=c.get("var_measures"),
             include_historical_stress=c.get("include_historical_stress", True),
             pnl_abs_tolerance=c.get("pnl_abs_tolerance", 50_000.0),
             counterparty=c.get("counterparty"),
@@ -280,16 +287,19 @@ class _Inputs:
         return compute_sensitivities(self.pf)
 
     @cached_property
+    def measures(self) -> list[VaRMeasure]:
+        """The measures the parent run produced (recorded in its config), so the re-run
+        reproduces the same matrix whatever the setup says today."""
+        stored = self.cfg.var_measures
+        return [VaRMeasure.from_dict(m) for m in stored] if stored else list(DEFAULT_MEASURES)
+
+    @cached_property
+    def var_set(self) -> MeasureSet:
+        return compute_measures(self.pf, self.sens, self.history, self.measures, self.cfg.var)
+
+    @property
     def hs(self):
-        return historical_var(self.pf, self.history, self.cfg.var)
-
-    @cached_property
-    def tv(self):
-        return taylor_var(self.pf, self.sens, self.history, self.cfg.var)
-
-    @cached_property
-    def mc(self):
-        return monte_carlo_var(self.pf, self.sens, self.history, self.cfg.var)
+        return self.var_set.headline.result
 
     @cached_property
     def stress(self) -> list:
@@ -312,21 +322,14 @@ def _stage_sensitivities(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[
 
 
 def _stage_var(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
-    persist_var(repo, rid, x.hs, x.tv, x.mc, runs_dir)
-    return {
-        "var": x.hs.var,
-        "es": x.hs.es,
-        "var_scaled": x.hs.var_scaled,
-        "var_scenario_date": str(x.hs.var_scenario_date),
-        "challenger_var": x.tv.var,
-        "monte_carlo_var": x.mc.var,
-        "monte_carlo_es": x.mc.es,
-    }
+    persist_var(repo, rid, x.var_set, runs_dir)
+    return x.var_set.summary()
 
 
 def _stage_backtest(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
-    bts = static_backtest(x.hs.portfolio_pnl, x.cfg.var.confidence)
-    btl = live_backtest(repo.list_runs(run_type="EOD", limit=1000), x.cfg.var.confidence)
+    conf = x.var_set.headline.measure.confidence
+    bts = static_backtest(x.hs.portfolio_pnl, conf)
+    btl = live_backtest(repo.list_runs(run_type="EOD", limit=1000), conf)
     persist_backtest(repo, rid, bts, btl)
     return {"backtest_zone": bts.zone, "backtest_exceptions": bts.exceptions, "backtest_days": bts.days}
 
@@ -358,7 +361,15 @@ def _stage_limits(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, An
     table = (
         monitor(
             limits,
-            RiskInputs(x.val.table, x.sens, x.hs, x.stress, counterparty_pfe=pfe, fund_metrics=fund_metrics),
+            RiskInputs(
+                x.val.table,
+                x.sens,
+                x.hs,
+                x.stress,
+                counterparty_pfe=pfe,
+                fund_metrics=fund_metrics,
+                limit_var=x.var_set.limit_inputs(),
+            ),
             as_of,
             base_amounts,
             increase_ids,

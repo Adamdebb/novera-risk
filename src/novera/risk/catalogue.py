@@ -53,18 +53,21 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "MR-002",
                 "VaR 99% 1-day",
                 "Historical simulation over the stored history with full revaluation of every trade; "
-                "the official VaR.",
+                "the official VaR. Confidence and window follow the VaR setup (OPS-004).",
                 "reporting currency",
                 "VaR",
                 "Historical-simulation VaR, full revaluation",
+                version="1.1.0",
             ),
             MeasureSpec(
                 "MR-003",
                 "Expected shortfall 97.5%",
-                "Average loss beyond the 97.5% quantile of the same scenario set as the VaR.",
+                "Average loss beyond the 97.5% quantile of the same scenario set as the VaR; "
+                "weighted mean when the scenarios decay.",
                 "reporting currency",
                 "VaR",
                 "Expected shortfall",
+                version="1.1.0",
             ),
             MeasureSpec(
                 "MR-004",
@@ -83,6 +86,24 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "VaR",
                 "Monte Carlo VaR (delta-gamma-vega)",
+            ),
+            MeasureSpec(
+                "MR-015",
+                "Weighted historical VaR",
+                "Historical simulation with exponentially decaying scenario weights (lambda per the "
+                "VaR setup), so the newest days dominate; the hedge-fund style 95% VaR.",
+                "reporting currency",
+                "VaR",
+                "Weighted historical VaR",
+            ),
+            MeasureSpec(
+                "MR-016",
+                "Stressed VaR",
+                "Historical simulation of today's book over a fixed window of the stored history "
+                "chosen for its stress, feeding stressed-VaR limits when the setup says so.",
+                "reporting currency",
+                "VaR",
+                "Stressed VaR",
             ),
             MeasureSpec(
                 "MR-011",

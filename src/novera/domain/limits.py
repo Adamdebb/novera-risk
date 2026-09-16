@@ -13,6 +13,7 @@ from novera.domain.enums import HierarchyLevel
 class LimitType(StrEnum):
     VAR = "VAR"
     EXPECTED_SHORTFALL = "EXPECTED_SHORTFALL"
+    STRESSED_VAR = "STRESSED_VAR"  # VaR on a fixed stressed window (MR-016)
     STRESS_LOSS = "STRESS_LOSS"
     DV01 = "DV01"
     CS01 = "CS01"

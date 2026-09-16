@@ -26,6 +26,10 @@ lab_app = typer.Typer(
 app.add_typer(lab_app, name="lab")
 signoff_app = typer.Typer(no_args_is_help=True, help="Sign-off and release of a run's metrics (OPS-003).")
 app.add_typer(signoff_app, name="signoff")
+var_setup_app = typer.Typer(
+    no_args_is_help=True, help="The VaR measures produced daily, for limits or information (OPS-004)."
+)
+app.add_typer(var_setup_app, name="var-setup")
 
 
 def _db(fund: bool):
@@ -406,7 +410,7 @@ def run_eod_cmd(
     )
     typer.echo(
         f"  PV {sm['pv'] / m:,.1f}m   VaR {sm['var'] / m:,.2f}m   ES {sm['es'] / m:,.2f}m   "
-        f"challenger {sm['challenger_var'] / m:,.2f}m"
+        + (f"challenger {sm['challenger_var'] / m:,.2f}m" if sm.get("challenger_var") is not None else "")
     )
     typer.echo(f"  worst stress: {sm['worst_stress_name']} {sm['worst_stress'] / m:,.1f}m")
     typer.echo(f"  limits {sm['limits_monitored']}: {sm['breaches']} breach, {sm['warnings']} warning")
@@ -526,6 +530,46 @@ def signoff_policy_cmd(
     typer.echo(f"policy ({pol['source']}): {', '.join(pol['required']) or 'nothing required'}")
     for m in pol["metrics"]:
         typer.echo(f"  {m['metric_id']:<14} {'required' if m['required'] else 'optional':<9} {m['signer']}")
+
+
+def _print_var_setup(st: dict) -> None:
+    typer.echo(
+        f"VaR setup ({st['source']}): headline {st['headline']}; "
+        f"history {st['history_start']} to {st['history_end']}"
+    )
+    for m in st["measures"]:
+        flag = "" if m["enabled"] else " (disabled)"
+        typer.echo(f"  {m['measure_id']:<36} {m['goal']:<12} {m['label']}{flag}")
+
+
+@var_setup_app.command("show")
+def var_setup_show(fund: bool = typer.Option(False)) -> None:
+    """Show the VaR measures the firm produces and which feed limits."""
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        _print_var_setup(RiskService(repo).var_setup())
+
+
+@var_setup_app.command("template")
+def var_setup_template(
+    name: str = typer.Argument(..., help="bank or hedge_fund"),
+    actor: str = typer.Option("risk-control"),
+    comment: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Replace the VaR setup with a template; the next EOD run produces those measures."""
+    from novera.api.service import RiskWriteService
+    from novera.limits import WorkflowError
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        try:
+            st = RiskWriteService(repo).apply_var_template(name, actor, comment)
+        except WorkflowError as e:
+            raise typer.BadParameter(str(e)) from e
+    _print_var_setup(st)
 
 
 @breach_app.command("list")

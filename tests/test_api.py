@@ -371,6 +371,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.RerunOptions, client.get("/admin/rerun/options").json()),
         (s.SignoffStatus, client.get("/runs/latest/signoff").json()),
         (s.SignoffPolicy, client.get("/admin/signoff/policy").json()),
+        (s.VarSetup, client.get("/admin/var/setup").json()),
     ]
     for model, payload in pairs:
         pairs_extra = _walk_extras(model.model_validate(payload))
@@ -594,3 +595,45 @@ def test_signoff_endpoints(client):
     assert q and q[0]["run_id"] == st["run_id"] and q[0]["release_status"] == "RELEASED"
     events = client.get("/audit", params={"subject": st["run_id"]}).json()
     assert any(e["event_type"] == "METRIC_SIGNED" for e in events)
+
+
+def test_var_setup_endpoints(client):
+    st = client.get("/admin/var/setup").json()
+    assert (
+        st["record"] == "OPS-004" and st["source"] == "defaults" and st["headline"] == "VAR_99_HS_FULL_BASE"
+    )
+    assert st["options"]["metrics"] == ["VAR", "ES", "STRESSED_VAR"] and st["templates"]["hedge_fund"]
+    bad = client.post(
+        "/admin/var/setup",
+        json={
+            "actor": "CRO",
+            "measures": [
+                {
+                    "goal": "LIMIT",
+                    "metric": "ES",
+                    "confidence": 0.975,
+                    "shocks": "HISTORICAL",
+                    "compute": "FULL_REVALUATION",
+                }
+            ],
+        },
+    )
+    assert bad.status_code == 409 and "headline" in bad.json()["detail"]
+    r = client.post("/admin/var/template", json={"actor": "CRO", "template": "hedge_fund"})
+    assert r.status_code == 200 and r.json()["source"] == "stored"
+    assert r.json()["measures"][0]["decay"] == 0.94 and r.json()["measures"][0]["limit_type"] == "VAR"
+    assert client.post("/admin/var/template", json={"actor": "CRO", "template": "nope"}).status_code == 409
+    events = client.get("/audit", params={"subject": "var_setup"}).json()
+    assert any(e["event_type"] == "VAR_SETUP_CHANGED" for e in events)
+    # The stored run keeps its own matrix: measure-level reads work on it.
+    vs = client.get("/runs/latest/var/summary").json()
+    mid = vs[0]["measure_id"]
+    assert vs[0]["goal"] == "LIMIT" and vs[0]["value"] == vs[0]["var"]
+    by = client.get("/runs/latest/var", params={"by": "asset_class", "measure_id": mid}).json()
+    assert by and sum(x["component_var"] for x in by) == pytest.approx(vs[0]["var"], rel=1e-6)
+    sc = client.get("/runs/latest/var/measure-scenarios", params={"measure_id": mid}).json()
+    assert sc and sum(x["weight"] for x in sc) == pytest.approx(1.0)
+    restore = client.post(
+        "/admin/var/setup", json={"actor": "CRO", "measures": st["measures"], "comment": "back"}
+    )
+    assert restore.status_code == 200 and restore.json()["headline"] == st["headline"]

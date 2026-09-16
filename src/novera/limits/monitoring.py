@@ -3,7 +3,8 @@
 Each limit has a scope (a hierarchy node plus optional filters) and a type that maps to a
 measure of the trades in scope:
 
-    VAR / EXPECTED_SHORTFALL  standalone historical VaR / ES of the scope's trades
+    VAR / EXPECTED_SHORTFALL / STRESSED_VAR  standalone VaR / ES / stressed VaR of the scope's
+                              trades on the measure the VaR setup assigns to the limit type
     STRESS_LOSS               worst loss across the stress library for the scope
     DV01, CS01, *_DELTA, VEGA, GAMMA   absolute net sensitivity in scope (filters: currency,
                               tenor_bucket, risk_factor = underlying)
@@ -64,6 +65,10 @@ class RiskInputs:
     sensitivities: pd.DataFrame  # long table from compute_sensitivities
     var: VaRResult | None = None
     stress: list[StressResult] = field(default_factory=list)
+    limit_var: dict[str, VaRResult] | None = None
+    """Limit type -> the VaR result that feeds it (the LIMIT rows of the VaR setup, OPS-004).
+    A type with no entry falls back to ``var``; a stressed-VaR limit with no measure is
+    left without a value."""
     counterparty_pfe: dict[str, float] | None = None  # peak PFE95 after collateral when the engine ran
     fund_metrics: dict[str, float] | None = (
         None  # gross_leverage, margin_to_nav, largest_pb_share (fund face)
@@ -98,14 +103,17 @@ def _sens_in_scope(limit: Limit, sens: pd.DataFrame, ids: pd.Index, measure: str
 def current_value(limit: Limit, inputs: RiskInputs) -> tuple[float, int]:
     ids = trades_in_scope(limit, inputs.valuation)
     lt = limit.limit_type
-    if lt in (LimitType.VAR, LimitType.EXPECTED_SHORTFALL):
-        if inputs.var is None:
+    if lt in (LimitType.VAR, LimitType.EXPECTED_SHORTFALL, LimitType.STRESSED_VAR):
+        res = (inputs.limit_var or {}).get(lt.value)
+        if res is None and lt is not LimitType.STRESSED_VAR:
+            res = inputs.var
+        if res is None:
             return float("nan"), len(ids)
-        cols = [c for c in inputs.var.pnl.columns if c in set(ids)]
+        cols = [c for c in res.pnl.columns if c in set(ids)]
         if not cols:
             return 0.0, 0
-        var, es, _ = tail_measures(inputs.var.pnl[cols].sum(axis=1), inputs.var.config)
-        return (var if lt is LimitType.VAR else es), len(cols)
+        var, es, _ = tail_measures(res.pnl[cols].sum(axis=1), res.config)
+        return (es if lt is LimitType.EXPECTED_SHORTFALL else var), len(cols)
     if lt is LimitType.STRESS_LOSS:
         if not inputs.stress:
             return float("nan"), len(ids)

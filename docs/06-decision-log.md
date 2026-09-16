@@ -750,6 +750,57 @@ session); the choices below are defaults to confirm.
 
 ---
 
+## Round 25 — VaR setup (2026-09-16)
+
+Context: the owner asked for an Admin section where a bank or a hedge fund chooses which
+VaR measures to produce daily, which feed limits and which are for information, from a
+matrix like the one in `VaR Matrixcsv.csv` (goal, metric, percentile, shocks, compute,
+window, lambda). Built without a question round (non-interactive session); the choices below
+are defaults to confirm.
+
+### 25.1 Shape of the setup
+- Options: a matrix of measures with a goal per row, one LIMIT row per metric ★ · a fixed
+  list of switches (VaR on/off, ES on/off) · one config per limit
+- Choice (default): **Matrix of measures.** Each row is goal, metric (VaR, ES, stressed
+  VaR), confidence, shocks (historical, weighted, Monte Carlo), compute (full revaluation,
+  sensitivities), window (years or fixed dates), decay, enabled. The LIMIT row of each
+  metric feeds that metric's limit type; the LIMIT VaR row is the headline. Rows sharing
+  scenarios and compute share the P&L matrix. Stored per database (so per firm face) and
+  frozen in every run's config.
+- Where: `risk/var_measures.py`, `workflows/var_setup.py`, OPS-004, table `var_setup`,
+  `GET/POST /admin/var/setup`, `novera var-setup`, Admin page "VaR measures".
+- Reversal: the defaults reproduce the pre-setup platform exactly; delete the table to go back.
+
+### 25.2 Weighted historical VaR
+- Options: weighted historical simulation (Boudoukh, Richardson, Whitelaw) on the same P&L
+  matrix ★ · RiskMetrics parametric EWMA on the sensitivities · both
+- Choice (default): **Weighted historical simulation**, because it keeps full revaluation
+  and only weights the tail; the same code with lambda None is the unweighted measure
+  (bit-identical figures). The hedge-fund template uses 95%, one year, lambda 0.94.
+- Where: `VaRConfig.decay`, `scenario_weights`, `tail_measures`, MR-015.
+- Reversal: an EWMA-covariance row could be added as a fourth `shocks` value.
+
+### 25.3 Stressed VaR window
+- Options: a fixed date range inside the stored history, with the bank template proposing
+  the most volatile year of the equity index ★ · a named crisis from the stress library ·
+  the worst rolling year by portfolio loss
+- Choice (default): **Fixed range, proposed from the history.** Real crisis years need the
+  history to reach them (`novera fetch`), and the stress library already says which are
+  covered. A new limit type STRESSED_VAR carries the limits; none is seeded.
+- Where: `VaRConfig.window_start/end`, `scenario_shocks`, `most_volatile_year`, MR-016.
+- Reversal: pick the window from the worst portfolio year once runs cover several years.
+
+### 25.4 Limits when the matrix changes
+- Options: limit amounts stay, utilisations move with the measure ★ · recalibrate limits to
+  the new measure · refuse a change that alters the limit measure
+- Choice (default): **Amounts stay.** Switching the demo bank to the hedge-fund template
+  drops the firm VaR utilisation because a 95% weighted VaR is smaller than a 99% two-year
+  one; that is visible on the Overview and is the point of the demo. An ES limit with no
+  LIMIT ES row falls back to the headline's scenarios so seeded limits keep a value.
+- Reversal: a limit recalibration action next to the setup.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -806,3 +857,11 @@ session); the choices below are defaults to confirm.
     (documented in `docs/07-eod-workflow.md`): a failure in those steps leaves a COMPLETED run
     without their tables. A PARTIAL status, or moving `finish` after the last engine, would make
     the gap visible in the run list rather than only on the affected pages.
+19. **Limit amounts do not follow the VaR measure** (25.4): loading a template that changes
+    the LIMIT VaR row leaves the seeded amounts where they were, so utilisations jump or
+    collapse; the stressed-VaR limit type has no seeded limits at all. A calibration step
+    from a target utilisation would make template switches comparable.
+20. **The stressed window is chosen by equity volatility** (25.3): `most_volatile_year`
+    looks at the S&P 500 only; a rates or credit book would pick a different year. With real
+    history the window should be a named crisis, which the stress library will then mark
+    REAL.

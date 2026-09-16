@@ -114,8 +114,8 @@ def header(title: str) -> None:
 if page == "Overview":
     header("Global market risk")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("VaR 99% 1d", money(sm["var"], digits=2))
-    c2.metric("ES 97.5%", money(sm["es"], digits=2))
+    c1.metric(f"VaR {sm.get('var_confidence') or 0.99:.0%} 1d", money(sm["var"], digits=2))
+    c2.metric(f"ES {sm.get('es_confidence') or 0.975:.1%}".replace(".0%", "%"), money(sm["es"], digits=2))
     c3.metric("Worst stress", money(sm["worst_stress"]), sm["worst_stress_name"])
     firm_var = next((r for r in load("limits", run_id) if r["limit_id"] == "FIRM_VAR"), None)
     c4.metric(
@@ -339,47 +339,143 @@ elif page == "VaR":
         "historical_full_revaluation": "Historical full revaluation",
         "delta_gamma_vega": "Delta-gamma-vega challenger",
         "monte_carlo_delta_gamma_vega": "Monte Carlo (delta-gamma-vega)",
+        "historical_weighted_full_revaluation": "Weighted historical full revaluation",
+        "historical_weighted_delta_gamma_vega": "Weighted historical delta-gamma-vega",
     }
-    for col, (_, r) in zip(st.columns(max(len(vs), 1)), vs.iterrows(), strict=False):
-        col.metric(
-            method_labels.get(r["method"], r["method"].replace("_", " ")),
-            money(r["var"], digits=2),
-            f"ES {money(r['es'], digits=2)} · 10d {money(r['var_scaled'])} · {int(r['scenarios'])} scenarios",
+    # Runs stored before the VaR setup existed carry the method columns only (the shared
+    # table gained the measure columns later, so they read as empty on those runs).
+    legacy = "measure_id" not in vs.columns or vs["measure_id"].isna().all()
+    if legacy:
+        vs = vs.assign(
+            measure_id=vs["method"],
+            goal="",
+            metric="VAR",
+            label=vs["method"].map(lambda m: method_labels.get(m, m)),
+            value=vs["var"],
+            limit_type=None,
         )
+    headline_id = sm.get("var_measure_id") or (vs["measure_id"].iloc[0] if len(vs) else None)
+
+    def measure_cards(rows: pd.DataFrame, title: str) -> None:
+        if rows.empty:
+            return
+        st.markdown(f"**{title}**")
+        for col, (_, r) in zip(st.columns(min(max(len(rows), 1), 4)), rows.iterrows(), strict=False):
+            if r["metric"] == "ES":
+                note = f"VaR {money(r['var'], digits=2)} on the same scenarios"
+            else:
+                note = f"ES {money(r['es'], digits=2)} · 10d {money(r['var_scaled'])}"
+            note += f" · {int(r['scenarios'])} scenarios"
+            if r["measure_id"] == headline_id:
+                note += " · headline"
+            col.metric(r["label"], money(r["value"], digits=2), note, delta_color="off")
+
+    if legacy:
+        measure_cards(vs, "Methods")
+    else:
+        measure_cards(vs[vs["goal"] == "LIMIT"], "Feed the limits")
+        measure_cards(vs[vs["goal"] != "LIMIT"], "For information")
+        table = vs.assign(
+            **{
+                "value (m)": vs["value"] / M,
+                "VaR (m)": vs["var"] / M,
+                "ES (m)": vs["es"] / M,
+                "window": vs.apply(
+                    lambda r: (
+                        f"{r['window_start']} to {r['window_end']}"
+                        if isinstance(r.get("window_start"), str)
+                        else f"{int(r['window_days'])} days"
+                    ),
+                    axis=1,
+                ),
+            }
+        )
+        with st.expander("Every measure of the run's VaR setup"):
+            st.dataframe(
+                table[
+                    [
+                        "goal",
+                        "label",
+                        "value (m)",
+                        "VaR (m)",
+                        "ES (m)",
+                        "window",
+                        "decay",
+                        "scenarios",
+                        "var_scenario_date",
+                        "limit_type",
+                        "seconds",
+                    ]
+                ].round(2),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "The LIMIT measure of each metric feeds the limits of that type (VaR, expected "
+                "shortfall, stressed VaR); INFORMATION measures are reported only. The matrix is "
+                "set on the Admin page (OPS-004) and recorded in the run's configuration."
+            )
+
     by = st.selectbox("Component VaR by", ["asset_class", "business_id", "desk_id", "book_id", "currency"])
-    prim = df(load("var_by", run_id, by=by)).set_index(by)
-    chal = df(load("var_by", run_id, by=by, method="delta_gamma_vega")).set_index(by)
-    comp = pd.DataFrame(
-        {"full revaluation (m)": prim["component_var"] / M, "delta-gamma-vega (m)": chal["component_var"] / M}
-    )
-    if "monte_carlo_delta_gamma_vega" in set(vs["method"]):
-        mc = df(load("var_by", run_id, by=by, method="monte_carlo_delta_gamma_vega"))
-        if not mc.empty:
-            comp["monte carlo (m)"] = mc.set_index(by)["component_var"] / M
+    if legacy:
+        prim = df(load("var_by", run_id, by=by)).set_index(by)
+        chal = df(load("var_by", run_id, by=by, method="delta_gamma_vega"))
+        comp = pd.DataFrame({"full revaluation (m)": prim["component_var"] / M})
+        if not chal.empty:
+            comp["delta-gamma-vega (m)"] = chal.set_index(by)["component_var"] / M
+        if "monte_carlo_delta_gamma_vega" in set(vs["method"]):
+            mc = df(load("var_by", run_id, by=by, method="monte_carlo_delta_gamma_vega"))
+            if not mc.empty:
+                comp["monte carlo (m)"] = mc.set_index(by)["component_var"] / M
+    else:
+        cols = {}
+        for _, r in vs.iterrows():
+            part = df(load("var_by", run_id, by=by, measure_id=r["measure_id"]))
+            if not part.empty:
+                key = "component_es" if r["metric"] == "ES" else "component_var"
+                cols[f"{r['label']} (m)"] = part.set_index(by)[key] / M
+        comp = pd.DataFrame(cols)
     comp = comp.fillna(0.0)
-    comp["challenger difference (m)"] = comp["delta-gamma-vega (m)"] - comp["full revaluation (m)"]
+    head_col = next(
+        (c for c in comp.columns if "full revaluation" in c and "weighted" not in c.lower()), None
+    )
+    chal_col = next((c for c in comp.columns if "delta-gamma-vega" in c and "Monte" not in c), None)
+    if head_col and chal_col:
+        comp["challenger difference (m)"] = comp[chal_col] - comp[head_col]
     st.dataframe(comp.round(2), use_container_width=True)
     st.caption(
         "Where the challenger disagrees, the gap is convexity, cross effects and surface shape "
         "that sensitivities miss (MR-004). Monte Carlo values the same sensitivities on 10,000 "
         "Gaussian factor moves drawn from the window's covariance (MR-010): its distance from "
-        "the challenger is the tail shape of the history, not the pricing approximation."
+        "the challenger is the tail shape of the history, not the pricing approximation. "
+        "Weighted measures (MR-015) let the newest scenarios dominate; a stressed VaR (MR-016) "
+        "replays a fixed window."
     )
     sc = df(load("var_scenarios", run_id))
     if not sc.empty:
         sc["scenario_date"] = pd.to_datetime(sc["scenario_date"])
         st.subheader("Scenario P&L distribution")
-        st.line_chart(sc.set_index("scenario_date")[["portfolio_pnl", "challenger_pnl"]] / M)
+        series = [c for c in ("portfolio_pnl", "challenger_pnl") if c in sc.columns and sc[c].notna().any()]
+        st.line_chart(sc.set_index("scenario_date")[series] / M)
         worst = sc.nsmallest(10, "portfolio_pnl")
-        st.dataframe(
-            worst.assign(
-                **{
-                    "portfolio pnl (m)": worst["portfolio_pnl"] / M,
-                    "challenger (m)": worst["challenger_pnl"] / M,
-                }
-            )[["scenario_date", "portfolio pnl (m)", "challenger (m)"]],
-            hide_index=True,
-        )
+        shown = worst.assign(**{"portfolio pnl (m)": worst["portfolio_pnl"] / M})
+        cols_ = ["scenario_date", "portfolio pnl (m)"]
+        if "challenger_pnl" in series:
+            shown["challenger (m)"] = worst["challenger_pnl"] / M
+            cols_.append("challenger (m)")
+        st.dataframe(shown[cols_], hide_index=True)
+    if not legacy:
+        weighted = vs[vs["decay"].notna()] if "decay" in vs.columns else vs.iloc[0:0]
+        if not weighted.empty:
+            st.subheader("Scenario weights of the weighted measures")
+            ws = df(load("var_measure_scenarios", run_id, measure_id=weighted["measure_id"].iloc[0]))
+            if not ws.empty:
+                ws["scenario_date"] = pd.to_datetime(ws["scenario_date"])
+                st.line_chart(ws.set_index("scenario_date")[["weight"]])
+                st.caption(
+                    f"{weighted['label'].iloc[0]}: the newest scenario weighs "
+                    f"{ws['weight'].max():.2%}, the oldest {ws['weight'].min():.4%} (MR-015)."
+                )
 
     bt = client.backtest(run_id)
     if bt["summary"]:
@@ -489,8 +585,137 @@ elif page == "Admin":
         "Operational configurations for risk control. Every action names an actor and is written "
         "to the audit trail. Nothing here edits a stored run."
     )
-    config = st.selectbox("Configuration", ["Sign-off policy", "Partial re-run of a single stage"])
-    if config == "Sign-off policy":
+    config = st.selectbox(
+        "Configuration", ["VaR measures", "Sign-off policy", "Partial re-run of a single stage"]
+    )
+    if config == "VaR measures":
+        from novera.api.errors import ApiError
+
+        st.markdown(
+            "The VaR matrix: which measures the firm produces every day, which of them feed the "
+            "limits and which are for information (OPS-004). One LIMIT row per metric: the VaR "
+            "row feeds VaR limits, the ES row expected-shortfall limits, the stressed-VaR row "
+            "stressed-VaR limits. The next EOD run produces the saved matrix and records it in "
+            "its configuration; stored runs are not changed."
+        )
+        vsu = client.var_setup()
+        opts = vsu["options"]
+        last = next((m for m in vsu["measures"] if m.get("updated_by")), None)
+        st.caption(
+            f"Current setup ({vsu['source']}): headline {vsu['headline']} · stored history "
+            f"{vsu['history_start']} to {vsu['history_end']}"
+            + (f" · last changed by {last['updated_by']} at {str(last['updated_at'])[:19]}" if last else "")
+        )
+        feeds = {m["limit_type"]: m["label"] for m in vsu["measures"] if m["limit_type"] and m["enabled"]}
+        fallback = "no measure (VaR and ES limits fall back to the headline VaR)"
+        st.markdown(
+            "\n".join(
+                f"- **{name} limits** ← {feeds.get(lt, fallback)}"
+                for lt, name in (
+                    ("VAR", "VaR"),
+                    ("EXPECTED_SHORTFALL", "Expected-shortfall"),
+                    ("STRESSED_VAR", "Stressed-VaR"),
+                )
+            )
+        )
+        editor_cols = [
+            "goal",
+            "metric",
+            "confidence",
+            "shocks",
+            "compute",
+            "window_years",
+            "window_start",
+            "window_end",
+            "decay",
+            "enabled",
+        ]
+
+        def _rows(ms: list[dict]) -> pd.DataFrame:
+            return pd.DataFrame([{c: m.get(c) for c in editor_cols} for m in ms], columns=editor_cols)
+
+        if "var_setup_rows" not in st.session_state:
+            st.session_state["var_setup_rows"] = _rows(vsu["measures"])
+        b1, b2, b3 = st.columns(3)
+        if b1.button("Load the bank template"):
+            st.session_state["var_setup_rows"] = _rows(vsu["templates"]["bank"])
+            st.session_state.pop("var_setup_editor", None)
+        if b2.button("Load the hedge-fund template"):
+            st.session_state["var_setup_rows"] = _rows(vsu["templates"]["hedge_fund"])
+            st.session_state.pop("var_setup_editor", None)
+        if b3.button("Reload the current setup"):
+            st.session_state["var_setup_rows"] = _rows(vsu["measures"])
+            st.session_state.pop("var_setup_editor", None)
+        if vsu.get("stress_window"):
+            st.caption(
+                f"Bank template stressed window: {vsu['stress_window'][0]} to {vsu['stress_window'][1]}, "
+                "the most volatile year of the equity index in the stored history. Edit the dates to "
+                "replay another period."
+            )
+        edited = st.data_editor(
+            st.session_state["var_setup_rows"],
+            num_rows="dynamic",
+            hide_index=True,
+            use_container_width=True,
+            key="var_setup_editor",
+            column_config={
+                "goal": st.column_config.SelectboxColumn("Goal", options=opts["goals"], required=True),
+                "metric": st.column_config.SelectboxColumn("Metric", options=opts["metrics"], required=True),
+                "confidence": st.column_config.NumberColumn(
+                    "Confidence", min_value=0.5, max_value=0.9999, step=0.005, format="%.3f", required=True
+                ),
+                "shocks": st.column_config.SelectboxColumn("Shocks", options=opts["shocks"], required=True),
+                "compute": st.column_config.SelectboxColumn(
+                    "Compute", options=opts["computes"], required=True
+                ),
+                "window_years": st.column_config.NumberColumn("Window (years)", min_value=0.1, step=0.5),
+                "window_start": st.column_config.TextColumn("Window start", help="YYYY-MM-DD, fixed window"),
+                "window_end": st.column_config.TextColumn("Window end", help="YYYY-MM-DD"),
+                "decay": st.column_config.NumberColumn(
+                    "Lambda", min_value=0.5, max_value=0.999, step=0.01, format="%.3f"
+                ),
+                "enabled": st.column_config.CheckboxColumn("Produce daily", default=True),
+            },
+        )
+        with st.form("var_setup_save"):
+            c1, c2 = st.columns(2)
+            actor = c1.text_input("Acting as", value="Head of Market Risk", key="vsu_actor")
+            comment = c2.text_input("Comment", key="vsu_comment")
+            go = st.form_submit_button("Save the VaR setup")
+        if go:
+            measures = [
+                {k: (None if pd.isna(v) else v) for k, v in row.items()}
+                for row in edited.to_dict("records")
+                if not pd.isna(row.get("metric")) and row.get("metric")
+            ]
+            try:
+                res = client.set_var_setup(actor.strip(), measures, comment.strip())
+                st.success(
+                    f"Setup saved: {len(res['measures'])} measures, headline {res['headline']}. "
+                    "The next EOD run produces them; a partial re-run of the VaR stage on a stored run "
+                    "keeps that run's own matrix."
+                )
+                st.session_state["var_setup_rows"] = _rows(res["measures"])
+                st.session_state.pop("var_setup_editor", None)
+                st.cache_data.clear()
+            except ApiError as e:
+                st.error(str(e))
+        with st.expander("What each column means"):
+            st.markdown(
+                "- **Goal**: LIMIT feeds the limits of the metric's type; INFORMATION is reported only.\n"
+                "- **Metric**: VaR, ES (expected shortfall at the confidence given) or stressed VaR, "
+                "which needs a fixed window.\n"
+                "- **Shocks**: historical (equal weights, MR-002), weighted historical (exponential "
+                "decay with the lambda given, MR-015) or Monte Carlo (Gaussian draws from the window's "
+                "covariance, MR-010, on the sensitivities only).\n"
+                "- **Compute**: full revaluation of every trade, or the delta-gamma-vega expansion of "
+                "the sensitivities (MR-004).\n"
+                "- **Window**: years back from the valuation date (250 business days a year), or a "
+                "fixed start and end date inside the stored history (MR-016).\n"
+                "- Measures sharing scenarios and compute share one P&L matrix, so an ES row next to "
+                "a VaR row costs nothing."
+            )
+    elif config == "Sign-off policy":
         from novera.api.errors import ApiError
 
         st.markdown(

@@ -18,7 +18,15 @@ class RiskClient(Protocol):
         self, run_id: str | None = None, by: str = "desk_id", **filters: str
     ) -> list[dict[str, Any]]: ...
     def var_by(
-        self, by: str, run_id: str | None = None, method: str = "historical_full_revaluation", **filters: str
+        self,
+        by: str,
+        run_id: str | None = None,
+        method: str = "historical_full_revaluation",
+        measure_id: str | None = None,
+        **filters: str,
+    ) -> list[dict[str, Any]]: ...
+    def var_measure_scenarios(
+        self, run_id: str | None = None, measure_id: str | None = None
     ) -> list[dict[str, Any]]: ...
     def var_summary(self, run_id: str | None = None) -> list[dict[str, Any]]: ...
     def var_scenarios(self, run_id: str | None = None) -> list[dict[str, Any]]: ...
@@ -54,6 +62,11 @@ class RiskClient(Protocol):
     def sign_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
     def reject_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
     def set_signoff_policy(self, actor: str, required: list[str], comment: str = "") -> dict[str, Any]: ...
+    def var_setup(self) -> dict[str, Any]: ...
+    def set_var_setup(
+        self, actor: str, measures: list[dict[str, Any]], comment: str = ""
+    ) -> dict[str, Any]: ...
+    def apply_var_template(self, template: str, actor: str, comment: str = "") -> dict[str, Any]: ...
     def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]: ...
 
 
@@ -69,6 +82,8 @@ WRITE_METHODS = {
     "sign_metric",
     "reject_metric",
     "set_signoff_policy",
+    "set_var_setup",
+    "apply_var_template",
 }
 COPILOT_METHODS = {"ask", "commentary", "copilot_history", "copilot_provider"}
 PACK_METHODS = {"risk_pack"}
@@ -170,8 +185,11 @@ class HttpClient:
     def positions(self, run_id=None, by="desk_id", **f):
         return self._get(f"/runs/{self._rid(run_id)}/positions", by=by, **f)
 
-    def var_by(self, by, run_id=None, method="historical_full_revaluation", **f):
-        return self._get(f"/runs/{self._rid(run_id)}/var", by=by, method=method, **f)
+    def var_by(self, by, run_id=None, method="historical_full_revaluation", measure_id=None, **f):
+        return self._get(f"/runs/{self._rid(run_id)}/var", by=by, method=method, measure_id=measure_id, **f)
+
+    def var_measure_scenarios(self, run_id=None, measure_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/var/measure-scenarios", measure_id=measure_id)
 
     def var_summary(self, run_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/var/summary")
@@ -248,6 +266,17 @@ class HttpClient:
 
     def set_signoff_policy(self, actor, required, comment=""):
         return self._post("/admin/signoff/policy", actor=actor, required=list(required), comment=comment)
+
+    def var_setup(self):
+        return self._get("/admin/var/setup")
+
+    def set_var_setup(self, actor, measures, comment=""):
+        return self._post(
+            "/admin/var/setup", actor=actor, measures=[dict(m) for m in measures], comment=comment
+        )
+
+    def apply_var_template(self, template, actor, comment=""):
+        return self._post("/admin/var/template", actor=actor, template=template, comment=comment)
 
     def rerun_stage(self, run_id, stage, actor, reason=""):
         return self._post("/admin/rerun", run_id=run_id, stage=stage, actor=actor, reason=reason)

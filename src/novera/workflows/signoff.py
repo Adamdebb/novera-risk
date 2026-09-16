@@ -67,11 +67,20 @@ METRICS: tuple[Metric, ...] = (
     Metric(
         "VAR",
         "VaR and expected shortfall",
-        "Historical VaR and ES with the challenger and Monte Carlo figures.",
+        "The headline VaR and ES, the stressed VaR, the challenger and Monte Carlo figures, and "
+        "every measure of the VaR setup.",
         "MR-002",
         "Head of Market Risk",
         True,
-        ("var", "es", "challenger_var", "monte_carlo_var", "var_scenario_date"),
+        (
+            "var",
+            "es",
+            "stressed_var",
+            "challenger_var",
+            "monte_carlo_var",
+            "var_scenario_date",
+            "var_measures",
+        ),
     ),
     Metric(
         "STRESS",

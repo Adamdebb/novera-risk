@@ -281,3 +281,140 @@ def test_signoff_policy_release_and_override(db_path, result):
         assert q and q[0]["run_id"] == run.run_id and q[0]["release_status"] == "BLOCKED"
         assert repo.load_run(run.run_id).summary == run.summary  # sign-off never edits the run
         assert "SIGNOFF_POLICY_CHANGED" in set(repo.load_audit_events(subject="signoff_policy")["event_type"])
+
+
+def test_var_setup_drives_the_run_and_limits(db_path, result, tmp_path):
+    """OPS-004: a stored VaR setup decides what the EOD run produces, which measures feed
+    the limits, and is recorded in the run's config so a re-run reproduces it."""
+    from novera.limits.workflow import WorkflowError
+    from novera.risk.var_measures import DEFAULT_MEASURES
+    from novera.workflows import var_setup
+    from novera.workflows.rerun import rerun_stage
+
+    with DuckDBRepository(db_path) as repo:
+        st = var_setup.setup(repo)
+        assert st["source"] == "defaults" and st["record"] == "OPS-004"
+        assert [m["measure_id"] for m in st["measures"]] == [m.measure_id for m in DEFAULT_MEASURES]
+        assert st["history_start"] < st["history_end"] and st["stress_window"] is not None
+        assert {"bank", "hedge_fund"} <= set(st["templates"])
+        # The default run recorded the default measures and their values.
+        parent = result.run
+        assert [m["measure_id"] for m in parent.config["var_measures"]] == [
+            m.measure_id for m in DEFAULT_MEASURES
+        ]
+        assert parent.summary["var_measure_id"] == DEFAULT_MEASURES[0].measure_id
+        assert set(parent.summary["var_measures"]) == {m.measure_id for m in DEFAULT_MEASURES}
+        vs = repo.load_run_frame(parent.run_id, "var_summary")
+        assert list(vs["goal"]) == ["LIMIT", "LIMIT", "INFORMATION", "INFORMATION"]
+        assert vs.iloc[1]["value"] == pytest.approx(parent.summary["es"])
+        assert set(repo.load_run_frame(parent.run_id, "var_measure_contributions")["measure_id"]) == set(
+            vs["measure_id"]
+        )
+        # Validation errors reach the caller as workflow errors.
+        with pytest.raises(WorkflowError):
+            var_setup.set_setup(repo, "", [m.to_dict() for m in DEFAULT_MEASURES])
+        with pytest.raises(WorkflowError):
+            var_setup.set_setup(repo, "CRO", [])
+        with pytest.raises(WorkflowError):
+            var_setup.set_setup(
+                repo,
+                "CRO",
+                [
+                    {
+                        "goal": "LIMIT",
+                        "metric": "STRESSED_VAR",
+                        "confidence": 0.99,
+                        "shocks": "HISTORICAL",
+                        "compute": "FULL_REVALUATION",
+                        "window_start": "1999-01-01",
+                        "window_end": "1999-12-31",
+                    }
+                ],
+            )
+        # A hedge-fund style matrix plus a stressed VaR that feeds limits.
+        start, end = st["stress_window"]
+        new = [
+            {
+                "goal": "LIMIT",
+                "metric": "VAR",
+                "confidence": 0.95,
+                "shocks": "HISTORICAL_WEIGHTED",
+                "compute": "FULL_REVALUATION",
+                "window_years": 0.8,
+                "decay": 0.94,
+            },
+            {
+                "goal": "INFORMATION",
+                "metric": "ES",
+                "confidence": 0.95,
+                "shocks": "HISTORICAL_WEIGHTED",
+                "compute": "FULL_REVALUATION",
+                "window_years": 0.8,
+                "decay": 0.94,
+            },
+            {
+                "goal": "LIMIT",
+                "metric": "STRESSED_VAR",
+                "confidence": 0.99,
+                "shocks": "HISTORICAL",
+                "compute": "FULL_REVALUATION",
+                "window_start": start,
+                "window_end": end,
+            },
+            {
+                "goal": "INFORMATION",
+                "metric": "VAR",
+                "confidence": 0.99,
+                "shocks": "HISTORICAL",
+                "compute": "SENSITIVITY",
+                "window_years": 0.8,
+                "enabled": False,
+            },
+        ]
+        st = var_setup.set_setup(repo, "CRO", new, "fund style")
+        assert st["source"] == "stored" and st["headline"] == "VAR_95_WHS_FULL_0P8Y_L94"
+        assert st["measures"][0]["updated_by"] == "CRO" and not st["measures"][3]["enabled"]
+        ev = repo.load_audit_events(subject="var_setup")
+        assert "VAR_SETUP_CHANGED" in set(ev["event_type"])
+        assert [m.measure_id for m in var_setup.measures_for_run(repo)] == [
+            m["measure_id"] for m in st["measures"][:3]
+        ]
+
+        res = run_eod(
+            repo,
+            EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=200), workers=1),
+            runs_dir=tmp_path,
+        )
+        r = res.run
+        assert r.summary["var_confidence"] == 0.95 and r.summary["es_confidence"] == 0.95
+        assert r.summary["var_measure_id"] == "VAR_95_WHS_FULL_0P8Y_L94"
+        assert r.summary["stressed_var"] is not None and r.summary["challenger_var"] is None
+        assert r.summary["monte_carlo_var"] is None
+        assert [m["measure_id"] for m in r.config["var_measures"]] == [
+            m["measure_id"] for m in st["measures"][:3]
+        ]
+        vs = repo.load_run_frame(r.run_id, "var_summary")
+        assert len(vs) == 3 and vs.iloc[0]["decay"] == 0.94 and vs.iloc[2]["window_start"] == start
+        assert (
+            vs.iloc[0]["scenarios"] == 200 and vs.iloc[0]["method"] == "historical_weighted_full_revaluation"
+        )
+        ws = repo.load_run_frame(r.run_id, "var_measure_scenarios")
+        w0 = ws[ws["measure_id"] == vs.iloc[0]["measure_id"]]["weight"]
+        assert w0.sum() == pytest.approx(1.0) and w0.max() > 10 * w0.min()
+        assert repo.load_run_frame(r.run_id, "var_contributions_challenger").empty
+        # Limits read the LIMIT rows: the firm VaR limit is on the 95% weighted figure.
+        lim = repo.load_run_frame(r.run_id, "limits")
+        firm_var = lim[lim["limit_id"] == "FIRM_VAR"].iloc[0]
+        assert firm_var["current"] == pytest.approx(r.summary["var"], rel=1e-6)
+        assert firm_var["current"] != pytest.approx(parent.summary["var"], rel=1e-3)
+        firm_es = lim[lim["limit_id"] == "FIRM_ES"].iloc[
+            0
+        ]  # no ES limit row: falls back to the headline's ES
+        assert firm_es["current"] == pytest.approx(res.var.es, rel=1e-6)
+        assert r.timings["var"] > 0 and any(k.startswith("var:") for k in r.timings)
+        # The parent's re-run keeps the parent's matrix, not today's setup.
+        rr = rerun_stage(repo, parent.run_id, "var", "Risk Control", runs_dir=tmp_path)
+        assert rr.changed == {} and rr.run.summary["var_measure_id"] == DEFAULT_MEASURES[0].measure_id
+        assert len(repo.load_run_frame(rr.run.run_id, "var_summary")) == 4
+        # Restore the defaults for the tests that follow.
+        var_setup.set_setup(repo, "CRO", [m.to_dict() for m in DEFAULT_MEASURES], "back to defaults")

@@ -119,6 +119,18 @@ class RerunBody(BaseModel):
     reason: str = ""
 
 
+class VarSetupBody(BaseModel):
+    actor: str
+    measures: list[s.VarMeasureSpec]
+    comment: str = ""
+
+
+class VarTemplateBody(BaseModel):
+    actor: str
+    template: str
+    comment: str = ""
+
+
 class ActionBody(BaseModel):
     actor: str = Field(min_length=1)
     comment: str = ""
@@ -194,16 +206,22 @@ def var(
     run_id: str,
     by: str = "asset_class",
     method: str = "historical_full_revaluation",
+    measure_id: str | None = None,
     desk_id: str | None = None,
     business_id: str | None = None,
     svc: RiskService = Depends(service),
 ):
-    return svc.var_by(by, run_id, method, desk_id=desk_id, business_id=business_id)
+    return svc.var_by(by, run_id, method, measure_id, desk_id=desk_id, business_id=business_id)
 
 
 @app.get("/runs/{run_id}/var/summary", response_model=list[s.VarSummaryRow])
 def var_summary(run_id: str, svc: RiskService = Depends(service)):
     return svc.var_summary(run_id)
+
+
+@app.get("/runs/{run_id}/var/measure-scenarios", response_model=list[s.VarMeasureScenarioRow])
+def var_measure_scenarios(run_id: str, measure_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.var_measure_scenarios(run_id, measure_id)
 
 
 @app.get("/runs/{run_id}/var/scenarios", response_model=list[s.VarScenarioRow])
@@ -391,6 +409,21 @@ def set_signoff_policy(body: PolicyBody, svc: RiskWriteService = Depends(write_s
 
 
 # --- administration -------------------------------------------------------------------------
+@app.get("/admin/var/setup", response_model=s.VarSetup)
+def var_setup(svc: RiskService = Depends(service)):
+    return svc.var_setup()
+
+
+@app.post("/admin/var/setup", response_model=s.VarSetup)
+def set_var_setup(body: VarSetupBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.set_var_setup(body.actor, [m.model_dump() for m in body.measures], body.comment)
+
+
+@app.post("/admin/var/template", response_model=s.VarSetup)
+def apply_var_template(body: VarTemplateBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.apply_var_template(body.template, body.actor, body.comment)
+
+
 @app.get("/admin/rerun/options", response_model=s.RerunOptions)
 def rerun_options(svc: RiskService = Depends(service)):
     return svc.rerun_options()

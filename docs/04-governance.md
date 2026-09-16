@@ -25,6 +25,13 @@ nodes, unpriced trades, invalid trade fields, position reconciliation between so
 unexplained P&L above tolerance, business-date and timezone consistency. A run gets a
 trust verdict: GREEN, AMBER (usable with caveats) or RED (do not publish).
 
+## The VaR setup
+An administrator decides on the Admin page which VaR measures the firm produces every day,
+which of them feed the limits and which are for information (OPS-004): a bank keeps a 99%
+two-year historical VaR and a stressed VaR on limits, a hedge fund a 95% exponentially
+weighted one-year VaR. Every change names an actor and is audited; every run records the
+matrix it produced, so a stored run is read and re-run on its own matrix, never on today's.
+
 ## Sign-off and release
 After a run persists, named people sign the metrics the firm's policy requires (OPS-003).
 The value seen is frozen with the signature, every sign, rejection and policy change is an
