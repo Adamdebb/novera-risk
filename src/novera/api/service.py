@@ -508,6 +508,24 @@ class RiskService:
 
         return market_data_sources(self.repo.load_risk_factors(), self.repo.load_market_provenance())
 
+    def signoff_status(self, run_id: str | None = None) -> dict[str, Any]:
+        """Sign-off state of every metric of the run and its release status (OPS-003)."""
+        from novera.workflows import signoff
+
+        return signoff.status(self.repo, self.resolve(run_id))
+
+    def signoff_policy(self) -> dict[str, Any]:
+        """Which metrics must be signed before a run is released (OPS-003)."""
+        from novera.workflows import signoff
+
+        return signoff.policy(self.repo)
+
+    def signoff_queue(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Release status of the recent completed EOD runs (OPS-003)."""
+        from novera.workflows import signoff
+
+        return signoff.queue(self.repo, limit)
+
     def rerun_options(self) -> dict[str, Any]:
         """The EOD stages an administrator can re-run on a stored run, and the re-runs made so
         far (OPS-002)."""
@@ -984,6 +1002,21 @@ class RiskWriteService:
         except ValueError as e:
             raise InvalidRequestError(str(e)) from e
         return {**RiskService._run_dict(res.run), "rerun": res.run.summary.get("rerun", {})}
+
+    def sign_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]:
+        from novera.workflows import signoff
+
+        return signoff.sign(self.repo, RiskService(self.repo).resolve(run_id), metric_id, actor, comment)
+
+    def reject_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]:
+        from novera.workflows import signoff
+
+        return signoff.reject(self.repo, RiskService(self.repo).resolve(run_id), metric_id, actor, comment)
+
+    def set_signoff_policy(self, actor: str, required: list[str], comment: str = "") -> dict[str, Any]:
+        from novera.workflows import signoff
+
+        return signoff.set_policy(self.repo, actor, list(required), comment)
 
     def acknowledge(self, breach_id: str, actor: str, comment: str = "") -> dict[str, Any]:
         b, _ = wf.acknowledge(self.repo, breach_id, actor, comment)

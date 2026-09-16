@@ -106,6 +106,12 @@ def write_service() -> Iterator[RiskWriteService]:
 
 
 # --- request bodies --------------------------------------------------------------------------
+class PolicyBody(BaseModel):
+    actor: str
+    required: list[str]
+    comment: str = ""
+
+
 class RerunBody(BaseModel):
     run_id: str = "latest"
     stage: str
@@ -347,6 +353,41 @@ def stress_library(svc: RiskService = Depends(service)):
 @app.get("/reference/counterparties", response_model=s.CounterpartyReference)
 def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()
+
+
+# --- sign-off (OPS-003) ---------------------------------------------------------------------
+@app.get("/runs/{run_id}/signoff", response_model=s.SignoffStatus)
+def signoff_status(run_id: str, svc: RiskService = Depends(service)):
+    return svc.signoff_status(run_id)
+
+
+@app.post("/runs/{run_id}/signoff/{metric_id}/sign", response_model=s.SignoffStatus)
+def sign_metric(
+    run_id: str, metric_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)
+):
+    return svc.sign_metric(run_id, metric_id, body.actor, body.comment)
+
+
+@app.post("/runs/{run_id}/signoff/{metric_id}/reject", response_model=s.SignoffStatus)
+def reject_metric(
+    run_id: str, metric_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)
+):
+    return svc.reject_metric(run_id, metric_id, body.actor, body.comment)
+
+
+@app.get("/signoff/queue", response_model=list[s.SignoffQueueRow])
+def signoff_queue(limit: int = 20, svc: RiskService = Depends(service)):
+    return svc.signoff_queue(limit)
+
+
+@app.get("/admin/signoff/policy", response_model=s.SignoffPolicy)
+def signoff_policy(svc: RiskService = Depends(service)):
+    return svc.signoff_policy()
+
+
+@app.post("/admin/signoff/policy", response_model=s.SignoffPolicy)
+def set_signoff_policy(body: PolicyBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.set_signoff_policy(body.actor, body.required, body.comment)
 
 
 # --- administration -------------------------------------------------------------------------

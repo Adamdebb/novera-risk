@@ -48,6 +48,12 @@ class RiskClient(Protocol):
     def market_data_sources(self) -> dict[str, Any]: ...
     def stress_library(self) -> dict[str, Any]: ...
     def rerun_options(self) -> dict[str, Any]: ...
+    def signoff_status(self, run_id: str | None = None) -> dict[str, Any]: ...
+    def signoff_policy(self) -> dict[str, Any]: ...
+    def signoff_queue(self, limit: int = 20) -> list[dict[str, Any]]: ...
+    def sign_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
+    def reject_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
+    def set_signoff_policy(self, actor: str, required: list[str], comment: str = "") -> dict[str, Any]: ...
     def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]: ...
 
 
@@ -60,6 +66,9 @@ WRITE_METHODS = {
     "decide_increase",
     "cancel_increase",
     "rerun_stage",
+    "sign_metric",
+    "reject_metric",
+    "set_signoff_policy",
 }
 COPILOT_METHODS = {"ask", "commentary", "copilot_history", "copilot_provider"}
 PACK_METHODS = {"risk_pack"}
@@ -217,6 +226,28 @@ class HttpClient:
 
     def rerun_options(self):
         return self._get("/admin/rerun/options")
+
+    def signoff_status(self, run_id=None):
+        return self._get(f"/runs/{run_id or 'latest'}/signoff")
+
+    def signoff_policy(self):
+        return self._get("/admin/signoff/policy")
+
+    def signoff_queue(self, limit=20):
+        return self._get("/signoff/queue", limit=limit)
+
+    def sign_metric(self, run_id, metric_id, actor, comment=""):
+        return self._post(
+            f"/runs/{run_id or 'latest'}/signoff/{metric_id}/sign", actor=actor, comment=comment
+        )
+
+    def reject_metric(self, run_id, metric_id, actor, comment=""):
+        return self._post(
+            f"/runs/{run_id or 'latest'}/signoff/{metric_id}/reject", actor=actor, comment=comment
+        )
+
+    def set_signoff_policy(self, actor, required, comment=""):
+        return self._post("/admin/signoff/policy", actor=actor, required=list(required), comment=comment)
 
     def rerun_stage(self, run_id, stage, actor, reason=""):
         return self._post("/admin/rerun", run_id=run_id, stage=stage, actor=actor, reason=reason)

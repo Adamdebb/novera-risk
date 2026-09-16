@@ -24,6 +24,8 @@ lab_app = typer.Typer(
     no_args_is_help=True, help="Portfolio Lab: plant problems, run, see what was detected (LAB-001)."
 )
 app.add_typer(lab_app, name="lab")
+signoff_app = typer.Typer(no_args_is_help=True, help="Sign-off and release of a run's metrics (OPS-003).")
+app.add_typer(signoff_app, name="signoff")
 
 
 def _db(fund: bool):
@@ -449,6 +451,81 @@ def rerun_cmd(
             typer.echo(f"  {k}: {v['before']} -> {v['after']}")
     else:
         typer.echo("  the stage reproduced the parent's numbers exactly")
+
+
+@signoff_app.command("status")
+def signoff_status_cmd(run_id: str = typer.Argument("latest"), fund: bool = typer.Option(False)) -> None:
+    """Sign-off state of every metric of a run and its release status."""
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        st = RiskService(repo).signoff_status(run_id)
+    typer.echo(
+        f"run {st['run_id']}  {st['business_date']}  verdict {st['verdict']}  release {st['release_status']} "
+        f"({st['signed_required']}/{st['required_total']} required metrics signed)"
+    )
+    for m in st["metrics"]:
+        flag = "required" if m["required"] else "optional"
+        who = f"{m['actor']} {m['at'][:19]}" if m["actor"] else ""
+        typer.echo(f"  {m['metric_id']:<14} {flag:<9} {m['status']:<9} {who}  {m['comment'] or ''}")
+
+
+@signoff_app.command("sign")
+def signoff_sign_cmd(
+    metric_id: str = typer.Argument(..., help="DATA_QUALITY, VAR, STRESS, LIMITS, PNL, ..."),
+    run_id: str = typer.Option("latest"),
+    actor: str = typer.Option(..., help="Who signs (audit trail)"),
+    comment: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Sign one metric of a run; releases the run when every required metric is signed."""
+    from novera.api.service import RiskWriteService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        st = RiskWriteService(repo).sign_metric(run_id, metric_id, actor, comment)
+    typer.echo(f"{metric_id} signed on {st['run_id']} by {actor}; release {st['release_status']}")
+
+
+@signoff_app.command("reject")
+def signoff_reject_cmd(
+    metric_id: str = typer.Argument(...),
+    run_id: str = typer.Option("latest"),
+    actor: str = typer.Option(...),
+    comment: str = typer.Option(..., help="What is wrong (mandatory)"),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Reject one metric of a run, or withdraw its signature; a comment is mandatory."""
+    from novera.api.service import RiskWriteService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        st = RiskWriteService(repo).reject_metric(run_id, metric_id, actor, comment)
+    typer.echo(f"{metric_id} rejected on {st['run_id']} by {actor}; release {st['release_status']}")
+
+
+@signoff_app.command("policy")
+def signoff_policy_cmd(
+    require: str = typer.Option(None, help="Comma-separated metric ids to require; omit to show the policy"),
+    actor: str = typer.Option("risk-control"),
+    comment: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Show or set which metrics must be signed before a run is released."""
+    from novera.api.service import RiskService, RiskWriteService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    if require is None:
+        with DuckDBRepository(_db(fund), read_only=True) as repo:
+            pol = RiskService(repo).signoff_policy()
+    else:
+        with DuckDBRepository(_db(fund)) as repo:
+            ids = [x.strip() for x in require.split(",") if x.strip()]
+            pol = RiskWriteService(repo).set_signoff_policy(actor, ids, comment)
+    typer.echo(f"policy ({pol['source']}): {', '.join(pol['required']) or 'nothing required'}")
+    for m in pol["metrics"]:
+        typer.echo(f"  {m['metric_id']:<14} {'required' if m['required'] else 'optional':<9} {m['signer']}")
 
 
 @breach_app.command("list")

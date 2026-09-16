@@ -83,6 +83,7 @@ uv run novera breach list     # breach workflow: list, ack, escalate, close, req
 uv run novera ask "..."       # Risk Copilot; scripted provider unless ANTHROPIC_API_KEY is set
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
 uv run novera rerun latest --stage stress --actor "Risk Control" --reason "..."   # one stage into a new RERUN run (OPS-002); Admin page does the same
+uv run novera signoff status / sign VAR --actor "Head of Market Risk" / reject ... --comment / policy --require VAR,STRESS   # sign-off and release (OPS-003)
 uv run novera alert test      # send one test alert through the configured channels (Slack, SMTP); `alert list` shows stored alerts
 uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
 uv run novera fetch           # real market data into the history (network, optional FRED key)

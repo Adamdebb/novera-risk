@@ -711,6 +711,45 @@ are defaults to confirm.
 
 ---
 
+## Round 24 — Sign-off and release (2026-09-16)
+
+Context: the owner asked for a sign-off process with a dashboard page, and an Admin section
+to choose the metrics that need signing. Built without a question round (non-interactive
+session); the choices below are defaults to confirm.
+
+### 24.1 Unit of sign-off
+- Options: per metric, with the run released when every required metric is signed ★ · one
+  signature per run · per desk
+- Choice (default): **Per metric.** Ten metrics map to the methodology records (VaR and ES,
+  stress, limits, P&L, data quality, backtest, concentration, counterparty, capital, fund),
+  each with an expected signer role. The value seen is frozen with the signature.
+- Where: `workflows/signoff.py`, OPS-003, tables `signoff`, `signoff_policy`, `signoff_release`.
+- Reversal: a policy requiring one metric behaves as one signature per run.
+
+### 24.2 Release status
+- Options: computed from the current policy, with a release row as the historical record ★ ·
+  stored status changed by each action · policy snapshot per run
+- Choice (default): **Computed.** Narrowing the policy releases runs that already meet it;
+  widening it re-opens them; the row records who completed the release and when, and
+  rejecting a required metric withdraws it with an audit event.
+- Reversal: snapshot the policy on the run at first sign-off.
+
+### 24.3 RED verdicts
+- Options: data-quality sign-off on a RED run is an override needing a comment ★ · RED runs
+  cannot be released · RED treated like AMBER
+- Choice (default): **Override with comment**, flagged on the signature and the release,
+  which is what DQ-001 asked for.
+- Reversal: refuse the sign in `signoff.sign` when the verdict is RED.
+
+### 24.4 Who may sign
+- Options: named actor, expected signer shown not enforced ★ · enforce the signer role ·
+  require two signatures
+- Choice (default): **Named, not enforced**, consistent with every other workflow action
+  (decision 6.3, item 1 below). Enforcement comes with authentication.
+- Reversal: check `actor` against `Metric.signer` in `signoff.sign`.
+
+---
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).

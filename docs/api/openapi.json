@@ -6955,6 +6955,32 @@
         "title": "PnLStep",
         "type": "object"
       },
+      "PolicyBody": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "required": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actor",
+          "required"
+        ],
+        "title": "PolicyBody",
+        "type": "object"
+      },
       "PositionRow": {
         "additionalProperties": true,
         "properties": {
@@ -9385,6 +9411,385 @@
         "title": "SensitivityRow",
         "type": "object"
       },
+      "SignoffMetric": {
+        "additionalProperties": true,
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "metric_id": {
+            "title": "Metric Id",
+            "type": "string"
+          },
+          "override": {
+            "default": false,
+            "title": "Override",
+            "type": "boolean"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "signer": {
+            "title": "Signer",
+            "type": "string"
+          },
+          "status": {
+            "description": "PENDING, SIGNED or REJECTED",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "value": {
+            "additionalProperties": true,
+            "description": "The frozen value when signed or rejected, else the live one",
+            "title": "Value",
+            "type": "object"
+          }
+        },
+        "required": [
+          "metric_id",
+          "title",
+          "description",
+          "record",
+          "signer",
+          "required",
+          "status",
+          "value"
+        ],
+        "title": "SignoffMetric",
+        "type": "object"
+      },
+      "SignoffMetricPolicy": {
+        "additionalProperties": true,
+        "properties": {
+          "default_required": {
+            "title": "Default Required",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "faces": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Faces",
+            "type": "array"
+          },
+          "keys": {
+            "description": "Run-summary keys frozen with a signature",
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "metric_id": {
+            "title": "Metric Id",
+            "type": "string"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "signer": {
+            "description": "Role expected to sign; informational until authentication exists",
+            "title": "Signer",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "metric_id",
+          "title",
+          "description",
+          "record",
+          "signer",
+          "default_required",
+          "keys",
+          "faces",
+          "required"
+        ],
+        "title": "SignoffMetricPolicy",
+        "type": "object"
+      },
+      "SignoffPolicy": {
+        "additionalProperties": true,
+        "description": "Which metrics must be signed before a run is released. Record OPS-003.",
+        "properties": {
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/SignoffMetricPolicy"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "required": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required",
+            "type": "array"
+          },
+          "source": {
+            "description": "stored, or defaults when no policy has been saved",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "source",
+          "metrics",
+          "required"
+        ],
+        "title": "SignoffPolicy",
+        "type": "object"
+      },
+      "SignoffQueueRow": {
+        "additionalProperties": true,
+        "properties": {
+          "business_date": {
+            "title": "Business Date",
+            "type": "string"
+          },
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          },
+          "release_status": {
+            "title": "Release Status",
+            "type": "string"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "released_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released By"
+          },
+          "required_total": {
+            "title": "Required Total",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "signed_required": {
+            "title": "Signed Required",
+            "type": "integer"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "business_date",
+          "verdict",
+          "release_status",
+          "signed_required",
+          "required_total",
+          "pending"
+        ],
+        "title": "SignoffQueueRow",
+        "type": "object"
+      },
+      "SignoffStatus": {
+        "additionalProperties": true,
+        "description": "Sign-off state of one run: every metric of its face and the release status.",
+        "properties": {
+          "business_date": {
+            "title": "Business Date",
+            "type": "string"
+          },
+          "face": {
+            "title": "Face",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/SignoffMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "override": {
+            "default": false,
+            "title": "Override",
+            "type": "boolean"
+          },
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "release_status": {
+            "description": "RELEASED, BLOCKED or PENDING",
+            "title": "Release Status",
+            "type": "string"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "released_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released By"
+          },
+          "required_total": {
+            "title": "Required Total",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_type": {
+            "title": "Run Type",
+            "type": "string"
+          },
+          "signed_required": {
+            "title": "Signed Required",
+            "type": "integer"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "run_type",
+          "business_date",
+          "verdict",
+          "face",
+          "release_status",
+          "required_total",
+          "signed_required",
+          "pending",
+          "metrics"
+        ],
+        "title": "SignoffStatus",
+        "type": "object"
+      },
       "SlowestPosition": {
         "additionalProperties": true,
         "properties": {
@@ -11501,6 +11906,110 @@
           }
         },
         "summary": "Rerun Options"
+      }
+    },
+    "/admin/signoff/policy": {
+      "get": {
+        "operationId": "signoff_policy_admin_signoff_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignoffPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Signoff Policy"
+      },
+      "post": {
+        "operationId": "set_signoff_policy_admin_signoff_policy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignoffPolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Set Signoff Policy"
       }
     },
     "/agents/approve-csa": {
@@ -15333,6 +15842,221 @@
         "summary": "Sensitivities"
       }
     },
+    "/runs/{run_id}/signoff": {
+      "get": {
+        "operationId": "signoff_status_runs__run_id__signoff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignoffStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Signoff Status"
+      }
+    },
+    "/runs/{run_id}/signoff/{metric_id}/reject": {
+      "post": {
+        "operationId": "reject_metric_runs__run_id__signoff__metric_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "metric_id",
+            "required": true,
+            "schema": {
+              "title": "Metric Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignoffStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Reject Metric"
+      }
+    },
+    "/runs/{run_id}/signoff/{metric_id}/sign": {
+      "post": {
+        "operationId": "sign_metric_runs__run_id__signoff__metric_id__sign_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "metric_id",
+            "required": true,
+            "schema": {
+              "title": "Metric Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignoffStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Sign Metric"
+      }
+    },
     "/runs/{run_id}/stress": {
       "get": {
         "operationId": "stress_runs__run_id__stress_get",
@@ -16728,6 +17452,70 @@
           }
         },
         "summary": "Var Summary"
+      }
+    },
+    "/signoff/queue": {
+      "get": {
+        "operationId": "signoff_queue_signoff_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SignoffQueueRow"
+                  },
+                  "title": "Response Signoff Queue Signoff Queue Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Signoff Queue"
       }
     }
   }

@@ -25,6 +25,12 @@ nodes, unpriced trades, invalid trade fields, position reconciliation between so
 unexplained P&L above tolerance, business-date and timezone consistency. A run gets a
 trust verdict: GREEN, AMBER (usable with caveats) or RED (do not publish).
 
+## Sign-off and release
+After a run persists, named people sign the metrics the firm's policy requires (OPS-003).
+The value seen is frozen with the signature, every sign, rejection and policy change is an
+audit event, and a run is released when every required metric is signed. A RED verdict can
+only be signed with a comment, recorded as an override. Sign-off never edits a stored result.
+
 ## AI rules
 
 Allowed: explain, attribute, draft, summarise, translate a question into governed tool

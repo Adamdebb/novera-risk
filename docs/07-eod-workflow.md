@@ -93,7 +93,9 @@ consequences worth knowing:
 
 ## What is not in the run
 
-No sign-off or four-eyes step before results become visible. No intraday or incremental run:
+Sign-off (OPS-003) happens after the run, not inside it: results are visible as soon as they persist, and
+the Sign-off page tracks whether the required metrics have been signed and the run released.
+No intraday or incremental run:
 every run is a full pass. Named real crises are catalogued but not replayed (Stress library).
 A re-run recomputes one stage and lists, but does not recompute, its dependents.
 

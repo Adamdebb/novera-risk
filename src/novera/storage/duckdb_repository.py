@@ -160,6 +160,30 @@ CREATE TABLE IF NOT EXISTS breach_action (
     occurred_at TIMESTAMP NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS signoff_policy (
+    metric_id VARCHAR PRIMARY KEY,
+    required BOOLEAN NOT NULL,
+    actor VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
+CREATE TABLE IF NOT EXISTS signoff (
+    run_id VARCHAR NOT NULL,
+    metric_id VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    actor VARCHAR NOT NULL,
+    signed_at VARCHAR NOT NULL,
+    note VARCHAR,
+    frozen_value VARCHAR,
+    is_override BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (run_id, metric_id)
+);
+CREATE TABLE IF NOT EXISTS signoff_release (
+    run_id VARCHAR PRIMARY KEY,
+    released_at VARCHAR NOT NULL,
+    released_by VARCHAR NOT NULL,
+    is_override BOOLEAN NOT NULL DEFAULT FALSE,
+    metrics VARCHAR
+);
 CREATE TABLE IF NOT EXISTS limit_increase (
     increase_id VARCHAR PRIMARY KEY,
     limit_id VARCHAR NOT NULL,
@@ -921,6 +945,75 @@ class DuckDBRepository:
             f"SELECT payload, dedupe_key FROM alert {where} ORDER BY raised_at DESC LIMIT ?", [*params, limit]
         ).fetchall()
         return [{**json.loads(r[0]), "dedupe_key": r[1]} for r in rows]
+
+    # --- sign-off (OPS-003) -----------------------------------------------------------
+    def _has_table(self, name: str) -> bool:
+        return bool(
+            self._conn.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [name]
+            ).fetchone()
+        )
+
+    def save_signoff_policy(self, rows: list[dict]) -> None:
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO signoff_policy VALUES (?, ?, ?, ?)",
+            [(r["metric_id"], bool(r["required"]), r["actor"], r["updated_at"]) for r in rows],
+        )
+
+    def load_signoff_policy(self) -> list[dict]:
+        if not self._has_table("signoff_policy"):
+            return []
+        rows = self._conn.execute(
+            "SELECT metric_id, required, actor, updated_at FROM signoff_policy"
+        ).fetchall()
+        return [{"metric_id": r[0], "required": r[1], "actor": r[2], "updated_at": r[3]} for r in rows]
+
+    def save_signoff(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO signoff VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                d["run_id"],
+                d["metric_id"],
+                d["status"],
+                d["actor"],
+                d["at"],
+                d.get("comment"),
+                d.get("value"),
+                bool(d.get("override", False)),
+            ],
+        )
+
+    def load_signoffs(self, run_id: str) -> list[dict]:
+        if not self._has_table("signoff"):
+            return []
+        cols = "run_id, metric_id, status, actor, signed_at, note, frozen_value, is_override"
+        keys = ["run_id", "metric_id", "status", "actor", "at", "comment", "value", "override"]
+        rows = self._conn.execute(f"SELECT {cols} FROM signoff WHERE run_id = ?", [run_id]).fetchall()
+        return [dict(zip(keys, r, strict=True)) for r in rows]
+
+    def save_release(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO signoff_release VALUES (?, ?, ?, ?, ?)",
+            [
+                d["run_id"],
+                d["released_at"],
+                d["released_by"],
+                bool(d.get("override", False)),
+                d.get("metrics"),
+            ],
+        )
+
+    def delete_release(self, run_id: str) -> None:
+        if self._has_table("signoff_release"):
+            self._conn.execute("DELETE FROM signoff_release WHERE run_id = ?", [run_id])
+
+    def load_release(self, run_id: str) -> dict | None:
+        if not self._has_table("signoff_release"):
+            return None
+        cols = "run_id, released_at, released_by, is_override, metrics"
+        keys = ["run_id", "released_at", "released_by", "override", "metrics"]
+        row = self._conn.execute(f"SELECT {cols} FROM signoff_release WHERE run_id = ?", [run_id]).fetchone()
+        return dict(zip(keys, row, strict=True)) if row else None
 
     # --- scheduler jobs ---------------------------------------------------------------
     def save_job(self, d: dict) -> None:
