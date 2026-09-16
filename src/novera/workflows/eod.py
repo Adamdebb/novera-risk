@@ -2,7 +2,7 @@
 
 Steps (each timed and recorded on the run; docs/07-eod-workflow.md describes them):
     load (+ proxies) -> valuation -> data-quality pre-checks -> sensitivities
-    -> VaR (historical, delta-gamma-vega challenger, Monte Carlo) -> backtest -> stress
+    -> VaR (every measure of the VaR setup, OPS-004) -> backtest -> stress
     -> limits (first pass) -> concentration, liquidity, look-through -> P&L explain (+ challenger)
     -> verdict, audit events, breach sync -> persist
     -> regulatory (bank) / counterparty / fund -> limits (second pass) -> alerts -> final save
@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from novera.config import get_settings
@@ -45,15 +46,12 @@ from novera.risk import (
     compute_sensitivities,
     concentration,
     explain_pnl,
-    historical_var,
     liquidity,
     live_backtest,
     look_through,
-    monte_carlo_var,
     run_stress,
     static_backtest,
     stress_table,
-    taylor_var,
 )
 from novera.risk import sensitivities as sens_mod
 from novera.risk import stress as stress_mod
@@ -65,6 +63,7 @@ from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
 from novera.risk.stress import historical_episodes_from_simulation
+from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
@@ -89,6 +88,10 @@ MODEL_VERSIONS = {
 class EODConfig:
     firm_id: str = "GMB"
     var: VaRConfig = field(default_factory=VaRConfig)
+    """Base VaR config: horizon, scaling, and the window and ES confidence a measure
+    inherits when it names none."""
+    var_measures: list[dict[str, Any]] | None = None
+    """The VaR measures to produce (OPS-004); None reads the stored setup, or the defaults."""
     workers: int | None = None
     include_historical_stress: bool = True
     pnl_abs_tolerance: float = 50_000.0
@@ -102,6 +105,7 @@ class EODConfig:
         return {
             "firm_id": self.firm_id,
             "var": self.var.__dict__,
+            "var_measures": self.var_measures,
             "include_historical_stress": self.include_historical_stress,
             "pnl_abs_tolerance": self.pnl_abs_tolerance,
             "counterparty": self.counterparty,
@@ -124,6 +128,7 @@ class EODResult:
     pnl: Any
     events: list[AuditEvent]
     sync: Any = None  # breach sync outcome when persisted
+    var_measures: MeasureSet | None = None
 
 
 def _timed(timings: dict[str, float], name: str):
@@ -149,6 +154,11 @@ def run_eod(
     reporting = settings.reporting_currency
     if cfg.workers is not None:
         os.environ["NOVERA_WORKERS"] = str(cfg.workers)
+    if cfg.var_measures is None:
+        from novera.workflows.var_setup import measures_for_run
+
+        cfg = replace(cfg, var_measures=[m.to_dict() for m in measures_for_run(repo)])
+    measures = [VaRMeasure.from_dict(m) for m in cfg.var_measures or []]
     timings: dict[str, float] = {}
     events: list[AuditEvent] = []
 
@@ -217,14 +227,15 @@ def run_eod(
     with _timed(timings, "sensitivities"):
         sens = compute_sensitivities(pf)
     with _timed(timings, "var"):
-        hs = historical_var(pf, history, cfg.var)
-    with _timed(timings, "var_challenger"):
-        tv = taylor_var(pf, sens, history, cfg.var)
-    with _timed(timings, "monte_carlo"):
-        mc = monte_carlo_var(pf, sens, history, cfg.var)
+        var_set = compute_measures(pf, sens, history, measures, cfg.var, workers=cfg.workers)
+        for mr in var_set:
+            timings[f"var:{mr.measure.measure_id}"] = round(mr.seconds, 3)
+        headline = var_set.headline
+        hs = headline.result
+        var_summary = var_set.summary()
     with _timed(timings, "backtest"):
-        bt_static = static_backtest(hs.portfolio_pnl, cfg.var.confidence)
-        bt_live = live_backtest(repo.list_runs(run_type="EOD", limit=1000) + [], cfg.var.confidence)
+        bt_static = static_backtest(hs.portfolio_pnl, headline.measure.confidence)
+        bt_live = live_backtest(repo.list_runs(run_type="EOD", limit=1000) + [], headline.measure.confidence)
     with _timed(timings, "stress"):
         scenarios = list(HYPOTHETICAL_LIBRARY)
         if cfg.include_historical_stress:
@@ -232,7 +243,13 @@ def run_eod(
         stress = run_stress(pf, scenarios, history)
     with _timed(timings, "limits"):
         limit_table = (
-            monitor(limits, RiskInputs(val.table, sens, hs, stress), market.as_of, base_amounts, increase_ids)
+            monitor(
+                limits,
+                RiskInputs(val.table, sens, hs, stress, limit_var=var_set.limit_inputs()),
+                market.as_of,
+                base_amounts,
+                increase_ids,
+            )
             if limits
             else pd.DataFrame()
         )
@@ -312,13 +329,7 @@ def run_eod(
         "pv": pf.total_pv,
         "priced_trades": len(pf.priced_ids),
         "unpriced_trades": len(pf.errors),
-        "var": hs.var,
-        "es": hs.es,
-        "var_scaled": hs.var_scaled,
-        "var_scenario_date": str(hs.var_scenario_date),
-        "challenger_var": tv.var,
-        "monte_carlo_var": mc.var,
-        "monte_carlo_es": mc.es,
+        **var_summary,
         "backtest_zone": bt_static.zone,
         "backtest_exceptions": bt_static.exceptions,
         "backtest_days": bt_static.days,
@@ -357,7 +368,21 @@ def run_eod(
         )
     )
 
-    result = EODResult(run, val.table, sens, hs, tv, stress, limit_table, dq, pnl, events, sync)
+    chal = var_set.first("delta_gamma_vega")
+    result = EODResult(
+        run,
+        val.table,
+        sens,
+        hs,
+        chal.result if chal else None,
+        stress,
+        limit_table,
+        dq,
+        pnl,
+        events,
+        sync,
+        var_set,
+    )
     if persist:
         with _timed(timings, "persist"):
             _persist(
@@ -365,8 +390,7 @@ def run_eod(
                 run,
                 val.table,
                 sens,
-                hs,
-                tv,
+                var_set,
                 stress,
                 limit_table,
                 dq,
@@ -374,7 +398,6 @@ def run_eod(
                 events,
                 runs_dir,
                 extras={
-                    "mc": mc,
                     "bt_static": bt_static,
                     "bt_live": bt_live,
                     "conc": conc,
@@ -428,7 +451,15 @@ def run_eod(
             limit_table = (
                 monitor(
                     limits,
-                    RiskInputs(val.table, sens, hs, stress, counterparty_pfe=pfe, fund_metrics=fund_metrics),
+                    RiskInputs(
+                        val.table,
+                        sens,
+                        hs,
+                        stress,
+                        counterparty_pfe=pfe,
+                        fund_metrics=fund_metrics,
+                        limit_var=var_set.limit_inputs(),
+                    ),
                     market.as_of,
                     base_amounts,
                     increase_ids,
@@ -470,41 +501,78 @@ def run_dir(run_id: str, runs_dir: Path | None = None) -> Path:
     return d
 
 
-def _var_row(x: Any) -> dict[str, Any]:
-    return {
-        "method": x.method,
-        "var": x.var,
-        "es": x.es,
-        "var_scaled": x.var_scaled,
-        "es_scaled": x.es_scaled,
-        "confidence": x.config.confidence,
-        "es_confidence": x.config.es_confidence,
-        "window_days": x.config.window_days,
-        "scenarios": len(x.pnl),
-        "var_scenario_date": x.var_scenario_date,
-    }
-
-
-def persist_var(repo, rid: str, hs, tv, mc, runs_dir: Path | None = None) -> None:
-    """VaR tables: one summary row per method, contributions, the scenario vector, and the
-    full P&L matrices as Parquet."""
-    rows = [_var_row(hs), _var_row(tv)] + ([_var_row(mc)] if mc is not None else [])
-    repo.save_run_frame(rid, "var_summary", pd.DataFrame(rows))
-    repo.save_run_frame(rid, "var_contributions", hs.contributions.assign(method=hs.method))
-    repo.save_run_frame(rid, "var_contributions_challenger", tv.contributions.assign(method=tv.method))
+def persist_var(repo, rid: str, var_set: MeasureSet, runs_dir: Path | None = None) -> None:
+    """VaR tables: one ``var_summary`` row per measure of the setup, the contributions of
+    the headline (``var_contributions``), of the delta-gamma-vega challenger and of Monte
+    Carlo when the setup produces them, the contributions and scenario P&L (with weights)
+    of every measure in long form, the headline scenario vector, and the headline and
+    challenger P&L matrices as Parquet."""
+    head = var_set.headline
+    chal = var_set.first("delta_gamma_vega") or var_set.first("historical_weighted_delta_gamma_vega")
+    mc = var_set.first("monte_carlo_delta_gamma_vega")
+    summary = pd.DataFrame([r.row() for r in var_set])
+    for c in ("window_start", "window_end", "limit_type"):
+        summary[c] = summary[c].astype("string")  # text even when every row is empty
+    summary["decay"] = summary["decay"].astype(float)  # a number even when every row is empty
+    repo.save_run_frame(rid, "var_summary", summary)
+    repo.save_run_frame(rid, "var_contributions", head.result.contributions.assign(method=head.result.method))
+    repo.save_run_frame(
+        rid,
+        "var_contributions_challenger",
+        chal.result.contributions.assign(method=chal.result.method)
+        if chal
+        else pd.DataFrame(columns=["trade_id", "var_contribution", "es_contribution", "method"]),
+    )
     if mc is not None:
-        repo.save_run_frame(rid, "var_contributions_monte_carlo", mc.contributions.assign(method=mc.method))
+        repo.save_run_frame(
+            rid, "var_contributions_monte_carlo", mc.result.contributions.assign(method=mc.result.method)
+        )
+    repo.save_run_frame(
+        rid,
+        "var_measure_contributions",
+        pd.concat(
+            [r.result.contributions.assign(measure_id=r.measure.measure_id) for r in var_set],
+            ignore_index=True,
+        ),
+    )
     scen = pd.DataFrame(
         {
-            "scenario_date": hs.portfolio_pnl.index,
-            "portfolio_pnl": hs.portfolio_pnl.to_numpy(),
-            "challenger_pnl": tv.portfolio_pnl.reindex(hs.portfolio_pnl.index).to_numpy(),
+            "scenario_date": head.result.portfolio_pnl.index,
+            "portfolio_pnl": head.result.portfolio_pnl.to_numpy(),
+            "challenger_pnl": (
+                chal.result.portfolio_pnl.reindex(head.result.portfolio_pnl.index).to_numpy()
+                if chal
+                else np.nan
+            ),
         }
     )
     repo.save_run_frame(rid, "var_scenarios", scen)
+    long = []
+    for r in var_set:
+        if r.result.method.startswith("monte_carlo"):
+            continue  # paths carry no date; the summary row keeps their count
+        w = r.result.weights
+        long.append(
+            pd.DataFrame(
+                {
+                    "measure_id": r.measure.measure_id,
+                    "scenario_date": r.result.portfolio_pnl.index,
+                    "portfolio_pnl": r.result.portfolio_pnl.to_numpy(),
+                    "weight": w if w is not None else 1.0 / len(r.result.portfolio_pnl),
+                }
+            )
+        )
+    repo.save_run_frame(
+        rid,
+        "var_measure_scenarios",
+        pd.concat(long, ignore_index=True)
+        if long
+        else pd.DataFrame(columns=["measure_id", "scenario_date", "portfolio_pnl", "weight"]),
+    )
     d = run_dir(rid, runs_dir)
-    hs.pnl.to_parquet(d / "var_pnl_full_revaluation.parquet")
-    tv.pnl.to_parquet(d / "var_pnl_delta_gamma_vega.parquet")
+    head.result.pnl.to_parquet(d / "var_pnl_full_revaluation.parquet")
+    if chal:
+        chal.result.pnl.to_parquet(d / "var_pnl_delta_gamma_vega.parquet")
 
 
 def persist_stress(repo, rid: str, stress: list) -> None:
@@ -581,20 +649,18 @@ def persist_pnl(repo, rid: str, pnl) -> None:
 
 
 def _persist(
-    repo, run, valuation, sens, hs, tv, stress, limit_table, dq, pnl, events, runs_dir, extras=None
+    repo, run, valuation, sens, var_set, stress, limit_table, dq, pnl, events, runs_dir, extras=None
 ) -> None:
     rid = run.run_id
     repo.save_run(run)
-    mc = None
     if extras:
-        mc = extras["mc"]
         if extras.get("proxies") is not None:
             repo.save_run_frame(rid, "md_proxies", extras["proxies"].table())
         persist_backtest(repo, rid, extras["bt_static"], extras["bt_live"])
         persist_concentration(repo, rid, extras["conc"], extras["liq"], extras.get("lookthrough"))
     repo.save_run_frame(rid, "valuation", valuation)
     repo.save_run_frame(rid, "sensitivities", sens)
-    persist_var(repo, rid, hs, tv, mc, runs_dir)
+    persist_var(repo, rid, var_set, runs_dir)
     persist_stress(repo, rid, stress)
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)

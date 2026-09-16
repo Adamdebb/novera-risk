@@ -73,9 +73,18 @@ class RunFigures(ApiModel):
     es: float | None = None
     var_scaled: float | None = None
     var_scenario_date: str | None = None
+    var_confidence: float | None = Field(default=None, description="Confidence of the headline VaR measure")
+    es_confidence: float | None = None
+    var_measure_id: str | None = Field(
+        default=None, description="Headline measure of the VaR setup (OPS-004)"
+    )
+    stressed_var: float | None = None
     challenger_var: float | None = None
     monte_carlo_var: float | None = None
     monte_carlo_es: float | None = None
+    var_measures: dict[str, float] | None = Field(
+        default=None, description="Value of every measure of the run's VaR setup by measure id"
+    )
     backtest_zone: str | None = None
     backtest_exceptions: int | None = None
     backtest_days: int | None = None
@@ -173,6 +182,9 @@ class PositionRow(Row):
 
 
 class VarSummaryRow(ApiModel):
+    """One VaR measure of the run. Runs made before the VaR setup existed carry the method
+    columns only."""
+
     method: str
     var: float
     es: float
@@ -183,6 +195,25 @@ class VarSummaryRow(ApiModel):
     window_days: int
     scenarios: int
     var_scenario_date: str | None = None
+    measure_id: str | None = None
+    goal: str | None = Field(default=None, description="LIMIT or INFORMATION")
+    metric: str | None = Field(default=None, description="VAR, ES or STRESSED_VAR")
+    label: str | None = None
+    value: float | None = Field(
+        default=None, description="The measure's own figure: ES for an ES row, else VaR"
+    )
+    window_start: str | None = None
+    window_end: str | None = None
+    decay: float | None = None
+    limit_type: str | None = None
+    seconds: float | None = None
+
+
+class VarMeasureScenarioRow(ApiModel):
+    measure_id: str
+    scenario_date: str
+    portfolio_pnl: float
+    weight: float
 
 
 class VarScenarioRow(ApiModel):
@@ -527,6 +558,57 @@ class RerunRecord(RunRecord):
         description="parent_run_id, stage, actor, reason, stale_stages, changed (before and after per "
         "summary key), seconds"
     )
+
+
+class VarMeasureSpec(ApiModel):
+    """One row of the firm's VaR matrix (OPS-004)."""
+
+    measure_id: str = Field(default="", description="Derived from the parameters when empty")
+    goal: str = Field(description="LIMIT feeds the limits of the metric's type; INFORMATION is reported only")
+    metric: str = Field(description="VAR, ES or STRESSED_VAR")
+    confidence: float = Field(description="0.99 for 99%")
+    shocks: str = Field(description="HISTORICAL, HISTORICAL_WEIGHTED or MONTE_CARLO")
+    compute: str = Field(description="FULL_REVALUATION or SENSITIVITY (delta-gamma-vega)")
+    window_years: float | None = Field(default=None, description="Years back from the valuation date")
+    window_start: str | None = Field(default=None, description="ISO date: fixed window (stressed VaR)")
+    window_end: str | None = None
+    decay: float | None = Field(default=None, description="Lambda for weighted historical scenarios")
+    enabled: bool = True
+
+
+class VarMeasureDescribed(VarMeasureSpec):
+    label: str
+    method: str
+    record: str
+    limit_type: str | None = None
+    window_days: int
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class VarSetupOptions(ApiModel):
+    goals: list[str]
+    metrics: list[str]
+    shocks: list[str]
+    computes: list[str]
+
+
+class VarSetup(ApiModel):
+    """The VaR measures produced daily, which feed limits and which are for information.
+    Record OPS-004."""
+
+    record: str
+    source: str = Field(description="stored, or defaults when no setup has been saved")
+    measures: list[VarMeasureDescribed]
+    headline: str | None = Field(default=None, description="Measure id of the run's official VaR")
+    templates: dict[str, list[VarMeasureDescribed]]
+    options: VarSetupOptions
+    history_start: str | None = None
+    history_end: str | None = None
+    stress_window: list[str] | None = Field(
+        default=None, description="Most volatile year of the stored history, used by the bank template"
+    )
+    base_window_days: int
 
 
 class RerunOptions(ApiModel):

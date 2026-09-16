@@ -14,10 +14,10 @@ import pandas as pd
 
 from novera.market_data.history import MarketHistory
 from novera.risk.revaluation import Portfolio
-from novera.risk.scenarios import historical_shocks
-from novera.risk.var import VaRConfig, VaRResult, _contributions, tail_measures, taylor_pnl_matrix
+from novera.risk.var import VaRConfig, VaRResult, result_from_pnl, scenario_shocks, taylor_pnl_matrix
 
 MODEL_VERSION = "1.0.0"
+METHOD = "monte_carlo_delta_gamma_vega"
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,24 @@ def simulate_factor_moves(hist_shocks: pd.DataFrame, cfg: MonteCarloConfig) -> p
     return pd.DataFrame(sims, columns=hist_shocks.columns, index=pd.RangeIndex(cfg.paths, name="path"))
 
 
+def monte_carlo_pnl_matrix(
+    pf: Portfolio,
+    sens: pd.DataFrame,
+    history: MarketHistory,
+    var_cfg: VaRConfig | None = None,
+    mc_cfg: MonteCarloConfig | None = None,
+) -> pd.DataFrame:
+    """Path-by-trade P&L: simulated factor moves from the window's covariance (a fixed
+    window when the config names one) valued through the sensitivities."""
+    var_cfg = var_cfg or VaRConfig()
+    mc_cfg = mc_cfg or MonteCarloConfig()
+    if var_cfg.decay is not None:
+        raise ValueError("Monte Carlo VaR uses the equally weighted covariance; decay is not supported")
+    hist = scenario_shocks(history, pf.as_of, var_cfg, pf.universe, list(pf.base.values))
+    sims = simulate_factor_moves(hist, mc_cfg)
+    return taylor_pnl_matrix(pf, sens, sims)
+
+
 def monte_carlo_var(
     pf: Portfolio,
     sens: pd.DataFrame,
@@ -48,26 +66,7 @@ def monte_carlo_var(
     mc_cfg: MonteCarloConfig | None = None,
 ) -> VaRResult:
     var_cfg = var_cfg or VaRConfig()
-    mc_cfg = mc_cfg or MonteCarloConfig()
-    hist = historical_shocks(
-        history,
-        pf.as_of,
-        var_cfg.window_days,
-        var_cfg.horizon_days,
-        pf.universe,
-        factor_ids=list(pf.base.values),
-    )
-    sims = simulate_factor_moves(hist, mc_cfg)
-    pnl = taylor_pnl_matrix(pf, sens, sims)
-    port = pnl.sum(axis=1)
-    var, es, _ = tail_measures(port, var_cfg)
-    return VaRResult(
-        "monte_carlo_delta_gamma_vega",
-        var_cfg,
-        pnl,
-        var,
-        es,
-        pf.as_of,
-        port,
-        _contributions(pnl, port, var_cfg, var),
-    )
+    pnl = monte_carlo_pnl_matrix(pf, sens, history, var_cfg, mc_cfg)
+    res = result_from_pnl(METHOD, var_cfg, pnl)
+    res.var_scenario_date = pf.as_of  # paths carry no date
+    return res

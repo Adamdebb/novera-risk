@@ -16,6 +16,7 @@ from novera.risk import (
     compute_sensitivities,
     factor_prefixes,
     historical_var,
+    monte_carlo_var,
     run_stress,
     stress_table,
     taylor_var,
@@ -210,3 +211,151 @@ def test_stress_library_catalogue(world):
     crises = cats["NAMED_CRISIS"]["scenarios"]
     assert all(c["status"] == "NOT_COVERED" and not c["in_daily_run"] for c in crises)
     assert lib["summary"]["scenarios"] == len(HYPOTHETICAL_LIBRARY) + 2 + 7
+
+
+def test_weighted_tail_measures_and_fixed_window(world, sens):
+    """MR-015 and MR-016: decaying weights sum to one and favour the newest scenarios; a
+    decay of None reproduces the equally weighted figures exactly; a fixed window replays
+    exactly the moves inside it."""
+    from novera.risk.var import scenario_weights, tail_measures
+
+    pf, hist = world["pf"], world["hist"]
+    equal = historical_var(pf, hist, VaRConfig(window_days=250))
+    weighted = historical_var(pf, hist, VaRConfig(window_days=250, decay=0.94))
+    w = scenario_weights(weighted.portfolio_pnl.index, weighted.config)
+    assert w is not None and w.sum() == pytest.approx(1.0) and len(w) == 250
+    newest = weighted.portfolio_pnl.index.max()
+    assert w[list(weighted.portfolio_pnl.index).index(newest)] == pytest.approx(w.max())
+    assert w.max() / w.min() == pytest.approx((1 / 0.94) ** 249, rel=1e-6)
+    assert weighted.method == "historical_weighted_full_revaluation"
+    assert weighted.var > 0 and weighted.es >= weighted.var * 0.8
+    assert weighted.contributions["var_contribution"].sum() == pytest.approx(weighted.var, rel=1e-6)
+    assert weighted.contributions["es_contribution"].sum() == pytest.approx(weighted.es, rel=1e-6)
+    # Same P&L matrix, different tail: only the weights moved.
+    pd.testing.assert_frame_equal(weighted.pnl, equal.pnl)
+    assert weighted.var != pytest.approx(equal.var, rel=1e-3)
+    # Uniform weights reproduce the unweighted figures exactly.
+    n = len(equal.portfolio_pnl)
+    var_u, es_u, d_u = tail_measures(equal.portfolio_pnl, equal.config, np.full(n, 1.0 / n))
+    assert var_u == pytest.approx(equal.var, rel=1e-9) and es_u == pytest.approx(equal.es, rel=1e-9)
+    assert d_u == equal.var_scenario_date
+    # Putting all the weight on the worst scenario makes VaR that scenario's loss (up to the
+    # 1% interpolation step towards the next scenario).
+    worst = equal.portfolio_pnl.idxmin()
+    spike = np.where(equal.portfolio_pnl.index == worst, 1.0, 1e-9)
+    var_w, _, d = tail_measures(equal.portfolio_pnl, equal.config, spike / spike.sum())
+    assert var_w == pytest.approx(-equal.portfolio_pnl.min(), rel=5e-3) and d == worst
+    # Fixed window: the scenarios are exactly the moves between the two dates.
+    dates = hist.dates
+    start, end = dates[-120], dates[-21]
+    fixed = historical_var(pf, hist, VaRConfig(window_start=start.isoformat(), window_end=end.isoformat()))
+    assert len(fixed.pnl) == 99 and fixed.pnl.index.min() > start and fixed.pnl.index.max() == end
+    sub = equal.pnl.loc[fixed.pnl.index]
+    pd.testing.assert_frame_equal(fixed.pnl, sub)
+    with pytest.raises(ValueError):
+        historical_var(pf, hist, VaRConfig(window_start=end.isoformat(), window_end=end.isoformat()))
+    with pytest.raises(ValueError):
+        monte_carlo_var(pf, sens, hist, VaRConfig(window_days=250, decay=0.94))
+
+
+def test_var_measures_share_matrices_and_validate(world, sens):
+    """OPS-004: a matrix of measures runs in one pass, rows with the same scenarios share
+    the P&L matrix, LIMIT rows route to limit types, and the validation catches what an
+    administrator can get wrong."""
+    from novera.risk.var_measures import (
+        DEFAULT_MEASURES,
+        VaRMeasure,
+        compute_measures,
+        templates,
+        validate_measures,
+    )
+
+    pf, hist = world["pf"], world["hist"]
+    base = VaRConfig(window_days=250)
+    dates = hist.dates
+    start, end = dates[-200].isoformat(), dates[-50].isoformat()
+    ms = [
+        VaRMeasure("LIMIT", "VAR", 0.95, "HISTORICAL_WEIGHTED", "FULL_REVALUATION", decay=0.94),
+        VaRMeasure("INFORMATION", "ES", 0.95, "HISTORICAL_WEIGHTED", "FULL_REVALUATION", decay=0.94),
+        VaRMeasure("INFORMATION", "VAR", 0.99, "HISTORICAL", "FULL_REVALUATION"),
+        VaRMeasure(
+            "LIMIT",
+            "STRESSED_VAR",
+            0.99,
+            "HISTORICAL",
+            "FULL_REVALUATION",
+            window_start=start,
+            window_end=end,
+        ),
+        VaRMeasure("INFORMATION", "VAR", 0.99, "MONTE_CARLO", "SENSITIVITY"),
+        VaRMeasure("INFORMATION", "VAR", 0.99, "HISTORICAL", "SENSITIVITY", enabled=False),
+    ]
+    assert ms[0].measure_id == "VAR_95_WHS_FULL_BASE_L94" and ms[3].measure_id.startswith(
+        "STRESSED_VAR_99_HS_FULL_"
+    )
+    assert ms[0].label == "VaR 95% · weighted historical (λ 0.94) · full revaluation · base window"
+    assert validate_measures(ms) == []
+    out = compute_measures(pf, sens, hist, ms, base, workers=1)
+    assert [r.measure.measure_id for r in out] == [m.measure_id for m in ms[:5]]
+    head = out.headline
+    assert head.measure is ms[0] and head.result.method == "historical_weighted_full_revaluation"
+    # The ES row reused the weighted VaR row's matrix; the plain 99% row shares scenarios too.
+    es_row, plain = out.results[1], out.results[2]
+    assert es_row.shared_with == ms[0].measure_id and plain.shared_with == ms[0].measure_id
+    assert es_row.value == es_row.result.es and es_row.result.config.es_confidence == 0.95
+    assert plain.result.var > head.result.var * 0.5  # 99% vs 95% on the same matrix
+    assert es_row.result.pnl is head.result.pnl
+    assert out.for_limit("VAR") is head and out.for_limit("STRESSED_VAR").measure is ms[3]
+    assert out.for_limit("EXPECTED_SHORTFALL") is None
+    summary = out.summary()
+    assert summary["var"] == head.result.var and summary["var_confidence"] == 0.95
+    assert summary["es"] == es_row.value and summary["es_confidence"] == 0.95
+    assert summary["stressed_var"] == out.results[3].value and summary["challenger_var"] is None
+    assert summary["monte_carlo_var"] == out.results[4].result.var
+    assert set(summary["var_measures"]) == {m.measure_id for m in ms[:5]}
+    assert set(out.limit_inputs()) == {"VAR", "STRESSED_VAR"}
+    rows = [r.row() for r in out]
+    assert rows[3]["window_start"] == start and rows[0]["decay"] == 0.94 and rows[1]["metric"] == "ES"
+    # Defaults reproduce the pre-setup platform: three methods, VaR and ES limits on the same matrix.
+    d = compute_measures(pf, sens, hist, DEFAULT_MEASURES, base, workers=1)
+    assert d.headline.result.var == pytest.approx(historical_var(pf, hist, base).var)
+    assert d.for_limit("EXPECTED_SHORTFALL").value == pytest.approx(d.headline.result.es)
+    assert d.first("delta_gamma_vega") is not None and d.first("monte_carlo_delta_gamma_vega") is not None
+    # Validation.
+    bad = [
+        VaRMeasure("LIMIT", "VAR", 0.99, "HISTORICAL", "FULL_REVALUATION"),
+        VaRMeasure("LIMIT", "VAR", 0.95, "HISTORICAL", "FULL_REVALUATION"),
+        VaRMeasure("INFORMATION", "VAR", 0.99, "HISTORICAL_WEIGHTED", "FULL_REVALUATION"),
+        VaRMeasure("INFORMATION", "VAR", 0.99, "MONTE_CARLO", "FULL_REVALUATION"),
+        VaRMeasure("INFORMATION", "STRESSED_VAR", 0.99, "HISTORICAL", "FULL_REVALUATION"),
+        VaRMeasure(
+            "INFORMATION",
+            "VAR",
+            0.99,
+            "HISTORICAL",
+            "FULL_REVALUATION",
+            window_start="2010-01-01",
+            window_end="2010-12-31",
+        ),
+        VaRMeasure("INFORMATION", "VAR", 1.2, "HISTORICAL", "FULL_REVALUATION", decay=0.9),
+    ]
+    errors = validate_measures(bad, dates[0], dates[-1])
+    text = "\n".join(errors)
+    assert "only one VaR measure can feed limits" in text
+    assert "need a decay" in text and "sensitivities only" in text and "needs a fixed window" in text
+    assert (
+        "before the stored history" in text
+        and "confidence" in text
+        and "weighted historical scenarios only" in text
+    )
+    assert validate_measures([VaRMeasure("INFORMATION", "ES", 0.975, "HISTORICAL", "FULL_REVALUATION")]) == [
+        "at least one enabled VaR measure is needed: it is the headline VaR of the run"
+    ]
+    tpl = templates((dates[-300], dates[-51]))
+    assert {m.metric for m in tpl["bank"]} == {"VAR", "ES", "STRESSED_VAR"}
+    assert tpl["hedge_fund"][0].decay == 0.94 and tpl["hedge_fund"][0].confidence == 0.95
+    assert (
+        validate_measures(tpl["bank"], dates[0], dates[-1]) == []
+        and validate_measures(tpl["hedge_fund"]) == []
+    )
+    assert VaRMeasure.from_dict(ms[3].to_dict()) == ms[3]

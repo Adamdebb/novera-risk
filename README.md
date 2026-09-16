@@ -87,6 +87,7 @@ uv run novera ask "Why did VaR change since yesterday?"
 uv run novera schedule --once      # advance one business day and run EOD, with alerts
 uv run novera rerun latest --stage stress --actor "Risk Control"   # re-run one stage into a new RERUN run; the parent is untouched
 uv run novera signoff sign VAR --actor "Head of Market Risk"        # sign-off and release of the run's metrics (OPS-003)
+uv run novera var-setup show / template hedge_fund --actor CRO      # which VaR measures run daily, for limits or information (OPS-004)
 uv run novera vendor-feed && uv run novera reconcile data/feeds/official_risk_2026-09-15.csv
 uv run novera run counterparty     # exposure, collateral, CVA, wrong-way on the latest run (~3 minutes)
 uv run novera run regulatory       # FRTB, SA-CCR, SIMM, BA-CVA, cash ladder on the latest run

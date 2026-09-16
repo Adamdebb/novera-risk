@@ -160,6 +160,22 @@ CREATE TABLE IF NOT EXISTS breach_action (
     occurred_at TIMESTAMP NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS var_setup (
+    measure_id VARCHAR PRIMARY KEY,
+    position INTEGER NOT NULL,
+    goal VARCHAR NOT NULL,
+    metric VARCHAR NOT NULL,
+    confidence DOUBLE NOT NULL,
+    shocks VARCHAR NOT NULL,
+    compute VARCHAR NOT NULL,
+    window_years DOUBLE,
+    window_start VARCHAR,
+    window_end VARCHAR,
+    decay DOUBLE,
+    enabled BOOLEAN NOT NULL,
+    actor VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
 CREATE TABLE IF NOT EXISTS signoff_policy (
     metric_id VARCHAR PRIMARY KEY,
     required BOOLEAN NOT NULL,
@@ -633,10 +649,26 @@ class DuckDBRepository:
         table = f"run_{name}"
         df = frame.drop(columns=["run_id"], errors="ignore").copy()
         df.insert(0, "run_id", run_id)
+        for c in df.columns:
+            if df[c].dtype == object and df[c].isna().all():
+                df[c] = df[c].astype("string")  # an all-null object column is text, not INT32
         self._conn.register("_frame_df", df)
         self._conn.execute(f"CREATE TABLE IF NOT EXISTS {table} AS SELECT * FROM _frame_df WHERE 1 = 0")
+        # Columns the table has not seen yet (a later engine version) are added; columns the
+        # frame lacks stay NULL, so runs of different versions share the table.
+        existing = {
+            r[0]
+            for r in self._conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?", [table]
+            ).fetchall()
+        }
+        types = dict((r[0], r[1]) for r in self._conn.execute("DESCRIBE SELECT * FROM _frame_df").fetchall())
+        for c in df.columns:
+            if c not in existing:
+                self._conn.execute(f'ALTER TABLE {table} ADD COLUMN "{c}" {types[c]}')
+        cols = ", ".join(f'"{c}"' for c in df.columns)
         self._conn.execute(f"DELETE FROM {table} WHERE run_id = ?", [run_id])
-        self._conn.execute(f"INSERT INTO {table} SELECT * FROM _frame_df")
+        self._conn.execute(f"INSERT INTO {table} ({cols}) SELECT {cols} FROM _frame_df")
         self._conn.unregister("_frame_df")
         return len(df)
 
@@ -953,6 +985,58 @@ class DuckDBRepository:
                 "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [name]
             ).fetchone()
         )
+
+    def market_history_range(self) -> tuple[date, date] | None:
+        row = self._conn.execute("SELECT min(as_of), max(as_of) FROM market_history").fetchone()
+        return None if row is None or row[0] is None else (row[0], row[1])
+
+    def save_var_setup(self, rows: list[dict]) -> None:
+        """Replace the whole VaR setup (OPS-004); ``rows`` carry position, actor, updated_at."""
+        self._conn.execute("DELETE FROM var_setup")
+        self._conn.executemany(
+            "INSERT INTO var_setup VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    r["measure_id"],
+                    int(r["position"]),
+                    r["goal"],
+                    r["metric"],
+                    float(r["confidence"]),
+                    r["shocks"],
+                    r["compute"],
+                    r.get("window_years"),
+                    r.get("window_start"),
+                    r.get("window_end"),
+                    r.get("decay"),
+                    bool(r.get("enabled", True)),
+                    r["actor"],
+                    r["updated_at"],
+                )
+                for r in rows
+            ],
+        )
+
+    def load_var_setup(self) -> list[dict]:
+        if not self._has_table("var_setup"):
+            return []
+        cols = [
+            "measure_id",
+            "position",
+            "goal",
+            "metric",
+            "confidence",
+            "shocks",
+            "compute",
+            "window_years",
+            "window_start",
+            "window_end",
+            "decay",
+            "enabled",
+            "actor",
+            "updated_at",
+        ]
+        rows = self._conn.execute(f"SELECT {', '.join(cols)} FROM var_setup ORDER BY position").fetchall()
+        return [dict(zip(cols, r, strict=True)) for r in rows]
 
     def save_signoff_policy(self, rows: list[dict]) -> None:
         self._conn.executemany(

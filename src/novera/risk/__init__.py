@@ -30,8 +30,22 @@ from novera.risk.concentration import ConcentrationReport, concentration  # noqa
 from novera.risk.liquidity import LiquidityReport, liquidity  # noqa: E402
 from novera.risk.lookthrough import LookThrough, look_through  # noqa: E402
 from novera.risk.monte_carlo import MonteCarloConfig, monte_carlo_var  # noqa: E402
+from novera.risk.var_measures import (  # noqa: E402
+    DEFAULT_MEASURES,
+    MeasureResult,
+    MeasureSet,
+    VaRMeasure,
+    compute_measures,
+    validate_measures,
+)
 
 __all__ += [
+    "DEFAULT_MEASURES",
+    "MeasureResult",
+    "MeasureSet",
+    "VaRMeasure",
+    "compute_measures",
+    "validate_measures",
     "BacktestResult",
     "live_backtest",
     "static_backtest",

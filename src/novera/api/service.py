@@ -119,14 +119,21 @@ class RiskService:
         by: str = "asset_class",
         run_id: str | None = None,
         method: str = "historical_full_revaluation",
+        measure_id: str | None = None,
         **filters: str,
     ) -> list[dict[str, Any]]:
+        """Component VaR and ES by group: of a stored method's frame, or of one measure of
+        the run's VaR setup when ``measure_id`` is given (OPS-004)."""
         r = self.resolve(run_id)
-        if method not in VAR_CONTRIBUTION_FRAMES:
-            raise InvalidRequestError(
-                f"unknown VaR method {method!r}; one of {', '.join(VAR_CONTRIBUTION_FRAMES)}"
-            )
-        contrib = self.repo.load_run_frame(r.run_id, VAR_CONTRIBUTION_FRAMES[method])
+        if measure_id:
+            contrib = self.repo.load_run_frame(r.run_id, "var_measure_contributions")
+            contrib = contrib[contrib["measure_id"] == measure_id] if len(contrib) else contrib
+        else:
+            if method not in VAR_CONTRIBUTION_FRAMES:
+                raise InvalidRequestError(
+                    f"unknown VaR method {method!r}; one of {', '.join(VAR_CONTRIBUTION_FRAMES)}"
+                )
+            contrib = self.repo.load_run_frame(r.run_id, VAR_CONTRIBUTION_FRAMES[method])
         v = self.valuation(r.run_id, **filters)
         if contrib.empty or v.empty:
             return []
@@ -525,6 +532,22 @@ class RiskService:
         from novera.workflows import signoff
 
         return signoff.queue(self.repo, limit)
+
+    def var_setup(self) -> dict[str, Any]:
+        """The VaR measures the firm produces daily, which feed limits and which are for
+        information, with the templates and options of the Admin page (OPS-004)."""
+        from novera.workflows import var_setup
+
+        return var_setup.setup(self.repo)
+
+    def var_measure_scenarios(
+        self, run_id: str | None = None, measure_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Scenario P&L and weight of one measure of the run (empty for Monte Carlo)."""
+        _, s = self._frame(run_id, "var_measure_scenarios")
+        if measure_id and len(s):
+            s = s[s["measure_id"] == measure_id]
+        return _records(s.sort_values("scenario_date")) if len(s) else []
 
     def rerun_options(self) -> dict[str, Any]:
         """The EOD stages an administrator can re-run on a stored run, and the re-runs made so
@@ -1017,6 +1040,18 @@ class RiskWriteService:
         from novera.workflows import signoff
 
         return signoff.set_policy(self.repo, actor, list(required), comment)
+
+    def set_var_setup(self, actor: str, measures: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
+        """Replace the VaR setup; validated against the stored history and audited (OPS-004)."""
+        from novera.workflows import var_setup
+
+        return var_setup.set_setup(self.repo, actor, [dict(m) for m in measures], comment)
+
+    def apply_var_template(self, template: str, actor: str, comment: str = "") -> dict[str, Any]:
+        """Replace the VaR setup with a template (bank or hedge_fund) (OPS-004)."""
+        from novera.workflows import var_setup
+
+        return var_setup.apply_template(self.repo, template, actor, comment)
 
     def acknowledge(self, breach_id: str, actor: str, comment: str = "") -> dict[str, Any]:
         b, _ = wf.acknowledge(self.repo, breach_id, actor, comment)
