@@ -7,7 +7,7 @@ A demonstrable prototype of how a modern market-risk function operates: a determ
 risk engine over a simulated global trading organisation, wrapped in workflow automation,
 governance and an AI Risk Copilot. Target audiences: investment banks and hedge funds.
 Read `docs/01-product-vision.md` for positioning, `docs/03-roadmap.md` for what is
-in scope now, and `docs/06-decision-log.md` before proposing to change a past choice. Do not build ahead of the current phase.
+in scope now, `docs/07-eod-workflow.md` for what one run does step by step, and `docs/06-decision-log.md` before proposing to change a past choice. Do not build ahead of the current phase.
 
 ## Non-negotiable rules
 1. **The engine is deterministic and authoritative.** No LLM ever computes, adjusts or

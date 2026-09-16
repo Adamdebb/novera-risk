@@ -763,3 +763,7 @@ are defaults to confirm.
     noise dominate the drift for seed 42 (the 20% drawdown test measures peak to trough over
     the whole history). A cleaner episode needs a stronger drift or a lower multiplier, which
     changes the core history and so every calibrated limit; deferred for that reason.
+18. **A run is marked COMPLETED before the regulatory, counterparty and fund engines run**
+    (documented in `docs/07-eod-workflow.md`): a failure in those steps leaves a COMPLETED run
+    without their tables. A PARTIAL status, or moving `finish` after the last engine, would make
+    the gap visible in the run list rather than only on the affected pages.

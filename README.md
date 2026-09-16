@@ -105,6 +105,7 @@ to make it call the API instead.
 - `docs/02-architecture.md` — layers, module map, boundaries
 - `docs/03-roadmap.md` — phases and instrument scope
 - `docs/04-governance.md` — methodology records, run reproducibility, AI rules
+- `docs/07-eod-workflow.md` — the end-of-day run step by step: what each stage reads, writes and guarantees
 - `docs/05-demo-script.md` — the 10-minute executive demo
 - `docs/06-decision-log.md` — every design question, the options, the choice made, and what to revisit
 - `docs/adr/` — architecture decision records

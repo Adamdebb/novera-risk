@@ -1,10 +1,12 @@
 """The end-of-day risk run: one governed pass from snapshots to stored, auditable results.
 
-Steps (each timed and recorded on the run):
-    load -> data-quality pre-checks -> valuation -> sensitivities -> VaR (+ challenger)
-    -> stress -> limits -> P&L explain (+ challenger) -> data-quality post-checks
-    -> verdict -> persist -> audit events
-The run always completes; the verdict says whether the numbers can be trusted.
+Steps (each timed and recorded on the run; docs/07-eod-workflow.md describes them):
+    load (+ proxies) -> valuation -> data-quality pre-checks -> sensitivities
+    -> VaR (historical, delta-gamma-vega challenger, Monte Carlo) -> backtest -> stress
+    -> limits (first pass) -> concentration, liquidity, look-through -> P&L explain (+ challenger)
+    -> verdict, audit events, breach sync -> persist
+    -> regulatory (bank) / counterparty / fund -> limits (second pass) -> alerts -> final save
+The verdict never blocks the run; it says whether the numbers can be trusted.
 """
 
 from __future__ import annotations

@@ -39,21 +39,18 @@ until a customer forces it. The UI is a thin client over a typed API so it can b
 
 ```
 portfolio snapshot ---+
-market-data snapshot -+--> run(run_id) --> valuation --> sensitivities --> aggregation
-scenario set ---------+                         |             |
-                                                v             v
-                                        P&L + attribution   VaR / ES / stress
-                                                |             |
-                                                +------+------+
-                                                       v
-                                            counterparty exposure
-                                                       v
-                                        limits: utilisation, breaches
-                                                       v
-                                        data-quality verdict on the run
-                                                       v
-                              results (immutable) + audit events + report
+market snapshot ------+--> run(run_id, config hash, model versions)
+history, limits ------+          |
+                                 v
+   load (+ proxies) -> valuation -> data-quality checks -> sensitivities
+        -> VaR (historical, delta-gamma-vega challenger, Monte Carlo) -> backtest
+        -> stress -> limits (first pass) -> concentration, liquidity, look-through
+        -> P&L explain (+ challenger) -> verdict, audit events, breach sync -> persist
+        -> regulatory (bank) / counterparty / fund -> limits (second pass, deferred types)
+        -> alerts -> final save
 ```
+
+Step by step, with what each stage reads and writes: `docs/07-eod-workflow.md`.
 
 ## Boundaries that must hold
 
