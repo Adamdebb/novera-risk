@@ -549,6 +549,28 @@ class RiskService:
             s = s[s["measure_id"] == measure_id]
         return _records(s.sort_values("scenario_date")) if len(s) else []
 
+    def run_options(self) -> dict[str, Any]:
+        """What a manual full end-of-day run can be launched on, and the manual runs made so far
+        (OPS-001): the stored market-snapshot dates, the latest run, and which engines a run
+        includes under the current settings."""
+        from novera.config import get_settings
+
+        st = get_settings()
+        snaps = self.repo.list_market_snapshots()
+        latest = self.repo.latest_run()
+        ids = self.repo.firm_ids()
+        jobs = [j for j in self.repo.load_jobs(200) if str(j.get("action", "")).startswith("MANUAL")][:20]
+        return {
+            "record": "OPS-001",
+            "firm_id": ids[0] if ids else None,
+            "snapshot_dates": [row[1].isoformat() for row in snaps[-10:]][::-1],
+            "latest_snapshot_date": snaps[-1][1].isoformat() if snaps else None,
+            "latest_run_date": latest.business_date.isoformat() if latest else None,
+            "counterparty_enabled": bool(st.exposure_enabled),
+            "regulatory_enabled": bool(st.regulatory_enabled),
+            "jobs": jobs,
+        }
+
     def rerun_options(self) -> dict[str, Any]:
         """The EOD stages an administrator can re-run on a stored run, and the re-runs made so
         far (OPS-002)."""
@@ -1013,6 +1035,36 @@ class RiskWriteService:
 
     def __init__(self, repo: DuckDBRepository) -> None:
         self.repo = repo
+
+    def run_full(
+        self,
+        actor: str,
+        reason: str = "",
+        business_date: str | None = None,
+        advance: bool = False,
+        cfg: Any = None,
+    ) -> dict[str, Any]:
+        """Launch one full end-of-day run by hand (OPS-001). Returns the job record with the
+        run it produced; a failed run comes back as a FAILED job with its error, not an
+        exception, so the launcher sees exactly what the scheduler would have logged."""
+        from datetime import date as _date
+
+        from novera.workflows.eod import EODConfig
+        from novera.workflows.scheduler import run_manual
+
+        if not actor.strip():
+            raise InvalidRequestError("name the actor: every manual run is audited")
+        bd = None
+        if business_date:
+            try:
+                bd = _date.fromisoformat(business_date)
+            except ValueError as e:
+                raise InvalidRequestError(f"business_date must be YYYY-MM-DD, got {business_date!r}") from e
+        ids = self.repo.firm_ids()
+        cfg = cfg or EODConfig(firm_id=ids[0] if ids else "GMB")
+        job = run_manual(self.repo, actor, reason, bd, advance, cfg)
+        run = RiskService._run_dict(self.repo.load_run(job.run_id)) if job.run_id else None
+        return {**job.to_dict(), "run": run}
 
     def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]:
         """Re-run one EOD stage of a stored run into a new RERUN run; the parent is untouched

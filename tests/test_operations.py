@@ -363,3 +363,37 @@ def test_source_catalogue_covers_every_factor_and_follows_the_adapter_maps():
     )
     assert groups["CDS:CDX.NA.IG"] == "CDS indices" and groups["CDS:FORD"] == "Single-name CDS"
     assert groups["CMD:GOLD"] == "Metal curves" and groups["IR:EUR"] == "EUR rates"
+
+
+def test_manual_run_is_recorded_as_a_job_with_its_launcher(db_path):
+    """A full run launched by hand (Admin page, `POST /admin/run`) is the scheduler's pipeline
+    under a named actor: one attempt, a MANUAL job, an audit event, and a FAILED job rather than
+    an exception when the run cannot proceed."""
+    from novera.api.service import RiskService
+    from novera.workflows.scheduler import run_manual
+
+    with DuckDBRepository(db_path) as repo:
+        with pytest.raises(ValueError, match="actor"):
+            run_manual(repo, "  ", cfg=CFG)
+        latest_date = repo.list_market_snapshots()[-1][1]
+        job = run_manual(repo, "Risk Control", "late trade booking", cfg=CFG)
+        assert job.status == "COMPLETED", job.error
+        assert job.action == "MANUAL_EOD" and job.attempts == 1 and job.business_date == latest_date
+        assert job.run_id and repo.load_run(job.run_id).business_date == latest_date
+        assert CFG.actor == "eod-scheduler"  # the caller's config is not touched
+        assert job.notes[0] == "launched by Risk Control: late trade booking"
+        assert repo.load_jobs()[0]["job_id"] == job.job_id
+        ev = [e for e in RiskService(repo).audit(limit=50) if e["subject"] == job.job_id]
+        assert ev and ev[0]["actor"] == "Risk Control" and ev[0]["event_type"] == "JOB_COMPLETED"
+        payload = ev[0]["payload"]
+        payload = json.loads(payload) if isinstance(payload, str) else payload
+        assert payload["source"] == "manual" and payload["reason"] == "late trade booking"
+        # advance: the latest day has a run, so the world moves one business day first
+        job2 = run_manual(repo, "Risk Control", advance=True, cfg=CFG)
+        assert job2.status == "COMPLETED", job2.error
+        assert job2.action == "MANUAL_ADVANCE_AND_EOD" and job2.business_date > latest_date
+        assert repo.list_market_snapshots()[-1][1] == job2.business_date
+        # a date before any stored snapshot cannot run: recorded, not raised
+        bad = run_manual(repo, "Risk Control", business_date=date(2000, 1, 3), cfg=CFG)
+        assert bad.status == "FAILED" and bad.error and bad.run_id is None
+        assert repo.load_jobs()[0]["status"] == "FAILED"

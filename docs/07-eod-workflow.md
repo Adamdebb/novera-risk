@@ -10,8 +10,9 @@ of each step lives in its methodology record (`docs/methodology/`).
 | Entry point | When | Notes |
 |---|---|---|
 | `uv run novera run eod [--business-date] [--fund]` | on demand | Business date defaults to the latest market snapshot |
-| `novera schedule` / `novera schedule --once` | daily at the configured time | Advances the simulated world one business day when the latest day already has a run, then runs EOD with three attempts and a RUN_FAILED alert on the last failure (OPS-001) |
-| `POST /admin/rerun`, Admin page, `novera rerun` | on demand | Re-runs one stage of a stored run into a new RERUN run (OPS-002); not a full run |
+| `novera schedule [--fund]` / `novera schedule --once [--fund]` | daily at the configured time, one process per firm | Advances the simulated world one business day when the latest day already has a run, then runs EOD with three attempts and a RUN_FAILED alert on the last failure (OPS-001) |
+| `POST /admin/run`, Admin page "Runs" | on demand | The scheduler's pipeline launched by a named person, for the bank or the fund; recorded as a MANUAL_EOD job with an audit event (OPS-001) |
+| `POST /admin/rerun`, Admin page "Runs", `novera rerun` | on demand | Re-runs one stage of a stored run into a new RERUN run (OPS-002); not a full run |
 
 ## The run record
 

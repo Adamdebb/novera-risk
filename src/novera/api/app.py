@@ -112,6 +112,13 @@ class PolicyBody(BaseModel):
     comment: str = ""
 
 
+class RunBody(BaseModel):
+    actor: str
+    reason: str = ""
+    business_date: str | None = None
+    advance: bool = False
+
+
 class RerunBody(BaseModel):
     run_id: str = "latest"
     stage: str
@@ -424,6 +431,16 @@ def apply_var_template(body: VarTemplateBody, svc: RiskWriteService = Depends(wr
     return svc.apply_var_template(body.template, body.actor, body.comment)
 
 
+@app.get("/admin/run/options", response_model=s.RunOptions)
+def run_options(svc: RiskService = Depends(service)):
+    return svc.run_options()
+
+
+@app.post("/admin/run", response_model=s.ManualRun)
+def run_full(body: RunBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.run_full(body.actor, body.reason, body.business_date, body.advance)
+
+
 @app.get("/admin/rerun/options", response_model=s.RerunOptions)
 def rerun_options(svc: RiskService = Depends(service)):
     return svc.rerun_options()
@@ -533,7 +550,7 @@ def analyst_provider():
     from novera.ai import make_provider
 
     p = make_provider(settings)
-    return {"provider": p.name, "model": p.model}
+    return {"provider": p.name, "model": p.model, "chain": getattr(p, "chain", [])}
 
 
 # --- agents and Portfolio Lab ------------------------------------------------------------------

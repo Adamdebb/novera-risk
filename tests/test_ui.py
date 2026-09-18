@@ -198,3 +198,15 @@ def test_trade_extract_filters_and_preview(app):
     picked = int(metrics["Trades selected"].replace(",", ""))
     assert 0 < picked < total
     assert (app.dataframe[0].value["desk_id"] == desk.options[0]).all()
+
+
+def test_admin_runs_configuration_offers_the_full_run(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Admin").run()
+    next(sb for sb in app.selectbox if sb.label == "Configuration").set_value("Runs").run()
+    assert not app.exception, [e.value for e in app.exception]
+    text = " ".join(m.value for m in app.markdown)
+    assert "Run the whole end-of-day process" in text and "Global Macro Bank" in text
+    assert any("Manual runs so far" in h.value for h in app.subheader)
+    next(r for r in app.radio if r.label == "What to run").set_value("One stage of a stored run").run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("Re-runs so far" in h.value for h in app.subheader)

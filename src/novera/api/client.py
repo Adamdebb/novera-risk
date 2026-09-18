@@ -56,6 +56,10 @@ class RiskClient(Protocol):
     def market_data_sources(self) -> dict[str, Any]: ...
     def stress_library(self) -> dict[str, Any]: ...
     def rerun_options(self) -> dict[str, Any]: ...
+    def run_options(self) -> dict[str, Any]: ...
+    def run_full(
+        self, actor: str, reason: str = "", business_date: str | None = None, advance: bool = False
+    ) -> dict[str, Any]: ...
     def signoff_status(self, run_id: str | None = None) -> dict[str, Any]: ...
     def signoff_policy(self) -> dict[str, Any]: ...
     def signoff_queue(self, limit: int = 20) -> list[dict[str, Any]]: ...
@@ -79,6 +83,7 @@ WRITE_METHODS = {
     "decide_increase",
     "cancel_increase",
     "rerun_stage",
+    "run_full",
     "sign_metric",
     "reject_metric",
     "set_signoff_policy",
@@ -125,7 +130,7 @@ class LocalClient:
 
             if name == "analyst_provider":
                 p = make_provider()
-                return {"provider": p.name, "model": p.model}
+                return {"provider": p.name, "model": p.model, "chain": getattr(p, "chain", [])}
             c = Analyst(self.db_path)
             if name == "analyst_history":
                 return c.history(*a, **kw)
@@ -244,6 +249,14 @@ class HttpClient:
 
     def rerun_options(self):
         return self._get("/admin/rerun/options")
+
+    def run_options(self):
+        return self._get("/admin/run/options")
+
+    def run_full(self, actor, reason="", business_date=None, advance=False):
+        return self._post_long(
+            "/admin/run", actor=actor, reason=reason, business_date=business_date, advance=advance
+        )
 
     def signoff_status(self, run_id=None):
         return self._get(f"/runs/{run_id or 'latest'}/signoff")

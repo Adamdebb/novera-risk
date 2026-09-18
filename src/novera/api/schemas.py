@@ -611,6 +611,38 @@ class VarSetup(ApiModel):
     base_window_days: int
 
 
+class JobRecord(ApiModel):
+    job_id: str
+    started_at: str
+    action: str
+    business_date: str | None = None
+    run_id: str | None = None
+    status: str
+    attempts: int = 0
+    error: str | None = None
+    finished_at: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class RunOptions(ApiModel):
+    """What a manual full end-of-day run can be launched on (OPS-001)."""
+
+    record: str
+    firm_id: str | None = None
+    snapshot_dates: list[str] = Field(description="Stored market-snapshot dates, latest first")
+    latest_snapshot_date: str | None = None
+    latest_run_date: str | None = None
+    counterparty_enabled: bool
+    regulatory_enabled: bool
+    jobs: list[JobRecord] = Field(description="Manual runs so far, latest first")
+
+
+class ManualRun(JobRecord):
+    """The job record of a manual full run and, when it completed, the run it produced."""
+
+    run: RunRecord | None = None
+
+
 class RerunOptions(ApiModel):
     """What an administrator can re-run and what has been re-run. Record OPS-002."""
 
@@ -907,6 +939,9 @@ class AnalystAnswer(ApiModel):
 class ProviderInfo(BaseModel):
     provider: str
     model: str | None = None
+    chain: list[str] = Field(
+        default_factory=list, description="Fallback order when more than one provider is configured"
+    )
 
 
 class AgentNote(ApiModel):
@@ -997,19 +1032,6 @@ class AlertRecord(ApiModel):
     run_id: str | None = None
     status: str
     deliveries: dict[str, Any] = Field(default_factory=dict)
-
-
-class JobRecord(ApiModel):
-    job_id: str
-    started_at: str
-    action: str
-    business_date: str | None = None
-    run_id: str | None = None
-    status: str
-    attempts: int = 0
-    error: str | None = None
-    finished_at: str | None = None
-    notes: list[str] = Field(default_factory=list)
 
 
 class ReconciliationDesk(ApiModel):

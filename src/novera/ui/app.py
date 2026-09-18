@@ -173,12 +173,14 @@ elif page == "Analyst":
     if prov["provider"] == "scripted":
         st.info(
             "Running the scripted provider: answers are templated from stored numbers. Set "
-            "ANTHROPIC_API_KEY in .env to switch to Claude."
+            "GEMINI_API_KEY in .env for the free Gemini tier, or ANTHROPIC_API_KEY for Claude."
         )
     else:
+        chain = prov.get("chain") or []
         st.caption(
-            f"Provider {prov['provider']} · model {prov['model']} · answers cite run ids and are stored "
-            "with their tool calls."
+            f"Provider {prov['provider']} · model {prov['model']}"
+            + (f" · fallback order {' → '.join(chain)}" if len(chain) > 1 else "")
+            + " · answers cite run ids and are stored with their tool calls."
         )
     if "analyst_chat" not in st.session_state:
         st.session_state.analyst_chat = []
@@ -585,9 +587,7 @@ elif page == "Admin":
         "Operational configurations for risk control. Every action names an actor and is written "
         "to the audit trail. Nothing here edits a stored run."
     )
-    config = st.selectbox(
-        "Configuration", ["VaR measures", "Sign-off policy", "Partial re-run of a single stage"]
-    )
+    config = st.selectbox("Configuration", ["VaR measures", "Sign-off policy", "Runs"])
     if config == "VaR measures":
         from novera.api.errors import ApiError
 
@@ -755,85 +755,204 @@ elif page == "Admin":
                 st.cache_data.clear()
             except ApiError as e:
                 st.error(str(e))
-    elif config == "Partial re-run of a single stage":
-        st.markdown(
-            "Re-run one stage of the EOD workflow on a stored run. The result is a new run of type "
-            "RERUN with the parent's results copied and only that stage recomputed from the same "
-            "snapshots (OPS-002). Stages downstream of it are copied, not recomputed, and listed as "
-            "such. A re-run never raises or escalates breaches, sends alerts, or becomes the latest EOD run."
+    elif config == "Runs":
+        from novera.api.errors import ApiError
+
+        mode = st.radio(
+            "What to run",
+            ["Full end-of-day run", "One stage of a stored run"],
+            horizontal=True,
+            help="A full run is the official end-of-day: a new EOD run that becomes the latest, "
+            "synchronises breaches and raises alerts. A partial re-run recomputes one stage of a "
+            "stored run into a RERUN run and touches nothing else (OPS-002).",
         )
-        opts = client.rerun_options()
-        face = "fund" if is_fund else "bank"
-        stages = {s["name"]: s for s in opts["stages"] if face in s["faces"]}
-        with st.form("rerun"):
-            c1, c2 = st.columns(2)
-            parent = c1.selectbox(
-                "Run to re-run", list(labels), index=list(labels).index(run_id), format_func=labels.get
+        if mode == "Full end-of-day run":
+            ro = client.run_options()
+            engines = ["valuation", "sensitivities", "VaR", "stress", "limits", "P&L explain", "data quality"]
+            if ro["regulatory_enabled"] and not is_fund:
+                engines.append("regulatory capital")
+            if ro["counterparty_enabled"] and not is_fund:
+                engines.append("counterparty exposure")
+            if is_fund:
+                engines.append("fund metrics")
+            st.markdown(
+                f"Run the whole end-of-day process for **{firm_name}** now, exactly as the scheduler "
+                f"would at {settings.eod_time} (OPS-001): {', '.join(engines)}, then breach "
+                "synchronisation and alerts. The run is recorded as a job with the person who "
+                "launched it and becomes the latest EOD run."
             )
-            stage = c2.selectbox("Stage", list(stages), format_func=lambda n: stages[n]["title"])
-            c3, c4 = st.columns(2)
-            actor = c3.text_input("Actor", value="Risk Control")
-            reason = c4.text_input("Reason", placeholder="e.g. market data correction on the USD 7Y node")
-            go = st.form_submit_button("Run the stage")
-        spec = stages[stage]
-        st.caption(
-            f"{spec['description']} Replaces: {', '.join(spec['tables'])}. Not recomputed: "
-            f"{', '.join(spec['dependents']) or 'nothing depends on it'}."
-        )
-        if go:
-            if not actor.strip():
-                st.error("Name the actor: every re-run is audited.")
-            else:
-                with st.spinner(f"Re-running {spec['title'].lower()} on {parent}..."):
-                    res = client.rerun_stage(parent, stage, actor.strip(), reason.strip())
-                info = res["rerun"]
-                st.success(
-                    f"Re-run {res['run_id']} completed in {info['seconds']:.0f}s "
-                    f"({info['copied_tables']} tables copied from {info['parent_run_id']})."
+            if is_fund:
+                duration = "under a minute for the demo fund"
+            elif ro["counterparty_enabled"]:
+                duration = (
+                    "about four and a half minutes for the demo bank, three of them in the counterparty "
+                    "engine (set NOVERA_EXPOSURE_ENABLED=false for a one-minute run)"
                 )
-                if info["changed"]:
-                    st.markdown("**Summary values that changed**")
-                    st.dataframe(
-                        pd.DataFrame(
-                            [
-                                {"measure": k, "before": str(v["before"]), "after": str(v["after"])}
-                                for k, v in info["changed"].items()
-                            ]
-                        ),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                else:
-                    st.info("The stage reproduced the parent's numbers exactly (same inputs, same results).")
-                if info["stale_stages"]:
-                    st.caption(f"Copied from the parent, not recomputed: {', '.join(info['stale_stages'])}.")
-                load_runs.clear()
-                st.caption("Select the new run in the sidebar to browse it.")
-                opts = client.rerun_options()  # the list below includes the run just made
-        st.subheader("Re-runs so far")
-        if opts["reruns"]:
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "run_id": r["run_id"],
-                            "business_date": r["business_date"],
-                            "stage": r["rerun"].get("stage"),
-                            "parent": r["rerun"].get("parent_run_id"),
-                            "actor": r["rerun"].get("actor"),
-                            "reason": r["rerun"].get("reason"),
-                            "status": r["status"],
-                            "changed": ", ".join(r["rerun"].get("changed", {})) or "nothing",
-                            "seconds": round(r["rerun"].get("seconds", 0) or 0),
-                        }
-                        for r in opts["reruns"]
-                    ]
-                ),
-                use_container_width=True,
-                hide_index=True,
+            else:
+                duration = "about a minute for the demo bank with the counterparty engine off"
+            st.caption(
+                f"Latest market snapshot {ro['latest_snapshot_date']} · latest run "
+                f"{ro['latest_run_date'] or 'none'} · takes {duration}. The page waits for it."
             )
+            with st.form("manual_run"):
+                c1, c2 = st.columns(2)
+                bd = c1.selectbox(
+                    "Business date",
+                    ro["snapshot_dates"],
+                    help="A stored market snapshot. The portfolio snapshot on or before it is used.",
+                )
+                advance = c2.checkbox(
+                    "Advance the simulated market by one business day first",
+                    value=False,
+                    help="Simulation only: bootstraps the next day's market from history and books a "
+                    "day of new business from the firm's own template, as the scheduler does. Applies "
+                    "when the latest day already has a completed run; the business date above is then "
+                    "ignored.",
+                )
+                c3, c4 = st.columns(2)
+                actor = c3.text_input("Actor", value="Risk Control", key="manual_run_actor")
+                reason = c4.text_input(
+                    "Reason",
+                    placeholder="e.g. late trade booking on the credit desk",
+                    key="manual_run_reason",
+                )
+                go = st.form_submit_button(f"Run the full end-of-day for {firm_name}")
+            if go:
+                if not actor.strip():
+                    st.error("Name the actor: every manual run is audited.")
+                else:
+                    try:
+                        with st.spinner(f"Running the end-of-day for {firm_name}, {duration}..."):
+                            res = client.run_full(actor.strip(), reason.strip(), bd, advance)
+                    except ApiError as e:
+                        st.error(str(e))
+                        res = None
+                    if res is not None:
+                        for n in res.get("notes", []):
+                            st.caption(n)
+                        if res["status"] == "COMPLETED" and res.get("run"):
+                            r = res["run"]
+                            sm = r["summary"]
+                            secs = sum(r.get("timings", {}).values())
+                            st.success(
+                                f"Run {r['run_id']} for {r['business_date']} completed in {secs:.0f}s: "
+                                f"verdict {r['verdict']}, VaR {money(sm.get('var'))}, "
+                                f"{sm.get('breaches', 0)} breach and {sm.get('warnings', 0)} warning."
+                            )
+                            load_runs.clear()
+                            st.cache_data.clear()
+                            st.caption("It is now the latest run; select it in the sidebar to browse it.")
+                        else:
+                            first = (res.get("error") or "unknown error").splitlines()[0]
+                            st.error(
+                                f"Run failed: {first}. The job {res['job_id']} is recorded with the error."
+                            )
+                    ro = client.run_options()
+            st.subheader("Manual runs so far")
+            if ro["jobs"]:
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "started_at": str(j["started_at"])[:19],
+                                "business_date": j["business_date"],
+                                "status": j["status"],
+                                "run_id": j["run_id"],
+                                "launched": "; ".join(j.get("notes", [])),
+                                "error": (j.get("error") or "").splitlines()[0] if j.get("error") else "",
+                            }
+                            for j in ro["jobs"]
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.caption("No manual run yet. Scheduled runs are listed under Alerts & jobs.")
         else:
-            st.caption("No re-run yet.")
+            st.markdown(
+                "Re-run one stage of the EOD workflow on a stored run. The result is a new run of type "
+                "RERUN with the parent's results copied and only that stage recomputed from the same "
+                "snapshots (OPS-002). Stages downstream of it are copied, not recomputed, and listed as "
+                "such. A re-run never raises or escalates breaches, sends alerts, or becomes the latest "
+                "EOD run."
+            )
+            opts = client.rerun_options()
+            face = "fund" if is_fund else "bank"
+            stages = {s["name"]: s for s in opts["stages"] if face in s["faces"]}
+            with st.form("rerun"):
+                c1, c2 = st.columns(2)
+                parent = c1.selectbox(
+                    "Run to re-run", list(labels), index=list(labels).index(run_id), format_func=labels.get
+                )
+                stage = c2.selectbox("Stage", list(stages), format_func=lambda n: stages[n]["title"])
+                c3, c4 = st.columns(2)
+                actor = c3.text_input("Actor", value="Risk Control")
+                reason = c4.text_input("Reason", placeholder="e.g. market data correction on the USD 7Y node")
+                go = st.form_submit_button("Run the stage")
+            spec = stages[stage]
+            st.caption(
+                f"{spec['description']} Replaces: {', '.join(spec['tables'])}. Not recomputed: "
+                f"{', '.join(spec['dependents']) or 'nothing depends on it'}."
+            )
+            if go:
+                if not actor.strip():
+                    st.error("Name the actor: every re-run is audited.")
+                else:
+                    with st.spinner(f"Re-running {spec['title'].lower()} on {parent}..."):
+                        res = client.rerun_stage(parent, stage, actor.strip(), reason.strip())
+                    info = res["rerun"]
+                    st.success(
+                        f"Re-run {res['run_id']} completed in {info['seconds']:.0f}s "
+                        f"({info['copied_tables']} tables copied from {info['parent_run_id']})."
+                    )
+                    if info["changed"]:
+                        st.markdown("**Summary values that changed**")
+                        st.dataframe(
+                            pd.DataFrame(
+                                [
+                                    {"measure": k, "before": str(v["before"]), "after": str(v["after"])}
+                                    for k, v in info["changed"].items()
+                                ]
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                    else:
+                        st.info(
+                            "The stage reproduced the parent's numbers exactly (same inputs, same results)."
+                        )
+                    if info["stale_stages"]:
+                        st.caption(
+                            f"Copied from the parent, not recomputed: {', '.join(info['stale_stages'])}."
+                        )
+                    load_runs.clear()
+                    st.caption("Select the new run in the sidebar to browse it.")
+                    opts = client.rerun_options()  # the list below includes the run just made
+            st.subheader("Re-runs so far")
+            if opts["reruns"]:
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "run_id": r["run_id"],
+                                "business_date": r["business_date"],
+                                "stage": r["rerun"].get("stage"),
+                                "parent": r["rerun"].get("parent_run_id"),
+                                "actor": r["rerun"].get("actor"),
+                                "reason": r["rerun"].get("reason"),
+                                "status": r["status"],
+                                "changed": ", ".join(r["rerun"].get("changed", {})) or "nothing",
+                                "seconds": round(r["rerun"].get("seconds", 0) or 0),
+                            }
+                            for r in opts["reruns"]
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.caption("No re-run yet.")
 
 elif page == "Sign-off":
     header("Sign-off and release")

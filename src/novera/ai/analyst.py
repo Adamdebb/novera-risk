@@ -95,11 +95,72 @@ class AnalystAnswer:
         }
 
 
+KEYED = ("anthropic", "gemini", "groq", "openrouter")
+
+
 def make_provider(settings: Settings | None = None) -> Provider:
+    """The provider the settings ask for.
+
+    ``NOVERA_LLM_PROVIDER`` names one provider, or a comma-separated chain tried in order
+    (``gemini,groq,openrouter,ollama``): a provider that has no key is left out, and one
+    that fails at run time (quota, outage, bad key) is skipped for the next in line. A member
+    can carry its own model after a colon (``openrouter:google/gemma-4-31b-it:free``); the
+    global ``NOVERA_LLM_MODEL`` applies only when a single provider is configured, because
+    model ids do not carry across providers.
+    ``auto`` is the chain of every provider with a key, in the order Anthropic, Gemini, Groq,
+    OpenRouter; with no key it is a configured OpenAI-compatible base URL, else the scripted
+    stand-in that needs nothing."""
+    from novera.ai.provider import FallbackProvider
+
     s = settings or get_settings()
-    if s.anthropic_api_key:
-        return AnthropicProvider(model=s.llm_model, api_key=s.anthropic_api_key)
-    return ScriptedProvider()
+    raw = (s.llm_provider or "auto").strip()
+    entries = [e.strip() for e in raw.split(",") if e.strip()]
+    if [e.lower() for e in entries] == ["auto"]:
+        entries = [p for p in KEYED if getattr(s, f"{p}_api_key")] or (
+            ["openai_compat"] if s.llm_base_url else ["scripted"]
+        )
+    parsed: list[tuple[str, str | None]] = []
+    for e in entries:
+        name, _, model = e.partition(":")
+        parsed.append((name.strip().lower(), model.strip() or None))
+    if len(parsed) == 1:
+        name, model = parsed[0]
+        return _single_provider(name, s, model or s.llm_model)
+    members = []
+    for name, model in parsed:
+        if name in KEYED and not getattr(s, f"{name}_api_key") and not s.llm_api_key:
+            continue  # no key: not part of the chain
+        members.append(_single_provider(name, s, model))  # the global model is not applied
+    if not members:
+        raise ValueError(f"none of {', '.join(n for n, _ in parsed)} has a key configured")
+    return members[0] if len(members) == 1 else FallbackProvider(members)
+
+
+def _single_provider(choice: str, s: Settings, model: str | None = None) -> Provider:
+    from novera.ai.provider import PRESETS, OpenAICompatProvider
+
+    if choice == "scripted":
+        return ScriptedProvider()
+    if choice == "anthropic":
+        return AnthropicProvider(model=model or "claude-opus-5", api_key=s.anthropic_api_key)
+    preset = PRESETS.get(choice, {})
+    if choice != "openai_compat" and not preset:
+        raise ValueError(
+            f"unknown NOVERA_LLM_PROVIDER {choice!r}; one of auto, anthropic, scripted, "
+            f"openai_compat, {', '.join(PRESETS)}"
+        )
+    base_url = s.llm_base_url or preset.get("base_url")
+    if not base_url:
+        raise ValueError("NOVERA_LLM_PROVIDER=openai_compat needs NOVERA_LLM_BASE_URL (the .../v1 base)")
+    key_setting = preset.get("key_setting")
+    api_key = s.llm_api_key or (getattr(s, key_setting) if key_setting else None)
+    if choice != "ollama" and not api_key:
+        var = key_setting.upper() if key_setting else "NOVERA_LLM_API_KEY"
+        raise ValueError(f"provider {choice} needs a key: set {var}")
+    model = model or preset.get("model")
+    if not model:
+        raise ValueError("NOVERA_LLM_PROVIDER=openai_compat needs NOVERA_LLM_MODEL")
+    return OpenAICompatProvider(choice, base_url, model, api_key)
 
 
 class Analyst:

@@ -133,3 +133,33 @@ def test_fund_run_outputs(fund_db):
             t["gross_leverage"], rel=1e-6
         )
         assert not repo.load_run_frame(fund_db["run_id"], "fund_summary").empty
+
+
+def test_fund_world_advances_with_its_own_template(fund_db):
+    """The scheduler's day advance draws the fund's new business from the fund template and
+    books it with its prime brokers, so `novera schedule --fund` and the manual run can advance
+    the fund like the bank (Round 28)."""
+    from novera.simulation.advance import advance_business_day
+    from novera.workflows.scheduler import run_once
+
+    cfg = EODConfig(
+        firm_id="MSF", counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1
+    )
+    with DuckDBRepository(fund_db["path"]) as repo:
+        before = repo.load_portfolio_snapshot(repo.list_portfolio_snapshots()[-1][0])
+        adv = advance_business_day(repo, "MSF")
+        assert adv.business_date == date(2026, 9, 14)
+        after = repo.load_portfolio_snapshot(adv.portfolio_snapshot_id)
+        new = [t for t in after.trades if t.trade_date == adv.business_date]
+        assert len(after.trades) > len(before.trades) and len(new) == len(after.trades) - len(before.trades)
+        fund_books = {b.book_id for b in repo.load_organisation("MSF").books}
+        assert new and all(t.book_id in fund_books for t in new)
+        bil = [t for t in new if t.clearing.value == "BILATERAL"]
+        assert all(t.counterparty_id.startswith("PB_") for t in bil)
+        assert any("new trades booked" in c for c in adv.changes)
+        # the scheduler on the fund: the advanced day has no run yet, so it runs it
+        job = run_once(repo, advance=True, cfg=cfg)
+        assert job.status == "COMPLETED", job.error
+        assert job.business_date == adv.business_date and job.run_id
+        assert repo.load_run(job.run_id).business_date == adv.business_date
+        assert repo.load_jobs()[0]["job_id"] == job.job_id

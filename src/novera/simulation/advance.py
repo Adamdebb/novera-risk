@@ -13,13 +13,15 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from novera.domain import Organisation
 from novera.domain.snapshots import PortfolioSnapshot
 from novera.market_data.history import MarketHistory
 from novera.market_data.snapshot import MarketSnapshot
 from novera.risk.scenarios import shock_type_of
+from novera.simulation.fund import FUND_TEMPLATE, build_fund_counterparties
 from novera.simulation.market_data import business_days_after
-from novera.simulation.organisation import build_counterparty_universe
-from novera.simulation.trades import Injection, evolve_portfolio
+from novera.simulation.organisation import CounterpartyUniverse, build_counterparty_universe
+from novera.simulation.trades import BANK_TEMPLATE, Injection, Template, evolve_portfolio
 from novera.storage.duckdb_repository import DuckDBRepository
 
 
@@ -37,6 +39,15 @@ def next_business_day(repo: DuckDBRepository) -> date:
     if not msnaps:
         raise RuntimeError("no market snapshots stored; run the simulator first")
     return business_days_after(msnaps[-1][1], 1)[0]
+
+
+def face_of(org: Organisation) -> tuple[Template, CounterpartyUniverse]:
+    """The trade template and counterparty universe the simulator used for this organisation:
+    the fund's strategies and prime brokers, or the bank's desks and dealers. New business on
+    an advanced day is drawn from the same template as day one."""
+    if org.firm.firm_type == "HEDGE_FUND":
+        return FUND_TEMPLATE, build_fund_counterparties(org)
+    return BANK_TEMPLATE, build_counterparty_universe(org)
 
 
 def advance_business_day(
@@ -83,7 +94,7 @@ def advance_business_day(
     psnaps = repo.list_portfolio_snapshots()
     prev_pf: PortfolioSnapshot = repo.load_portfolio_snapshot(psnaps[-1][0])
     org = repo.load_organisation(firm_id)
-    cp = build_counterparty_universe(org)
+    template, cp = face_of(org)
     hist2 = MarketHistory.from_long(repo.load_market_history())
     injections: list[Injection] = []
     nxt, changes = evolve_portfolio(
@@ -95,6 +106,7 @@ def advance_business_day(
         hist2,
         seed=int(new_date.strftime("%Y%m%d")) % 100_000,
         new_trade_share=new_trade_share,
+        template=template,
     )
     pf_id = repo.save_portfolio_snapshot(nxt)
     return AdvanceResult(new_date, market_id, pf_id, wide.index[i], changes)

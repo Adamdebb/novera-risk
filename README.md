@@ -44,7 +44,8 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
   increases, and run-to-run comparison. Two simulated business days out of the box.
 - Novera Analyst: ask questions in plain language, get answers built only from stored run
   results and engine what-ifs, every answer recorded with its tool calls. Works without
-  an API key through a scripted provider; set `ANTHROPIC_API_KEY` for Claude.
+  an API key through a scripted provider; set `GEMINI_API_KEY` (free tier) or
+  `ANTHROPIC_API_KEY` (Claude) to use a model. Groq, OpenRouter and a local Ollama work too.
 - Three VaR methods (historical full revaluation, delta-gamma-vega challenger, Monte
   Carlo), backtesting with Kupiec and Christoffersen tests, concentration and liquidity
   measures, and a daily risk pack in HTML, PDF and Excel.
@@ -64,8 +65,8 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
   review step. Portfolio Lab: plant problems at a chosen size in a sandbox and see what
   the platform detects. An MCP server exposes the same tools to Claude Desktop, Claude
   Code or any MCP client, read-only by default, every call audited.
-- Operations: a scheduler that advances the simulated world and runs EOD with retries,
-  alerts to Slack or email, an independent-challenger reconciliation that attributes the
+- Operations: a scheduler that advances the simulated world and runs EOD with retries, a
+  manual full run from the Admin page for the bank or the fund, alerts to Slack or email, an independent-challenger reconciliation that attributes the
   gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).
   A "Market data" page shows, for every risk factor, whether its history is real or
   synthetic and which free and paid sources could replace it.
@@ -84,7 +85,7 @@ uv run novera run eod --business-date 2026-09-11   # day 1: the four planted bre
 uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breaches auto-escalate
 uv run novera breach list
 uv run novera ask "Why did VaR change since yesterday?"
-uv run novera schedule --once      # advance one business day and run EOD, with alerts
+uv run novera schedule --once      # advance one business day and run EOD, with alerts (--fund for the fund)
 uv run novera rerun latest --stage stress --actor "Risk Control"   # re-run one stage into a new RERUN run; the parent is untouched
 uv run novera signoff sign VAR --actor "Head of Market Risk"        # sign-off and release of the run's metrics (OPS-003)
 uv run novera var-setup show / template hedge_fund --actor CRO      # which VaR measures run daily, for limits or information (OPS-004)
