@@ -1,14 +1,17 @@
 """LLM providers behind one small interface.
 
-``AnthropicProvider`` calls the Claude API. ``ScriptedProvider`` is a deterministic stand-in
+``AnthropicProvider`` calls the Claude API. ``OpenAICompatProvider`` calls any endpoint that
+speaks the OpenAI chat-completions shape, which covers the free tiers of Gemini, Groq and
+OpenRouter and a local Ollama (``PRESETS``). ``ScriptedProvider`` is a deterministic stand-in
 that plans tool calls from keywords and writes the answer from the tool results, so the
-platform demos and tests without credentials. Both speak the Messages API content-block
+platform demos and tests without credentials. All three speak the Messages API content-block
 shape so the Analyst loop is identical.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -27,6 +30,9 @@ class ToolUseBlock:
     name: str
     input: dict[str, Any]
     type: str = "tool_use"
+    extra: dict[str, Any] | None = None
+    """Provider-specific data that must travel back with the call (Gemini 3 returns a
+    ``thought_signature`` under ``extra_content`` and rejects a replay without it)."""
 
 
 @dataclass
@@ -50,8 +56,24 @@ class ProviderResponse:
             if isinstance(b, TextBlock):
                 out.append({"type": "text", "text": b.text})
             else:
-                out.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
+                block: dict[str, Any] = {"type": "tool_use", "id": b.id, "name": b.name, "input": b.input}
+                if b.extra:
+                    block["extra"] = b.extra
+                out.append(block)
         return out
+
+
+def strip_provider_extras(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The same history without the ``extra`` field on tool_use blocks, for providers that
+    reject unknown keys (the Messages API)."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list) and any(isinstance(b, dict) and "extra" in b for b in c):
+            c = [{k: v for k, v in b.items() if k != "extra"} if isinstance(b, dict) else b for b in c]
+            m = {**m, "content": c}
+        out.append(m)
+    return out
 
 
 class Provider(Protocol):
@@ -108,7 +130,7 @@ class AnthropicProvider:
             model=self.model,
             max_tokens=self.max_tokens,
             system=system,
-            messages=messages,
+            messages=strip_provider_extras(messages),
             tools=tools,
             thinking={"type": "adaptive"},
             output_config={"effort": self.effort},
@@ -148,6 +170,272 @@ class AnthropicProvider:
         user = f"Task: {kind}\n\n{instructions}\n\nEvidence (JSON):\n{json.dumps(evidence, default=str, indent=1)}"
         resp = self.complete(system, [{"role": "user", "content": user}], [])
         return resp.text, resp.usage
+
+
+# --- OpenAI-compatible (Gemini, Groq, OpenRouter, Ollama, ...) ---------------------------
+
+PRESETS: dict[str, dict[str, str | None]] = {
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-3.6-flash",  # 2.5-flash is closed to new keys since 2026-09
+        "key_setting": "gemini_api_key",
+    },
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "openai/gpt-oss-120b",  # llama-3.3-70b-versatile was retired by 2026-09-17
+        "key_setting": "groq_api_key",
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",  # free with tool calling, 2026-09-17
+        "key_setting": "openrouter_api_key",
+    },
+    "ollama": {"base_url": "http://localhost:11434/v1", "model": "qwen3:4b", "key_setting": None},
+}
+"""Free routes the platform knows. Model defaults are the ids current when written (2026-09);
+``NOVERA_LLM_MODEL`` overrides them when a provider renames its models."""
+
+
+class ProviderError(RuntimeError):
+    """The provider refused or failed the request; the message is safe to show."""
+
+
+def _strip_schema_keys(schema: Any, drop: frozenset[str] = frozenset({"additionalProperties"})) -> Any:
+    """JSON-schema keywords some compatible endpoints reject in function parameters."""
+    if isinstance(schema, dict):
+        return {k: _strip_schema_keys(v, drop) for k, v in schema.items() if k not in drop}
+    if isinstance(schema, list):
+        return [_strip_schema_keys(v, drop) for v in schema]
+    return schema
+
+
+def to_chat_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    """Messages-API tool definition -> chat-completions function tool."""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool["name"],
+            "description": tool.get("description", ""),
+            "parameters": _strip_schema_keys(tool["input_schema"]),
+        },
+    }
+
+
+def to_chat_messages(system: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Messages-API turns (text, tool_use, tool_result blocks) -> chat-completions messages
+    (assistant ``tool_calls``, ``tool`` role results)."""
+    out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    for m in messages:
+        content = m["content"]
+        if isinstance(content, str):
+            out.append({"role": m["role"], "content": content})
+            continue
+        if m["role"] == "assistant":
+            text = "\n".join(b["text"] for b in content if b.get("type") == "text").strip()
+            calls = []
+            for b in content:
+                if b.get("type") != "tool_use":
+                    continue
+                call: dict[str, Any] = {
+                    "id": b["id"],
+                    "type": "function",
+                    "function": {"name": b["name"], "arguments": json.dumps(b["input"])},
+                }
+                if b.get("extra"):
+                    call.update(b["extra"])
+                calls.append(call)
+            msg: dict[str, Any] = {"role": "assistant", "content": text or None}
+            if calls:
+                msg["tool_calls"] = calls
+            out.append(msg)
+            continue
+        texts: list[str] = []
+        for b in content:
+            if b.get("type") == "tool_result":
+                body = b.get("content", "")
+                if not isinstance(body, str):
+                    body = json.dumps(body, default=str)
+                if b.get("is_error"):
+                    body = f"ERROR: {body}"
+                out.append({"role": "tool", "tool_call_id": b["tool_use_id"], "content": body})
+            elif b.get("type") == "text":
+                texts.append(b["text"])
+        if texts:
+            out.append({"role": "user", "content": "\n".join(texts)})
+    return out
+
+
+def from_chat_completion(data: dict[str, Any], default_model: str) -> ProviderResponse:
+    """Chat-completions response -> the Messages-API shape the Analyst loop reads."""
+    choice = (data.get("choices") or [{}])[0]
+    msg = choice.get("message") or {}
+    content: list[TextBlock | ToolUseBlock] = []
+    raw_text = msg.get("content")
+    if isinstance(raw_text, list):  # some endpoints return content parts
+        raw_text = "".join(p.get("text", "") for p in raw_text if isinstance(p, dict))
+    if raw_text and str(raw_text).strip():
+        content.append(TextBlock(str(raw_text).strip()))
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        args = fn.get("arguments") or "{}"
+        try:
+            parsed = json.loads(args) if isinstance(args, str) else dict(args)
+        except json.JSONDecodeError:
+            parsed = {"_raw": args}
+        extra = {k: v for k, v in tc.items() if k not in ("id", "type", "function", "index")} or None
+        content.append(
+            ToolUseBlock(
+                tc.get("id") or f"call_{uuid.uuid4().hex[:12]}", fn.get("name", ""), parsed, extra=extra
+            )
+        )
+    finish = choice.get("finish_reason")
+    if any(isinstance(b, ToolUseBlock) for b in content):
+        stop = "tool_use"
+    elif finish == "length":
+        stop = "max_tokens"
+    else:
+        stop = "end_turn"
+    u = data.get("usage") or {}
+    usage = {
+        "input_tokens": int(u.get("prompt_tokens") or 0),
+        "output_tokens": int(u.get("completion_tokens") or 0),
+        "cache_read_input_tokens": 0,
+    }
+    return ProviderResponse(content, stop, str(data.get("model") or default_model), usage)
+
+
+class OpenAICompatProvider:
+    """Any endpoint speaking the OpenAI chat-completions shape with function tools. Used for
+    the free tiers (Gemini, Groq, OpenRouter) and local Ollama; see ``PRESETS``."""
+
+    def __init__(
+        self,
+        name: str,
+        base_url: str,
+        model: str,
+        api_key: str | None = None,
+        max_tokens: int = 8000,
+        timeout: float = 180.0,
+        transport: Any = None,
+    ) -> None:
+        import httpx
+
+        self.name = name
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.max_tokens = max_tokens
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self.client = httpx.Client(
+            base_url=self.base_url, headers=headers, timeout=timeout, transport=transport
+        )
+
+    def complete(
+        self, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> ProviderResponse:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": to_chat_messages(system, messages),
+            "max_tokens": self.max_tokens,
+        }
+        if tools:
+            body["tools"] = [to_chat_tool(t) for t in tools]
+            body["tool_choice"] = "auto"
+        try:
+            r = self.client.post("/chat/completions", json=body)
+        except Exception as e:  # noqa: BLE001 - network errors become one readable message
+            raise ProviderError(f"{self.name}: cannot reach {self.base_url} ({type(e).__name__}: {e})") from e
+        if r.status_code == 429:
+            wait = r.headers.get("retry-after")
+            raise ProviderError(
+                f"{self.name}: rate limit reached on the free tier"
+                + (f", retry after {wait}s" if wait else "")
+                + ". Wait, or set NOVERA_LLM_MODEL to a model with more headroom."
+            )
+        if r.status_code >= 400:
+            raise ProviderError(f"{self.name}: HTTP {r.status_code} from {self.base_url}: {r.text[:800]}")
+        return from_chat_completion(r.json(), self.model)
+
+    def draft(self, kind: str, evidence: dict[str, Any], instructions: str) -> tuple[str, dict[str, int]]:
+        from novera.config import get_settings
+
+        system = DRAFT_SYSTEM.format(platform=get_settings().platform_name)
+        user = f"Task: {kind}\n\n{instructions}\n\nEvidence (JSON):\n{json.dumps(evidence, default=str, indent=1)}"
+        resp = self.complete(system, [{"role": "user", "content": user}], [])
+        return resp.text, resp.usage
+
+
+# --- Fallback chain -----------------------------------------------------------------------
+
+logger = logging.getLogger("novera.ai.provider")
+
+
+class FallbackProvider:
+    """Providers tried in order. A provider that fails (quota, outage, bad key, unreachable)
+    is skipped and put in a cooldown, so a chain like Gemini, Groq, OpenRouter, Ollama keeps
+    answering while any free tier has credit. ``name`` and ``model`` are those of the provider
+    that answered last, so every stored answer names its real source."""
+
+    def __init__(self, providers: list[Any], cooldown_seconds: float = 300.0) -> None:
+        if not providers:
+            raise ValueError("a fallback chain needs at least one provider")
+        self.providers = providers
+        self.cooldown_seconds = cooldown_seconds
+        self.active = providers[0]
+        self._blocked_until: dict[str, float] = {}
+
+    @property
+    def name(self) -> str:
+        return self.active.name
+
+    @property
+    def model(self) -> str:
+        return self.active.model
+
+    @property
+    def chain(self) -> list[str]:
+        return [p.name for p in self.providers]
+
+    def _order(self) -> list[Any]:
+        import time
+
+        now = time.monotonic()
+        ready = [p for p in self.providers if self._blocked_until.get(p.name, 0.0) <= now]
+        return ready or list(self.providers)  # everything is cooling down: try them all again
+
+    def _block(self, provider: Any, err: Exception) -> None:
+        import re
+        import time
+
+        m = re.search(r"retry after (\d+)s", str(err))
+        wait = float(m.group(1)) if m else self.cooldown_seconds
+        self._blocked_until[provider.name] = time.monotonic() + wait
+
+    def _attempt(self, call: Any) -> Any:
+        failures: list[str] = []
+        for p in self._order():
+            try:
+                result = call(p)
+            except ProviderError as e:
+                failures.append(str(e))
+                self._block(p, e)
+                logger.warning("provider %s skipped, trying the next in the chain: %s", p.name, str(e)[:200])
+                continue
+            self.active = p
+            return result
+        raise ProviderError("every provider in the chain failed: " + " | ".join(failures))
+
+    def complete(
+        self, system: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> ProviderResponse:
+        def call(p: Any) -> ProviderResponse:
+            # tool-call extras (Gemini's thought signatures) only make sense to their author
+            msgs = messages if p is self.active else strip_provider_extras(messages)
+            return p.complete(system, msgs, tools)
+
+        return self._attempt(call)
+
+    def draft(self, kind: str, evidence: dict[str, Any], instructions: str) -> tuple[str, dict[str, int]]:
+        return self._attempt(lambda p: p.draft(kind, evidence, instructions))
 
 
 # --- Scripted -----------------------------------------------------------------------------

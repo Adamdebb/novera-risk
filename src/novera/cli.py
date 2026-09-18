@@ -45,7 +45,13 @@ def info() -> None:
     typer.echo(f"{s.platform_name} v{__version__} — {s.platform_tagline}")
     typer.echo(f"reporting currency: {s.reporting_currency}")
     typer.echo(f"database: {s.db_path}")
-    typer.echo(f"llm model: {s.llm_model} (key {'set' if s.anthropic_api_key else 'not set'})")
+    try:
+        from novera.ai import make_provider
+
+        p = make_provider(s)
+        typer.echo(f"llm provider: {p.name} · model {p.model} (NOVERA_LLM_PROVIDER={s.llm_provider})")
+    except ValueError as e:
+        typer.echo(f"llm provider: misconfigured: {e}")
 
 
 @app.command("init-db")
@@ -709,17 +715,26 @@ def schedule(
     advance: bool = typer.Option(True, help="Advance the simulated world by a business day before each run"),
     once: bool = typer.Option(False, help="Run one job now and exit (no waiting)"),
     workers: int = typer.Option(0, help="Processes for VaR (0 = all cores but one)"),
+    fund: bool = typer.Option(False, help="Schedule the hedge-fund database (NOVERA_FUND_DB_PATH)"),
 ) -> None:
-    """Run the in-process scheduler: EOD at a fixed time each business day, with retries and alerts."""
+    """Run the in-process scheduler: EOD at a fixed time each business day, with retries and alerts.
+
+    One process per firm face: run it once for the bank and once with --fund for the fund."""
     from novera.storage.duckdb_repository import DuckDBRepository
     from novera.workflows.eod import EODConfig
     from novera.workflows.scheduler import next_fire_time, run_once, serve
 
     s = get_settings()
-    cfg = EODConfig(workers=workers or None)
+    db_path = _db(fund)
+    with DuckDBRepository(db_path, read_only=True) as repo:
+        firms = repo.firm_ids()
+    if not firms:
+        typer.echo(f"no organisation stored in {db_path}; run `novera simulate` first")
+        raise typer.Exit(1)
+    cfg = EODConfig(firm_id=firms[0], workers=workers or None)
     hhmm = at or s.eod_time
     if once:
-        with DuckDBRepository(s.db_path) as repo:
+        with DuckDBRepository(db_path) as repo:
             job = run_once(repo, advance, cfg)
         typer.echo(
             f"job {job.job_id} {job.status} business date {job.business_date} run {job.run_id} "
@@ -733,7 +748,7 @@ def schedule(
     from datetime import datetime as _dt
 
     typer.echo(
-        f"scheduler running: EOD at {hhmm} on business days, advance={advance}, next fire "
+        f"scheduler running for {firms[0]}: EOD at {hhmm} on business days, advance={advance}, next fire "
         f"{next_fire_time(_dt.now().astimezone(), hhmm):%Y-%m-%d %H:%M}. Ctrl-C to stop."
     )
 
@@ -743,7 +758,7 @@ def schedule(
         typer.echo(f"  sleeping {seconds / 3600:.1f}h until the next run")
         _t.sleep(seconds)
 
-    for job in serve(str(s.db_path), hhmm, advance, cfg, sleep=log_sleep):
+    for job in serve(str(db_path), hhmm, advance, cfg, sleep=log_sleep):
         typer.echo(f"  job {job.job_id} {job.status} {job.business_date} run {job.run_id}")
 
 

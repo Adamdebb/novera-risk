@@ -5761,6 +5761,102 @@
         "title": "LookthroughReport",
         "type": "object"
       },
+      "ManualRun": {
+        "additionalProperties": true,
+        "description": "The job record of a manual full run and, when it completed, the run it produced.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "attempts": {
+            "default": 0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "business_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Date"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "started_at",
+          "action",
+          "status"
+        ],
+        "title": "ManualRun",
+        "type": "object"
+      },
       "MarginByBroker": {
         "additionalProperties": true,
         "properties": {
@@ -7335,6 +7431,14 @@
       },
       "ProviderInfo": {
         "properties": {
+          "chain": {
+            "description": "Fallback order when more than one provider is configured",
+            "items": {
+              "type": "string"
+            },
+            "title": "Chain",
+            "type": "array"
+          },
           "model": {
             "anyOf": [
               {
@@ -8481,6 +8585,40 @@
         "title": "RiskPackFiles",
         "type": "object"
       },
+      "RunBody": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "advance": {
+            "default": false,
+            "title": "Advance",
+            "type": "boolean"
+          },
+          "business_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Date"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor"
+        ],
+        "title": "RunBody",
+        "type": "object"
+      },
       "RunComparison": {
         "additionalProperties": true,
         "properties": {
@@ -9008,6 +9146,82 @@
           }
         },
         "title": "RunFigures",
+        "type": "object"
+      },
+      "RunOptions": {
+        "additionalProperties": true,
+        "description": "What a manual full end-of-day run can be launched on (OPS-001).",
+        "properties": {
+          "counterparty_enabled": {
+            "title": "Counterparty Enabled",
+            "type": "boolean"
+          },
+          "firm_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firm Id"
+          },
+          "jobs": {
+            "description": "Manual runs so far, latest first",
+            "items": {
+              "$ref": "#/components/schemas/JobRecord"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "latest_run_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Run Date"
+          },
+          "latest_snapshot_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Snapshot Date"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "regulatory_enabled": {
+            "title": "Regulatory Enabled",
+            "type": "boolean"
+          },
+          "snapshot_dates": {
+            "description": "Stored market-snapshot dates, latest first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Snapshot Dates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "snapshot_dates",
+          "counterparty_enabled",
+          "regulatory_enabled",
+          "jobs"
+        ],
+        "title": "RunOptions",
         "type": "object"
       },
       "RunRecord": {
@@ -12546,6 +12760,112 @@
           }
         },
         "summary": "Rerun Options"
+      }
+    },
+    "/admin/run": {
+      "post": {
+        "operationId": "run_full_admin_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Run Full"
+      }
+    },
+    "/admin/run/options": {
+      "get": {
+        "operationId": "run_options_admin_run_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Run Options"
       }
     },
     "/admin/signoff/policy": {

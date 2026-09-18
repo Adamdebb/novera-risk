@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 import traceback
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -118,6 +118,74 @@ def run_once(
                 business_date=str(job.business_date),
                 run_id=job.run_id,
                 attempts=job.attempts,
+            )
+        ]
+    )
+    return job
+
+
+def run_manual(
+    repo: DuckDBRepository,
+    actor: str,
+    reason: str = "",
+    business_date: date | None = None,
+    advance: bool = False,
+    cfg: EODConfig | None = None,
+) -> JobRecord:
+    """One full end-of-day run launched by a named person from the Admin page or the API
+    (OPS-001). Same pipeline as the scheduler, one attempt, no RUN_FAILED alert: the person
+    launching it sees the outcome. Recorded as a job (action MANUAL_EOD) and an audit event.
+
+    ``business_date`` defaults to the latest market snapshot. With ``advance`` the simulated
+    world (bank or fund) moves one business day first, as the scheduler does, but only when
+    the latest day already has a completed run; otherwise the run covers that latest day and
+    says so."""
+    if not actor.strip():
+        raise ValueError("name the actor: every manual run is audited")
+    cfg = replace(cfg or EODConfig(), actor=actor.strip())
+    action = "MANUAL_ADVANCE_AND_EOD" if advance else "MANUAL_EOD"
+    job = JobRecord(new_run_id("job"), datetime.now(UTC), action)
+    job.notes.append(f"launched by {cfg.actor}" + (f": {reason.strip()}" if reason.strip() else ""))
+    repo.init_schema()
+    try:
+        msnaps = repo.list_market_snapshots()
+        if not msnaps:
+            raise RuntimeError("no market data stored; run `novera simulate` first")
+        latest_date = msnaps[-1][1]
+        latest_run = repo.latest_run()
+        if advance:
+            if latest_run is not None and latest_run.business_date >= latest_date:
+                adv = advance_business_day(repo, cfg.firm_id)
+                job.notes.append(
+                    f"advanced to {adv.business_date} (bootstrap of {adv.bootstrap_from}); "
+                    + "; ".join(adv.changes)
+                )
+                business_date = adv.business_date
+            else:
+                job.notes.append(f"{latest_date} has no completed run yet, so it is run instead of advancing")
+                business_date = latest_date
+        job.business_date = business_date or latest_date
+        job.attempts = 1
+        res = run_eod(repo, cfg, job.business_date)
+        job.run_id, job.status = res.run.run_id, "COMPLETED"
+        job.business_date = res.run.business_date
+    except Exception as e:  # noqa: BLE001 - recorded on the job, shown to the person who launched it
+        job.status = "FAILED"
+        job.error = f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}"
+    job.finished_at = datetime.now(UTC)
+    repo.save_job(job.to_dict())
+    repo.save_audit_events(
+        [
+            AuditEvent.now(
+                cfg.actor,
+                f"JOB_{job.status}",
+                job.job_id,
+                action=job.action,
+                business_date=str(job.business_date),
+                run_id=job.run_id,
+                attempts=job.attempts,
+                reason=reason.strip(),
+                source="manual",
             )
         ]
     )

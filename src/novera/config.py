@@ -25,8 +25,20 @@ class Settings(BaseSettings):
     fund_db_path: Path = Path("./data/fund.duckdb")
 
     # AI layer. The engine never depends on these.
-    llm_model: str = "claude-opus-5"
+    llm_provider: str = "auto"
+    """auto | anthropic | gemini | groq | openrouter | ollama | openai_compat | scripted. ``auto``
+    picks the first provider with a key (Anthropic, Gemini, Groq, OpenRouter), else a configured
+    base URL, else the scripted stand-in."""
+    llm_model: str | None = None
+    """Model id; None means the provider's default (claude-opus-5, gemini-3.6-flash, ...)."""
+    llm_base_url: str | None = None
+    """OpenAI-compatible endpoint (the .../v1 base) for ``openai_compat``; presets fill their own."""
+    llm_api_key: str | None = None
+    """Key for ``openai_compat`` or to override a preset's own key variable."""
     anthropic_api_key: str | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
+    gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    groq_api_key: str | None = Field(default=None, validation_alias="GROQ_API_KEY")
+    openrouter_api_key: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY")
 
     # Alerts. Stored always; delivered only through channels that are configured.
     alerts_enabled: bool = True

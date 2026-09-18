@@ -80,8 +80,8 @@ uv run novera --help          # CLI
 uv run novera simulate        # simulated bank, portfolio, market data, limits
 uv run novera run eod         # governed EOD run, stores results and audit events (--business-date)
 uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
-uv run novera ask "..."       # Novera Analyst; scripted provider unless ANTHROPIC_API_KEY is set
-uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily
+uv run novera ask "..."       # Novera Analyst; scripted provider unless a key is set (GEMINI_API_KEY free, ANTHROPIC_API_KEY)
+uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily; --fund for the fund
 uv run novera rerun latest --stage stress --actor "Risk Control" --reason "..."   # one stage into a new RERUN run (OPS-002); Admin page does the same
 uv run novera signoff status / sign VAR --actor "Head of Market Risk" / reject ... --comment / policy --require VAR,STRESS   # sign-off and release (OPS-003)
 uv run novera var-setup show / template bank|hedge_fund --actor CRO   # the VaR matrix: measures produced daily, for limits or information (OPS-004); Admin page edits it

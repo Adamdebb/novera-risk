@@ -369,6 +369,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
         (s.MarketDataSources, client.get("/reference/market-data-sources").json()),
         (s.StressLibrary, client.get("/reference/stress-library").json()),
         (s.RerunOptions, client.get("/admin/rerun/options").json()),
+        (s.RunOptions, client.get("/admin/run/options").json()),
         (s.SignoffStatus, client.get("/runs/latest/signoff").json()),
         (s.SignoffPolicy, client.get("/admin/signoff/policy").json()),
         (s.VarSetup, client.get("/admin/var/setup").json()),
@@ -549,6 +550,21 @@ def test_measure_catalogue_matches_methodology_records():
     ids = (re.match(r"^(MR|CR|REG|HF|DQ)-(\d{3})-", f.name) for f in docs.glob("*.md"))
     expected = {f"{m.group(1)}-{m.group(2)}" for m in ids if m}
     assert expected <= set(catalogued), f"records not catalogued: {sorted(expected - set(catalogued))}"
+
+
+def test_admin_run_endpoints_validate_before_running(client):
+    """The options say what a manual full run can be launched on; a bad request is refused
+    before any engine starts. The run itself is covered in tests/test_operations.py."""
+    opts = client.get("/admin/run/options").json()
+    assert opts["record"] == "OPS-001" and opts["firm_id"] == "GMB"
+    assert opts["snapshot_dates"] and opts["snapshot_dates"][0] == opts["latest_snapshot_date"]
+    assert opts["latest_run_date"] == opts["latest_snapshot_date"] and opts["jobs"] == []
+    assert {"counterparty_enabled", "regulatory_enabled"} <= set(opts)
+    r = client.post("/admin/run", json={"actor": "  "})
+    assert r.status_code == 422 and "actor" in r.text
+    r = client.post("/admin/run", json={"actor": "Risk Control", "business_date": "yesterday"})
+    assert r.status_code == 422 and "YYYY-MM-DD" in r.text
+    assert client.get("/admin/run/options").json()["jobs"] == []
 
 
 def test_admin_rerun_endpoints(client):

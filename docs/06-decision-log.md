@@ -830,6 +830,150 @@ question. Asked for alternatives, picked **Novera Analyst**, and asked for the r
   databases were migrated on the day.
 - Reversal: the same substitution backwards; old audit rows keep `COPILOT_ANSWER`.
 
+## Round 27 — Manual full run from the Admin page (2026-09-16)
+
+Context: the owner asked for a button in Admin to run the whole process by hand for the bank
+or the fund, and whether it should be merged with the partial re-run. Built without a
+question round; the choices below are defaults to confirm.
+
+### 27.1 One Admin configuration or two
+- Options: merge into one "Runs" configuration with a mode switch ★ · keep two entries
+- Choice (default): **one configuration, "Runs", with two modes**: "Full end-of-day run" and
+  "One stage of a stored run". Both launch a run and both name an actor and a reason, so they
+  belong together; the mode switch keeps the semantics apart (a full run is the official EOD
+  that becomes the latest, synchronises breaches and alerts; a partial re-run is a RERUN that
+  touches nothing else). The help text on the switch says exactly that.
+- Where: Admin page "Runs"; `GET /admin/run/options`, `POST /admin/run`; `run_manual` in
+  `workflows/scheduler.py`; OPS-001 section "Manual run".
+
+### 27.2 Which firm
+- Options: the firm selected in the sidebar ★ · a bank/fund choice on the button
+- Choice (default): **the sidebar firm.** The page is already on one database; the button is
+  labelled with that firm's name so there is no doubt which one runs.
+
+### 27.3 What a manual run records
+- Options: a job like the scheduler's, with the launcher named ★ · an audit event only · nothing
+- Choice (default): **a job (action MANUAL_EOD or MANUAL_ADVANCE_AND_EOD) plus an audit event
+  under the launcher's name**, so manual and scheduled runs share one log on the Alerts & jobs
+  page. One attempt and no RUN_FAILED alert, because the launcher is watching; a failure is a
+  FAILED job with its error, returned to the page rather than raised.
+- Reversal: retries or the failure alert are one argument each on `run_manual`.
+
+### 27.4 Waiting for it
+- Options: the page waits with a spinner ★ · a background job the page polls
+- Choice (default): **the page waits**, with the expected duration stated before the button
+  (about four and a half minutes for the demo bank, under a minute for the fund). The HTTP
+  client uses the long timeout already used by the agents. A queued background job is the
+  right design once runs move to a server; the job table is already the record it would need.
+
+### 27.5 Day advance on the fund
+- Found while smoke-testing on a copy of the fund database: `advance_business_day` calls the
+  bank's trade recipes, which the fund organisation does not fit (`ValueError: high <= 0`
+  from `evolve_portfolio`). This also means `novera schedule` cannot advance the fund, which
+  the scheduler had never claimed to do (it has no `--fund` flag).
+- Choice (default): **the option is offered on the bank only** (`advance_supported` in the
+  run options, from the firm type); a request on the fund is noted on the job and the run
+  covers the latest stored day. A fund-aware new-business generator is a simulation item,
+  listed under "Choices worth a second look". Resolved in Round 28 the same day.
+
+## Round 28 — The scheduler serves the fund (2026-09-16)
+
+Context: the owner asked for the hedge-fund scheduler after Round 27 found that the day
+advance failed on the fund. Built without a question round; defaults to confirm.
+
+### 28.1 Why the advance failed, and the fix
+- Finding: `advance_business_day` rebuilt the bank's counterparty universe and let
+  `evolve_portfolio` default to the bank template, although `novera simulate --template
+  hedge_fund` already builds the fund's day 2 with `FUND_TEMPLATE` and
+  `build_fund_counterparties`. Nothing was missing in the simulator; the advance did not
+  select the fund face.
+- Choice (default): **`face_of(org)` in `simulation/advance.py`** returns the template and
+  counterparty universe from the firm type, and the advance passes the template through.
+  `advance_supported` and the Admin gating from 27.5 are removed; the checkbox is offered
+  on both firms.
+
+### 28.2 One scheduler process per firm
+- Options: `novera schedule --fund` as a second process ★ · one process serving both
+  databases in turn · a firm list in settings
+- Choice (default): **one process per firm face**, `novera schedule [--fund]`, the firm id
+  read from the database. Two databases are two independent worlds with their own EOD time
+  and job log; a single loop would couple their failures and retries. A supervisor that
+  starts both is deployment, not engine.
+- Where: `novera schedule --fund`, OPS-001 "Scheduler" and "Day advance", test
+  `test_fund_world_advances_with_its_own_template`.
+
+## Round 29 — A free LLM provider for simulations (2026-09-16)
+
+Context: the owner does not want to pay per token while simulating and asked whether a free
+provider's key can be linked. The Claude API has no free tier and a Claude subscription
+cannot be used by an application. One question round.
+
+### 29.1 Which free provider
+- Options: Google Gemini free tier ★ · Groq free tier · OpenRouter free models · Ollama local
+- Choice (owner): **Gemini first**, because its Flash models handle function calling well
+  and the AI Studio key is free. Ollama was advised against on this machine (8 GB of RAM: a
+  model that fits is weak at tool calling and competes with DuckDB and the dashboard).
+- Trade-off stated: on the free tier Google may use prompts to improve its products; every
+  number in the platform is simulated, so accepted.
+
+### 29.2 One adapter for all of them
+- Options: one OpenAI-compatible adapter with presets ★ · a Gemini SDK adapter · one adapter
+  per provider
+- Choice (default): **one adapter**, `OpenAICompatProvider`, since Gemini, Groq, OpenRouter
+  and Ollama all expose the OpenAI chat-completions shape with function tools. `PRESETS`
+  holds base URL, default model and key variable per provider; `NOVERA_LLM_PROVIDER` selects,
+  `auto` takes the first key found (Anthropic, Gemini, Groq, OpenRouter), then
+  `NOVERA_LLM_BASE_URL`, else scripted. Uses `httpx`, already a dependency; no new package.
+  `additionalProperties` is stripped from tool schemas because some compatible endpoints
+  reject it.
+- Where: `ai/provider.py`, `make_provider` in `ai/analyst.py`, settings `llm_provider`,
+  `llm_base_url`, `llm_api_key`, `gemini_api_key`, `groq_api_key`, `openrouter_api_key`;
+  `llm_model` now defaults to None (the provider's default). AI-001 "Providers".
+- Tested live the same evening once the owner added a key. Two things surfaced and were
+  fixed: `gemini-2.5-flash` is closed to new keys (preset moved to `gemini-3.6-flash`), and
+  Gemini 3 rejects a replayed tool call without its `thought_signature`, so provider extras
+  now travel on the `ToolUseBlock` and are echoed back (stripped for Anthropic). First
+  sourced answer: three turns, 14 s, correct run ids. Preset model ids will drift again;
+  `NOVERA_LLM_MODEL` is the override.
+
+## Round 30 — Fallback chain across the free tiers (2026-09-17)
+
+Context: the owner wants Novera to start on Gemini and move to Groq, then OpenRouter, then
+Ollama by itself when a tier runs out of credit. Built without a question round.
+
+### 30.1 How the chain is expressed
+- Options: comma list in `NOVERA_LLM_PROVIDER` ★ · a separate `NOVERA_LLM_FALLBACKS` · fixed
+  order in code
+- Choice (default): **the same setting takes a comma-separated chain**
+  (`gemini,groq,openrouter,ollama`), so one variable says everything. Members without a key
+  are dropped at build time; `auto` becomes the chain of every keyed provider (Anthropic,
+  Gemini, Groq, OpenRouter). `.env.example` ships the owner's order.
+
+### 30.2 What counts as "no credit"
+- Choice (default): **any `ProviderError`** (429 quota, 5xx, bad key, model gone, unreachable)
+  moves to the next member; the failed member rests for the endpoint's `retry-after` or five
+  minutes so a dead tier is not re-tried on every turn, and when every member is resting they
+  are all tried again. If all fail, one error lists each failure. The answer records the
+  provider that actually answered (`name`/`model` follow the last success).
+- Mid-conversation switch: Gemini's thought signatures are stripped when another provider
+  takes over the same history (Round 29 extras).
+- Where: `FallbackProvider` in `ai/provider.py`, `make_provider`; `ProviderInfo.chain` shows
+  the order on the Analyst page.
+
+### 30.3 Models in a chain
+- Found live: the owner had `NOVERA_LLM_MODEL` set to an OpenRouter id and the chain applied
+  it to Gemini too, which answered 404. Model ids do not carry across providers.
+- Choice (default): **the global model applies to a single provider only; a chain member
+  names its own model after a colon** (`openrouter:google/gemma-4-31b-it:free`, split on the
+  first colon so OpenRouter's `:free` suffix survives), else the preset default.
+
+### 30.4 Seeing why the chain moved
+- Found live: a chain answered from OpenRouter while Gemini was fine a minute later; the
+  per-minute quota hit was invisible. Groq's preset model had also been retired.
+- Choice (default): **each skipped member is logged as a warning** (`novera.ai.provider`,
+  printed on stderr by `novera ask`), naming the provider and the error; Groq's preset is
+  `openai/gpt-oss-120b`. Preset ids will keep drifting; the chain makes that survivable.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).

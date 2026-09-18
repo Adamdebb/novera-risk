@@ -68,7 +68,7 @@ backtesting (MR-011), the daily risk pack (RP-001) and the morning dashboard.
 - [x] Novera Analyst (AI-001), pulled forward from Phase 7: tool-calling over the stored run with
       a what-if engine, stored answers with tool calls and run ids, Claude Opus 5 or a scripted
       provider without credentials; API, `novera ask` and a chat page
-- [x] Scheduler and alerts (OPS-001): `novera schedule` with retries, job log, day advance
+- [x] Scheduler and alerts (OPS-001): `novera schedule [--fund]` with retries, job log, day advance
       by historical bootstrap; alerts stored always, delivered by Slack webhook or email
 - [x] Independent-challenger reconciliation (MR-009): simulated official feed with four
       planted differences, gap attributed to scope, market data, pricing model, methodology
