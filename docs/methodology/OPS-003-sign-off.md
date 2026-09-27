@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.workflows.signoff`, `GET /runs/{run_id}/signoff`, `POST .../signoff/{metric}/sign` and `/reject`, `GET/POST /admin/signoff/policy`, `GET /signoff/queue`, `novera signoff` |
-| Last validated | 2026-09-16 |
+| Last validated | 2026-09-27 |
 
 ## Definition
 After the end-of-day run has stored its results, named people sign each metric that the
@@ -38,8 +38,14 @@ run not yet released, including past ones: release status is computed from the c
 policy, never stored as a snapshot.
 
 ## Rules
-- Only COMPLETED runs of type EOD or RERUN can be signed. Metrics that do not apply to the
-  firm's face are rejected.
+- Only COMPLETED and PARTIAL runs of type EOD or RERUN can be signed. Metrics that do not apply
+  to the firm's face are rejected.
+- On a PARTIAL run a metric whose stage failed is UNAVAILABLE, with the stage and its error:
+  COUNTERPARTY reads the counterparty engine, CAPITAL the regulatory engine, FUND the fund
+  engine, and LIMITS all three plus the second limit pass, because the counterparty and fund
+  limits are measured there. An unavailable metric cannot be signed (it can be rejected), so a
+  policy that requires it keeps the run PENDING. The re-run of the failed stage (OPS-002) is a
+  new run, signed in its place.
 - **Sign** needs an actor; allowed from PENDING or REJECTED; a second signature on a SIGNED
   metric is refused. On a RED verdict, signing DATA_QUALITY needs a comment and is flagged
   as an override (DQ-001: RED results are not published without an override event).
@@ -68,9 +74,11 @@ record. Optional metrics can be signed but never affect release.
 ## Validation tests
 `test_signoff_policy_release_and_override` (rules, frozen values, release and withdrawal, RED
 override, policy change, audit events, the run untouched), `test_signoff_endpoints` (routes,
-409 conflicts, policy narrowing releases a run), the page in `tests/test_ui.py`.
+409 conflicts, policy narrowing releases a run), `test_a_failed_late_engine_leaves_a_partial_run`
+(an unavailable metric cannot be signed; the re-run can), the page in `tests/test_ui.py`.
 
 ## Change history
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-16 | Sign-off metrics, policy, release status, page and Admin section (decision 24.1) | Novera |
+| 1.1.0 | 2026-09-27 | PARTIAL runs signable; metrics of a failed stage UNAVAILABLE (decision 32.4) | Novera |

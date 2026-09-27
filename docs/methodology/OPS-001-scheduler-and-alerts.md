@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.workflows.scheduler`, `novera.workflows.alerts`, `novera.simulation.advance`, `GET /admin/run/options`, `POST /admin/run` |
-| Last validated | 2026-09-16 |
+| Last validated | 2026-09-27 |
 
 ## Scheduler
 `novera schedule` runs in-process: it waits for the configured wall-clock time on business
@@ -16,7 +16,15 @@ is read from the database, so the job and the day advance use that firm's organi
 business day when the latest day already has a completed run (optional), runs the EOD
 pipeline with up to three attempts and increasing backoff, records the attempt in the
 job log with its run id or error, raises a CRITICAL alert if all attempts fail, and writes
-an audit event. `--once` runs a single job immediately.
+an audit event. `--once` runs a single job immediately; it exits 0 when the job is COMPLETED
+or SKIPPED, 2 when it is PARTIAL and 1 when it FAILED.
+
+Only an exception retries. A run that stored its core results and then lost the regulatory,
+counterparty or fund engine ends PARTIAL (docs/07-eod-workflow.md, "Failure behaviour"): the job
+is PARTIAL too, is not retried (a retry is a whole new run of several minutes that would most
+likely fail the same way), and a RUN_PARTIAL alert names the failed stage. The fix is a partial
+re-run of that stage (OPS-002). A PARTIAL run covers its day, so the next scheduled job
+advances past it.
 
 ## Manual run
 The same pipeline can be launched by hand from the Admin page ("Runs", mode "Full end-of-day
@@ -47,6 +55,7 @@ changes under a stored run.
 | AUTO_ESCALATION | CRITICAL | escalation target, owner |
 | BACK_WITHIN_LIMIT | INFO | owner |
 | RUN_VERDICT (AMBER / RED) | WARNING / CRITICAL | Market Risk Control |
+| RUN_PARTIAL | WARNING | Risk IT, Market Risk Control |
 | RUN_SUMMARY | INFO | Market Risk |
 | RUN_FAILED | CRITICAL | Risk IT, Market Risk Control |
 
@@ -65,6 +74,7 @@ it speaks plain SMTP, which is what a local relay or a development sink expects.
 `tests/test_operations.py`: alert derivation, partial delivery, suppression, failed-run
 alert, weekend skipping, advance-and-run, skip when already run, injected clock loop,
 email channel message and TLS/login behaviour, `alert test` without a channel, manual run
-(job, audit event, advance, failure recorded). `tests/test_fund.py`: the fund advances with its
+(job, audit event, advance, failure recorded). `tests/test_workflows.py`:
+`test_a_failed_late_engine_leaves_a_partial_run` (RUN_PARTIAL alert, no retry of a PARTIAL day). `tests/test_fund.py`: the fund advances with its
 own template and prime brokers, then `run_once` runs the new day. `tests/test_api.py`: run options and request
 validation. `tests/test_ui.py`: the Runs configuration renders both modes.

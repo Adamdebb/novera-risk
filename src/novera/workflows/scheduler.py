@@ -28,7 +28,7 @@ class JobRecord:
     action: str  # EOD, ADVANCE_AND_EOD
     business_date: date | None = None
     run_id: str | None = None
-    status: str = "RUNNING"  # RUNNING, COMPLETED, FAILED, SKIPPED
+    status: str = "RUNNING"  # RUNNING, COMPLETED, PARTIAL, FAILED, SKIPPED
     attempts: int = 0
     error: str | None = None
     finished_at: datetime | None = None
@@ -89,7 +89,7 @@ def run_once(
             job.attempts = attempt
             try:
                 res = run_eod(repo, cfg or EODConfig(), latest_date)
-                job.run_id, job.status = res.run.run_id, "COMPLETED"
+                job.run_id, job.status = res.run.run_id, res.run.status  # COMPLETED or PARTIAL
                 last_error = None
                 break
             except Exception as e:  # noqa: BLE001 - retried, then alerted
@@ -167,7 +167,7 @@ def run_manual(
         job.business_date = business_date or latest_date
         job.attempts = 1
         res = run_eod(repo, cfg, job.business_date)
-        job.run_id, job.status = res.run.run_id, "COMPLETED"
+        job.run_id, job.status = res.run.run_id, res.run.status  # COMPLETED or PARTIAL
         job.business_date = res.run.business_date
     except Exception as e:  # noqa: BLE001 - recorded on the job, shown to the person who launched it
         job.status = "FAILED"

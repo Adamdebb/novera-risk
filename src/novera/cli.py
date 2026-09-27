@@ -399,7 +399,7 @@ def run_eod_cmd(
     workers: int = typer.Option(0, help="Processes for full-revaluation VaR (0 = all cores but one)"),
     fund: bool = typer.Option(False, help="Run on the hedge-fund database (NOVERA_FUND_DB_PATH)"),
 ) -> None:
-    """Run the end-of-day pipeline and store an auditable run."""
+    """Run the end-of-day pipeline and store an auditable run. Exits 2 when the run is PARTIAL."""
     from datetime import date as _date
 
     from novera.storage.duckdb_repository import DuckDBRepository
@@ -427,6 +427,11 @@ def run_eod_cmd(
         steps = ", ".join(f"{k} {v / m:+.2f}" for k, v in sm["pnl_steps"].items() if abs(v) > 1e3)
         typer.echo(f"  P&L {sm['pnl_total'] / m:+,.2f}m  [{steps}]")
     typer.echo("  timings: " + ", ".join(f"{k} {v:.1f}s" for k, v in r.timings.items()))
+    for stage, err in r.failed_stages.items():
+        typer.secho(f"  failed stage {stage}: {err}", fg=typer.colors.YELLOW)
+    if r.failed_stages:
+        typer.echo(f"  re-run it with: novera rerun {r.run_id} --stage <stage>")
+        raise typer.Exit(2)  # PARTIAL: the core results are stored, a later engine is missing
 
 
 @app.command("rerun")
@@ -746,7 +751,7 @@ def schedule(
             typer.echo(f"  {n}")
         if job.error:
             typer.echo(f"  error: {job.error.splitlines()[0]}")
-        raise typer.Exit(0 if job.status in ("COMPLETED", "SKIPPED") else 1)
+        raise typer.Exit({"COMPLETED": 0, "SKIPPED": 0, "PARTIAL": 2}.get(job.status, 1))
     from datetime import datetime as _dt
 
     typer.echo(

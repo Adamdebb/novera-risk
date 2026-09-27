@@ -25,6 +25,16 @@ Before any number is computed the run gets a `RunRecord` with:
   `config_hash` of both;
 - `status`, the data-quality `verdict`, a `summary` of headline numbers and `timings` per step.
 
+| Status | Meaning |
+|---|---|
+| RUNNING | Stored at step 14 while the regulatory, counterparty and fund engines run; left behind only if the process dies |
+| COMPLETED | Every step ran |
+| PARTIAL | The core results (steps 1 to 14) are stored and a later engine failed; `summary.failed_stages` names it with its error |
+| FAILED | A re-run whose stage raised (OPS-002); an EOD run that fails before step 14 leaves no record |
+
+COMPLETED and PARTIAL runs are readable: `latest` and the dashboard's default run are the
+newest of either, never a RUNNING one.
+
 Every result table is keyed by `run_id` and is never edited afterwards (rule 5). Running the
 same snapshots with the same code and configuration reproduces the same numbers; the re-run
 tests check this by recomputing a stage and comparing it with the stored table.
@@ -50,13 +60,13 @@ per core).
 | 11 | `concentration` | Concentration by dimension, top positions and tenor; liquidity horizons and the liquidity-adjusted VaR; fund look-through | valuation, VaR contributions, sensitivities | `concentration*`, `liquidity_*`, `lookthrough_*`, `risk_flags` | MR-012 to MR-014 | 0.1s |
 | 12 | `pnl` | Day-on-day P&L explain as a full-revaluation waterfall from the previous market and portfolio, with a Greeks-based challenger; a data-quality post-check flags trades whose challenger misses beyond tolerance | previous snapshots, steps 2 and 4 | `pnl_steps`, `pnl_by_trade`, `pnl_challenger` | MR-007, DQ-001 | 8.6s |
 | 13 | verdict and workflow | Verdict from the findings (RED on any CRITICAL, AMBER on any MAJOR or MINOR, GREEN otherwise); DQ_FINDING, LIMIT_BREACH and LIMIT_WARNING audit events; breach synchronisation for the first-pass limits: raise, update, auto-escalate, flag back-within-limit | steps 3 and 10 | breaches, breach actions, audit events | DQ-001, MR-008 | in `limits` |
-| 14 | `persist` | Writes the run record and every table above, plus the Parquet matrices under `data/runs/<run_id>/` | | all of the above | | 0.4s |
+| 14 | `persist` | Writes the run record (status RUNNING) and every table above, plus the Parquet matrices under `data/runs/<run_id>/` | | all of the above | | 0.4s |
 | 15 | `regulatory` (bank) | FRTB SA and IMA (with the P&L attribution inputs), SA-CCR, SIMM, BA-CVA and the cash ladder, computed from the stored valuation and sensitivities of this run | stored run | `reg_*` | REG records | 3.5s |
 | 16 | `counterparty` | Monte Carlo exposure paths per netting set, CSA collateral with the margin period, EE, PFE, CVA and DVA, wrong-way flags | stored run, stress table | `cp_*`, Parquet grid | CR-001 to CR-004 | 197s |
 | 17 | `fund` (fund face) | Leverage, prime-broker margin, factor exposures, redemption stress, strategy attribution, crowding | stored run | `fund_*` | HF records | |
-| 18 | limits second pass | Re-monitors every limit with the counterparty PFE and fund metrics now available, replaces the `limits` table, and synchronises breaches for the deferred limit types only | steps 10, 16, 17 | `limits`, breaches, audit events | MR-006, MR-008 | |
+| 18 | limits second pass (`limits_second_pass`) | Re-monitors every limit with the counterparty PFE and fund metrics now available, replaces the `limits` table, and synchronises breaches for the deferred limit types only | steps 10, 16, 17 | `limits`, breaches, audit events | MR-006, MR-008 | |
 | 19 | `alerts` | Builds RUN_SUMMARY, RUN_VERDICT, NEW_BREACH, AUTO_ESCALATION and BACK_WITHIN_LIMIT alerts from the run and its breach outcome, stores every alert, and delivers those at or above the configured severity through Slack or email when a channel is configured, de-duplicating by subject and date | run, breach outcome | `alert` rows | OPS-001 | 4.9s |
-| 20 | final save | Writes the run record again with the engine summaries and every timing | | `risk_run` | | |
+| 20 | final save | Sets the status (COMPLETED, or PARTIAL with `failed_stages`), writes RUN_FINISHED and the run record with the engine summaries and every timing | | `risk_run`, audit event | | |
 
 The demo bank run takes about four and a half minutes, of which the counterparty engine is
 three. With the exposure engine off (`NOVERA_EXPOSURE_ENABLED=false`) a run is about a minute.
@@ -79,18 +89,25 @@ three. With the exposure engine off (`NOVERA_EXPOSURE_ENABLED=false`) a run is a
 
 ## Failure behaviour
 
-An exception anywhere propagates out of `run_eod`. From the scheduler this means up to three
-attempts with a growing pause, a job record with the traceback, and a RUN_FAILED alert. Two
-consequences worth knowing:
+Where the failure happens decides what is left:
 
-- A failure before step 14 leaves no run record and no tables: the day is simply missing
-  until the next attempt.
-- The run record is marked COMPLETED at step 14, before the regulatory, counterparty and
-  fund engines run. A failure in steps 15 to 19 therefore leaves a COMPLETED run whose
-  summary lacks those engines' blocks and whose `reg_*`, `cp_*` or `fund_*` tables are
-  absent. The dashboard shows the gap on the Capital and Counterparty pages, and the stage
-  can be re-run from the Admin page. Marking such a run PARTIAL is a candidate improvement
-  (decision log, second look).
+- A failure up to step 14 propagates out of `run_eod` and leaves no run record and no tables:
+  the day is simply missing until the next attempt. From the scheduler this means up to three
+  attempts with a growing pause, a job record with the traceback, and a RUN_FAILED alert.
+- A failure in steps 15 to 18 (regulatory, counterparty, fund, limits second pass) does not
+  propagate. The error is recorded in `summary.failed_stages` under the stage name, the
+  remaining steps still run (the counterparty engine without initial margin when the
+  regulatory engine failed; the second pass only with what is available), and the run ends
+  PARTIAL. A RUN_PARTIAL alert names the stage, the dashboard header shows a banner, `novera
+  run eod` exits 2, and the scheduler does not retry: the day is covered, and the fix is a
+  partial re-run of the failed stage (OPS-002), which clears it on the new run. Sign-off treats
+  metrics read from a failed stage as unavailable (OPS-003). A stage that failed midway may
+  leave some of its tables written; `failed_stages` is the authority on whether they are
+  complete.
+- A failure in step 19 (alert dispatch) is logged and kept in `summary.alerts_error`; it does
+  not change the status, because delivery never changes the results.
+- If the process itself dies after step 14, the run stays RUNNING. It is never shown as the
+  latest run and the next scheduled job runs the day again.
 
 ## What is not in the run
 

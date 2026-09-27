@@ -56,9 +56,9 @@ from novera.workflows.eod import (
     persist_var,
     run_dir,
 )
-from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
+from novera.workflows.runs import USABLE_STATUSES, AuditEvent, RunRecord, new_run_id
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 RECORD = "OPS-002"
 
 
@@ -492,14 +492,15 @@ def rerun_stage(
     workers: int | None = None,
 ) -> RerunResult:
     """Re-run ``stage`` of the stored run ``run_id`` into a new RERUN run. Raises ValueError for
-    an unknown stage, a stage that does not apply to the firm's face, or a parent that did not
-    complete."""
+    an unknown stage, a stage that does not apply to the firm's face, or a parent that is neither
+    COMPLETED nor PARTIAL. Re-running a stage that failed on a PARTIAL parent clears it; the
+    re-run is PARTIAL only while other failed stages remain."""
     if stage not in STAGE_BY_NAME:
         raise ValueError(f"unknown stage {stage!r}; choose from {', '.join(STAGE_BY_NAME)}")
     spec = STAGE_BY_NAME[stage]
     parent = repo.load_run(run_id)
-    if parent.status != "COMPLETED":
-        raise ValueError(f"run {run_id} is {parent.status}; only a completed run can be re-run")
+    if parent.status not in USABLE_STATUSES:
+        raise ValueError(f"run {run_id} is {parent.status}; only a completed or partial run can be re-run")
     if workers is not None:
         os.environ["NOVERA_WORKERS"] = str(workers)
     x = _Inputs(repo, parent)
@@ -563,13 +564,19 @@ def rerun_stage(
         "copied_tables": len(copied),
     }
     run.timings = {"copy": copy_seconds, stage: seconds}
-    run.finish("COMPLETED")
+    # Stages that failed on the parent stay missing unless this re-run recomputed them.
+    still_failed = {k: v for k, v in parent.failed_stages.items() if k != stage}
+    if still_failed:
+        run.summary["failed_stages"] = still_failed
+    else:
+        run.summary.pop("failed_stages", None)
+    run.finish("PARTIAL" if still_failed else "COMPLETED")
     events.append(
         AuditEvent.now(
             actor,
             "RERUN_FINISHED",
             run.run_id,
-            status="COMPLETED",
+            status=run.status,
             stage=stage,
             seconds=seconds,
             changed=sorted(changed),

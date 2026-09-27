@@ -1035,6 +1035,54 @@ gap and several documentation gaps. All four were taken in one round.
   exposure, default-fund contributions or cleared IM).
 - Where: `tests/test_regulatory.py`, `docs/03-roadmap.md`, REG-004 1.1.0
 
+## Round 32 — A run is COMPLETED only when every engine ran (2026-09-27)
+
+Context: second-look item 18. The run record was saved COMPLETED at step 14, before the
+regulatory, counterparty and fund engines ran, so a failure in any of them left a COMPLETED run
+without their tables, and a failure in counterparty lost the limits second pass and the alerts
+too. One question round; the owner took every recommended option.
+
+### 32.1 What a late failure does
+- Options: continue, mark PARTIAL, no retry ★ · stop at the first failure, mark PARTIAL, raise
+  so the scheduler retries
+- Choice (owner): **continue and end PARTIAL**. Each of regulatory, counterparty, fund and the
+  limits second pass runs guarded: an exception is logged, recorded in
+  `summary.failed_stages` under the re-run stage name with its error, and the steps after it
+  still run. A RUN_PARTIAL alert (WARNING) names the stage; `novera run eod` and `schedule
+  --once` exit 2; the job is PARTIAL. No retry: a retry is a whole new four-minute run that
+  would most likely fail the same way. The fix is a re-run of the stage (OPS-002 1.1.0), which
+  accepts a PARTIAL parent and drops the stage from `failed_stages` on the new run.
+- Alert dispatch failing is kept in `summary.alerts_error` and does not make the run PARTIAL:
+  delivery never changes the results.
+- Where: `_guarded` and `_second_pass` in `workflows/eod.py`, `RunRecord.failed_stages`,
+  `workflows/rerun.py`, `workflows/alerts.py`, `workflows/scheduler.py`, `cli.py`
+
+### 32.2 Is a PARTIAL run the latest run?
+- Options: yes, with a warning badge ★ · no, COMPLETED only
+- Choice (owner): **yes**. VaR, stress, limits and P&L are valid on a PARTIAL run; hiding it
+  would put yesterday's numbers on the morning view because one engine failed.
+  `latest_run` defaults to COMPLETED or PARTIAL (`USABLE_STATUSES`); every page header shows a
+  banner naming the failed stages; the sidebar marks the run.
+
+### 32.3 Status while the late engines run
+- Options: RUNNING until the end ★ · COMPLETED early, downgraded on failure
+- Choice (owner): **RUNNING until the final save**. A process killed mid-run leaves a RUNNING
+  run instead of a COMPLETED one with missing tables; it is never the latest, so the next
+  scheduled job runs the day again. Cost: for the three minutes of the counterparty engine the
+  dashboard keeps showing the previous run. RUN_FINISHED is now written at the very end with
+  the final status and any failed stages.
+
+### 32.4 Sign-off of a PARTIAL run
+- Options: only metrics that exist ★ · no sign-off on PARTIAL
+- Choice (owner): **only metrics that exist**. Each metric names the late stages it reads;
+  one read from a failed stage is UNAVAILABLE and cannot be signed, so a policy that requires
+  it keeps the run PENDING until the re-run is signed instead (OPS-003 1.1.0).
+- Choice (default): **LIMITS reads counterparty, fund and the second pass**, because the
+  counterparty-exposure and fund limits are only measured there; signing the limit metric with
+  them unmeasured would sign an incomplete breach count.
+- Where: `Metric.stages` and `Metric.unavailable` in `workflows/signoff.py`; test
+  `test_a_failed_late_engine_leaves_a_partial_run`
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1087,24 +1135,23 @@ gap and several documentation gaps. All four were taken in one round.
     noise dominate the drift for seed 42 (the 20% drawdown test measures peak to trough over
     the whole history). A cleaner episode needs a stronger drift or a lower multiplier, which
     changes the core history and so every calibrated limit; deferred for that reason.
-18. **A run is marked COMPLETED before the regulatory, counterparty and fund engines run**
-    (documented in `docs/07-eod-workflow.md`): a failure in those steps leaves a COMPLETED run
-    without their tables. A PARTIAL status, or moving `finish` after the last engine, would make
-    the gap visible in the run list rather than only on the affected pages.
-19. **Limit amounts do not follow the VaR measure** (25.4): loading a template that changes
+18. **Limit amounts do not follow the VaR measure** (25.4): loading a template that changes
     the LIMIT VaR row leaves the seeded amounts where they were, so utilisations jump or
     collapse; the stressed-VaR limit type has no seeded limits at all. A calibration step
     from a target utilisation would make template switches comparable.
-20. **The stressed window is chosen by equity volatility** (25.3): `most_volatile_year`
+19. **The stressed window is chosen by equity volatility** (25.3): `most_volatile_year`
     looks at the S&P 500 only; a rates or credit book would pick a different year. With real
     history the window should be a named crisis, which the stress library will then mark
     REAL.
-21. **Initial margin is received-only and unconditional** (31.2): IM we post is not modelled,
+20. **Initial margin is received-only and unconditional** (31.2): IM we post is not modelled,
     so it neither reduces the counterparty's exposure to us nor feeds DVA, and its gap risk on
     their default is not captured. There is no AANA in-scope test or group-level threshold
     either, so every netting set with a CSA gets IM where the rules would exempt the small ones.
     Both widen the collateral benefit the platform reports.
-22. **CCP exposure is not modelled** (10.4, roadmap Phase 4): CCPs and exchanges exist in the
+21. **CCP exposure is not modelled** (10.4, roadmap Phase 4): CCPs and exchanges exist in the
     counterparty reference data but carry no netting sets, so cleared exposure, default-fund
     contributions and cleared initial margin are absent. Counterparty risk covers the bilateral
     book only, which a reader may not infer from the Counterparty page.
+22. **A RUNNING run left by a killed process stays RUNNING** (32.3): it is never the latest
+    and the next job re-runs the day, but nothing marks it abandoned; a start-up sweep that
+    turns RUNNING runs older than a threshold into FAILED would tidy the run list.

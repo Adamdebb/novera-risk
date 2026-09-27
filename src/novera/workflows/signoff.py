@@ -5,7 +5,9 @@ sign or reject each metric on a run; the value they saw is frozen with the signa
 action is an audit event. A run is RELEASED when every required metric is SIGNED, BLOCKED
 while any required metric is REJECTED, PENDING otherwise (NO_POLICY when nothing is required).
 The release row records who completed the release and when; rejecting a required metric
-withdraws it. Nothing here changes a stored
+withdraws it. On a PARTIAL run a metric read from a failed stage is UNAVAILABLE: it cannot be
+signed, so a policy that requires it keeps the run PENDING until a re-run of that stage (a new
+run) is signed instead. Nothing here changes a stored
 result: sign-off is a judgement recorded next to the run, never an edit of it.
 """
 
@@ -18,9 +20,9 @@ from typing import Any
 
 from novera.limits.workflow import WorkflowError
 from novera.storage.duckdb_repository import DuckDBRepository
-from novera.workflows.runs import AuditEvent, RunRecord
+from novera.workflows.runs import USABLE_STATUSES, AuditEvent, RunRecord
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 RECORD = "OPS-003"
 SIGNABLE_RUN_TYPES = ("EOD", "RERUN")
 
@@ -37,9 +39,18 @@ class Metric:
     keys: tuple[str, ...]
     """Run-summary keys frozen with the signature, so the record shows what was signed."""
     faces: tuple[str, ...] = ("bank", "fund")
+    stages: tuple[str, ...] = ()
+    """EOD stages run after the core results whose output the metric reads; when one failed on a
+    PARTIAL run the metric is UNAVAILABLE."""
 
     def value(self, summary: dict[str, Any]) -> dict[str, Any]:
         return {k: summary.get(k) for k in self.keys}
+
+    def unavailable(self, run: RunRecord) -> str | None:
+        """Why the metric cannot be signed on this run, or None when its stages all ran."""
+        failed = run.failed_stages
+        missing = [st for st in self.stages if st in failed]
+        return "; ".join(f"{st} failed: {failed[st]}" for st in missing) or None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,6 +110,7 @@ METRICS: tuple[Metric, ...] = (
         "Head of Market Risk",
         True,
         ("limits_monitored", "breaches", "warnings", "breaches_raised", "breaches_auto_escalated"),
+        stages=("limits", "counterparty", "fund"),  # counterparty and fund limits need both engines
     ),
     Metric(
         "PNL",
@@ -135,6 +147,7 @@ METRICS: tuple[Metric, ...] = (
         "Head of Counterparty Risk",
         True,
         ("counterparty",),
+        stages=("counterparty",),
     ),
     Metric(
         "CAPITAL",
@@ -145,6 +158,7 @@ METRICS: tuple[Metric, ...] = (
         False,
         ("regulatory",),
         faces=("bank",),
+        stages=("regulatory",),
     ),
     Metric(
         "FUND",
@@ -155,6 +169,7 @@ METRICS: tuple[Metric, ...] = (
         True,
         ("fund",),
         faces=("fund",),
+        stages=("fund",),
     ),
 )
 METRIC_BY_ID: dict[str, Metric] = {m.metric_id: m for m in METRICS}
@@ -242,6 +257,7 @@ def status(repo: DuckDBRepository, run: RunRecord) -> dict[str, Any]:
         if face not in m.faces:
             continue
         s = signed.get(m.metric_id)
+        why = m.unavailable(run)
         metrics.append(
             {
                 "metric_id": m.metric_id,
@@ -250,7 +266,8 @@ def status(repo: DuckDBRepository, run: RunRecord) -> dict[str, Any]:
                 "record": m.record,
                 "signer": m.signer,
                 "required": pol[m.metric_id]["required"],
-                "status": s["status"] if s else "PENDING",
+                "status": s["status"] if s else ("UNAVAILABLE" if why else "PENDING"),
+                "unavailable": why,
                 "actor": s["actor"] if s else None,
                 "at": s["at"] if s else None,
                 "comment": s["comment"] if s else None,
@@ -295,16 +312,17 @@ def status(repo: DuckDBRepository, run: RunRecord) -> dict[str, Any]:
 
 
 def queue(repo: DuckDBRepository, limit: int = 20) -> list[dict[str, Any]]:
-    """Release status of the most recent completed EOD runs, oldest pending first."""
+    """Release status of the most recent completed or partial EOD runs, oldest pending first."""
     out = []
     for run in repo.list_runs(run_type="EOD", limit=limit):
-        if run.status != "COMPLETED":
+        if run.status not in USABLE_STATUSES:
             continue
         st = status(repo, run)
         out.append(
             {
                 "run_id": run.run_id,
                 "business_date": st["business_date"],
+                "run_status": run.status,
                 "verdict": run.verdict,
                 "release_status": st["release_status"],
                 "signed_required": st["signed_required"],
@@ -321,8 +339,10 @@ def queue(repo: DuckDBRepository, limit: int = 20) -> list[dict[str, Any]]:
 
 
 def _check_run(run: RunRecord) -> None:
-    if run.status != "COMPLETED":
-        raise WorkflowError(f"run {run.run_id} is {run.status}; only completed runs can be signed off")
+    if run.status not in USABLE_STATUSES:
+        raise WorkflowError(
+            f"run {run.run_id} is {run.status}; only completed or partial runs can be signed off"
+        )
     if run.run_type not in SIGNABLE_RUN_TYPES:
         raise WorkflowError(f"run type {run.run_type} is not subject to sign-off")
 
@@ -347,6 +367,12 @@ def sign(
     if not actor or not actor.strip():
         raise WorkflowError("actor is required")
     m = _metric_for(repo, run, metric_id)
+    why = m.unavailable(run)
+    if why:
+        raise WorkflowError(
+            f"{metric_id} is unavailable on the partial run {run.run_id} ({why}); re-run the stage "
+            "and sign the re-run"
+        )
     current = {s["metric_id"]: s for s in repo.load_signoffs(run.run_id)}.get(metric_id)
     if current and current["status"] == "SIGNED":
         raise WorkflowError(f"{metric_id} on {run.run_id} is already signed by {current['actor']}")
