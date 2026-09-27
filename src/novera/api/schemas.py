@@ -1312,6 +1312,8 @@ class ExposureProfilePoint(ApiModel):
     pfe95_gross: float | None = None
     ene: float | None = None
     mean_collateral: float | None = None
+    initial_margin: float | None = None
+    """SIMM-lite IM held at this grid point (REG-004): it ages with the portfolio."""
 
 
 class NettingSetRecord(ApiModel):

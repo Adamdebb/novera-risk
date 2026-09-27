@@ -15,7 +15,7 @@ import pandas as pd
 
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 
 # Risk weights per bp of sensitivity by tenor (regular-volatility currencies), in currency units per bp.
 IR_RW = {

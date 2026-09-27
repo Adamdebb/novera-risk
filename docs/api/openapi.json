@@ -3351,6 +3351,17 @@
             ],
             "title": "Ene"
           },
+          "initial_margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Margin"
+          },
           "mean_collateral": {
             "anyOf": [
               {

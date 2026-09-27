@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Counterparty Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.counterparty_risk.exposure.collateral_balance` |
-| Last validated | 2026-09-14 |
+| Last validated | 2026-09-26 |
 
 ## Definition
 Net collateral balance held from the counterparty along each path:
@@ -30,7 +30,15 @@ platform reports both.
 
 ## What-if
 Stored path values allow any netting set to be re-collateralised under alternative
-terms instantly (`csa_what_if`), without rerunning the simulation.
+terms instantly (`csa_what_if`), without rerunning the simulation. The what-if is run with the
+run's own initial margin (REG-004), so unchanged terms reproduce the reported profile.
+
+## Initial margin
+For collateralised sets the exposure is reduced by the initial margin as well as the variation
+margin balance: `exposure = max(V − balance − IM(t), 0)`, with IM from REG-004 and aged across
+the grid there. Uncollateralised sets carry neither. When the regulatory engine has not run on
+the same run there is no IM, and the counterparty run says so in its warnings rather than
+reporting a VM-only profile silently.
 
 ## Validation tests
 `tests/test_counterparty.py::test_collateral_balance_rules`.
