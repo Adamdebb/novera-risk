@@ -17,6 +17,10 @@ from typing import Any
 
 MODEL_VERSIONS: dict[str, str] = {}
 
+USABLE_STATUSES: tuple[str, ...] = ("COMPLETED", "PARTIAL")
+"""Statuses whose stored results can be read: a PARTIAL run lacks only the stages listed in
+``summary["failed_stages"]`` (docs/07-eod-workflow.md, "Failure behaviour")."""
+
 
 def new_run_id(prefix: str = "run") -> str:
     """Sortable id: prefix, millisecond timestamp in base36, 6 random hex chars."""
@@ -47,7 +51,7 @@ class RunRecord:
     config: dict[str, Any]
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
-    status: str = "RUNNING"  # RUNNING, COMPLETED, FAILED
+    status: str = "RUNNING"  # RUNNING, COMPLETED, PARTIAL, FAILED
     verdict: str = "PENDING"  # GREEN, AMBER, RED
     summary: dict[str, Any] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
@@ -55,6 +59,11 @@ class RunRecord:
     @property
     def config_hash(self) -> str:
         return config_hash({"config": self.config, "models": self.model_versions})
+
+    @property
+    def failed_stages(self) -> dict[str, str]:
+        """Stages that failed after the core results were stored, with their error."""
+        return dict(self.summary.get("failed_stages") or {})
 
     def finish(self, status: str = "COMPLETED") -> None:
         self.finished_at = datetime.now(UTC)

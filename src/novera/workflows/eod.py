@@ -11,6 +11,7 @@ The verdict never blocks the run; it says whether the numbers can be trusted.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import dataclass, field, replace
@@ -68,6 +69,8 @@ from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
+
+log = logging.getLogger(__name__)
 
 MODEL_VERSIONS = {
     "valuation": valuation_mod.VALUATION_VERSION,
@@ -140,6 +143,26 @@ def _timed(timings: dict[str, float], name: str):
             timings[name] = round(time.perf_counter() - self.t0, 3)
 
     return _T()
+
+
+def _guarded(timings: dict[str, float], failed: dict[str, str], name: str, timing_key: str | None = None):
+    """Time a stage that runs after the core results are stored and keep the run going when it
+    fails: the error is recorded under the stage name (a re-run stage of OPS-002, so a re-run
+    of that stage clears it) and the run ends PARTIAL."""
+
+    class _G:
+        def __enter__(self):
+            self.t0 = time.perf_counter()
+
+        def __exit__(self, exc_type, exc, tb):
+            timings[timing_key or name] = round(time.perf_counter() - self.t0, 3)
+            if exc is None or not isinstance(exc, Exception):
+                return False
+            failed[name] = f"{type(exc).__name__}: {exc}"[:300]
+            log.warning("EOD stage %s failed; the run continues and ends PARTIAL", name, exc_info=exc)
+            return True
+
+    return _G()
 
 
 def run_eod(
@@ -355,18 +378,10 @@ def run_eod(
         "pnl_steps": {r["step"]: float(r["pnl"]) for _, r in pnl.steps.iterrows()} if pnl else None,
     }
     run.timings = timings
-    run.finish("COMPLETED")
-    events.append(
-        AuditEvent.now(
-            cfg.actor,
-            "RUN_FINISHED",
-            run.run_id,
-            status=run.status,
-            verdict=run.verdict,
-            var=hs.var,
-            breaches=breaches,
-        )
-    )
+    if not persist:
+        # Nothing runs after this point without a stored run, so the run is complete here.
+        run.finish("COMPLETED")
+        events.append(_finished_event(cfg.actor, run))
 
     chal = var_set.first("delta_gamma_vega")
     result = EODResult(
@@ -406,15 +421,18 @@ def run_eod(
                     "lookthrough": lookthrough,
                 },
             )
+        # The run stays RUNNING from here: the engines below read the stored run by id, and a
+        # failure in one of them is recorded and ends the run PARTIAL instead of COMPLETED.
+        failed: dict[str, str] = {}
         pfe: dict[str, float] | None = None
         fund_metrics: dict[str, float] | None = None
         do_reg = (settings.regulatory_enabled if cfg.regulatory is None else cfg.regulatory) and not is_fund
         if do_reg:
-            with _timed(timings, "regulatory"):
+            with _guarded(timings, failed, "regulatory"):
                 reg = run_regulatory(repo, run.run_id, settings, runs_dir=runs_dir)
                 run.summary["regulatory"] = reg.summary()
         if do_cp:
-            with _timed(timings, "counterparty"):
+            with _guarded(timings, failed, "counterparty"):
                 cp_run = run_counterparty(
                     repo,
                     run.run_id,
@@ -440,17 +458,23 @@ def run_eod(
                 }
                 pfe = {str(r["counterparty_id"]): float(r["peak_pfe95"]) for _, r in cps.iterrows()}
         if is_fund:
-            with _timed(timings, "fund"):
+            with _guarded(timings, failed, "fund"):
                 fr = run_fund(repo, run.run_id, settings, runs_dir=runs_dir)
                 run.summary["fund"] = fr.summary()
                 fund_metrics = {
                     k: fr.summary()[k] for k in ("gross_leverage", "margin_to_nav", "largest_pb_share")
                 }
         if pfe is not None or fund_metrics is not None:
-            # Re-monitor with the engine-based measures and refresh the stored limits table.
-            limit_table = (
-                monitor(
+            with _guarded(timings, failed, "limits", "limits_second_pass"):
+                limit_table = _second_pass(
+                    repo,
+                    run,
                     limits,
+                    base_amounts,
+                    increase_ids,
+                    deferred_types,
+                    sync,
+                    events,
                     RiskInputs(
                         val.table,
                         sens,
@@ -461,36 +485,77 @@ def run_eod(
                         limit_var=var_set.limit_inputs(),
                     ),
                     market.as_of,
-                    base_amounts,
-                    increase_ids,
+                    limit_table,
                 )
-                if limits
-                else pd.DataFrame()
-            )
-            if len(limit_table):
-                repo.save_run_frame(run.run_id, "limits", limit_table)
-                run.summary["breaches"] = int((limit_table["status"] == "BREACH").sum())
-                run.summary["warnings"] = int((limit_table["status"] == "WARNING").sum())
-                second_pass = limit_table[limit_table["limit_type"].isin(deferred_types)]
-                sync2 = sync_breaches(repo, run.run_id, market.as_of, second_pass)
-                if sync2.events:
-                    repo.save_audit_events(sync2.events)  # first-pass events are already stored
-                events += sync2.events
-                if sync is not None:
-                    sync.raised += sync2.raised
-                    sync.auto_escalated += sync2.auto_escalated
-                    sync.back_within_limit += sync2.back_within_limit
-                    sync.events += sync2.events
+        if failed:
+            run.summary["failed_stages"] = failed
+        run.finish("PARTIAL" if failed else "COMPLETED")
         if settings.alerts_enabled:
-            with _timed(timings, "alerts"):
-                sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))
-            run.summary["alerts"] = {
-                s_: sum(1 for a in sent if a.status == s_)
-                for s_ in ("STORED", "SENT", "PARTIAL", "FAILED", "SUPPRESSED")
-            }
+            try:
+                with _timed(timings, "alerts"):
+                    sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))
+                run.summary["alerts"] = {
+                    s_: sum(1 for a in sent if a.status == s_)
+                    for s_ in ("STORED", "SENT", "PARTIAL", "FAILED", "SUPPRESSED")
+                }
+            except Exception as e:  # noqa: BLE001 - delivery never changes the results
+                log.warning("EOD alerts failed; the run's results are unaffected", exc_info=e)
+                run.summary["alerts_error"] = f"{type(e).__name__}: {e}"[:300]
+        finished = _finished_event(cfg.actor, run)
+        repo.save_audit_events([finished])
+        events.append(finished)
         run.timings = timings
         repo.save_run(run)
     return result
+
+
+def _finished_event(actor: str, run: RunRecord) -> AuditEvent:
+    return AuditEvent.now(
+        actor,
+        "RUN_FINISHED",
+        run.run_id,
+        status=run.status,
+        verdict=run.verdict,
+        var=run.summary.get("var"),
+        breaches=run.summary.get("breaches"),
+        **({"failed_stages": sorted(run.failed_stages)} if run.failed_stages else {}),
+    )
+
+
+def _second_pass(
+    repo: DuckDBRepository,
+    run: RunRecord,
+    limits: list,
+    base_amounts: dict[str, float],
+    increase_ids: dict[str, str],
+    deferred_types: set[str],
+    sync: Any,
+    events: list[AuditEvent],
+    inputs: RiskInputs,
+    as_of: date,
+    limit_table: pd.DataFrame,
+) -> pd.DataFrame:
+    """Re-monitor every limit with the counterparty PFE and fund metrics now available, replace
+    the stored limits table and synchronise breaches for the deferred limit types only."""
+    if not limits:
+        return limit_table
+    limit_table = monitor(limits, inputs, as_of, base_amounts, increase_ids)
+    if not len(limit_table):
+        return limit_table
+    repo.save_run_frame(run.run_id, "limits", limit_table)
+    run.summary["breaches"] = int((limit_table["status"] == "BREACH").sum())
+    run.summary["warnings"] = int((limit_table["status"] == "WARNING").sum())
+    second_pass = limit_table[limit_table["limit_type"].isin(deferred_types)]
+    sync2 = sync_breaches(repo, run.run_id, as_of, second_pass)
+    if sync2.events:
+        repo.save_audit_events(sync2.events)  # first-pass events are already stored
+    events += sync2.events
+    if sync is not None:
+        sync.raised += sync2.raised
+        sync.auto_escalated += sync2.auto_escalated
+        sync.back_within_limit += sync2.back_within_limit
+        sync.events += sync2.events
+    return limit_table
 
 
 def run_dir(run_id: str, runs_dir: Path | None = None) -> Path:

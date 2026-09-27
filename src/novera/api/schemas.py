@@ -112,6 +112,13 @@ class RunFigures(ApiModel):
     counterparty: CounterpartySummary | None = None
     fund: dict[str, Any] | None = None
     alerts: dict[str, int] | None = None
+    alerts_error: str | None = Field(
+        default=None, description="Why alert dispatch failed; results unaffected"
+    )
+    failed_stages: dict[str, str] | None = Field(
+        default=None,
+        description="On a PARTIAL run, each stage that failed after the core results were stored",
+    )
 
 
 class RunRecord(ApiModel):
@@ -124,7 +131,9 @@ class RunRecord(ApiModel):
     reporting_currency: str
     model_versions: dict[str, str]
     config_hash: str | None = None
-    status: str
+    status: str = Field(
+        description="RUNNING, COMPLETED, PARTIAL (a stage in summary.failed_stages is missing) or FAILED"
+    )
     verdict: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
@@ -502,7 +511,11 @@ class SignoffMetric(ApiModel):
     record: str
     signer: str
     required: bool
-    status: str = Field(description="PENDING, SIGNED or REJECTED")
+    status: str = Field(description="PENDING, SIGNED, REJECTED, or UNAVAILABLE when a stage it reads failed")
+    unavailable: str | None = Field(
+        default=None,
+        description="On a PARTIAL run, the failed stage and error that make the metric unsignable",
+    )
     actor: str | None = None
     at: str | None = None
     comment: str | None = None
@@ -532,6 +545,7 @@ class SignoffStatus(ApiModel):
 class SignoffQueueRow(ApiModel):
     run_id: str
     business_date: str
+    run_status: str = Field(description="COMPLETED or PARTIAL")
     verdict: str
     release_status: str
     signed_required: int

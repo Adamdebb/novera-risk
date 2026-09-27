@@ -418,3 +418,69 @@ def test_var_setup_drives_the_run_and_limits(db_path, result, tmp_path):
         assert len(repo.load_run_frame(rr.run.run_id, "var_summary")) == 4
         # Restore the defaults for the tests that follow.
         var_setup.set_setup(repo, "CRO", [m.to_dict() for m in DEFAULT_MEASURES], "back to defaults")
+
+
+def test_a_failed_late_engine_leaves_a_partial_run(db_path, tmp_path, monkeypatch):
+    """A failure after the core results are stored ends the run PARTIAL, not COMPLETED: the
+    status is RUNNING while the late engines run, the failed stage and its error are recorded,
+    the run stays readable as the latest, the metric it feeds cannot be signed, and a re-run
+    of the stage clears it (docs/07-eod-workflow.md, "Failure behaviour")."""
+    import json
+    import shutil
+
+    from novera.limits.workflow import WorkflowError
+    from novera.workflows import eod, signoff
+    from novera.workflows.alerts import alerts_from_run
+    from novera.workflows.rerun import rerun_stage
+    from novera.workflows.scheduler import run_once
+
+    path = tmp_path / "partial.duckdb"
+    shutil.copy(db_path, path)  # the module's database keeps its own latest run
+    seen: dict[str, str] = {}
+
+    def broken_regulatory(repo, run_id, *a, **k):
+        seen["status"] = repo.load_run(run_id).status
+        raise RuntimeError("capital engine down")
+
+    monkeypatch.setattr(eod, "run_regulatory", broken_regulatory)
+    cfg = EODConfig(counterparty=False, regulatory=True, var=VaRConfig(window_days=200), workers=1)
+    with DuckDBRepository(path) as repo:
+        res = run_eod(repo, cfg, runs_dir=tmp_path / "runs")
+        run = res.run
+        assert seen["status"] == "RUNNING"  # never COMPLETED before the late engines finish
+        assert run.status == "PARTIAL" and run.finished_at is not None
+        assert run.failed_stages == {"regulatory": "RuntimeError: capital engine down"}
+        assert "regulatory" in run.timings and "regulatory" not in run.summary
+        stored = repo.load_run(run.run_id)
+        assert stored.status == "PARTIAL" and stored.failed_stages == run.failed_stages
+        assert not repo.load_run_frame(run.run_id, "valuation").empty  # the core results are there
+        finished = repo.load_audit_events(subject=run.run_id).query("event_type == 'RUN_FINISHED'")
+        payload = json.loads(finished.iloc[0]["payload"])
+        assert len(finished) == 1 and payload["status"] == "PARTIAL"
+        assert payload["failed_stages"] == ["regulatory"]
+        kinds = [a.kind for a in alerts_from_run(res, None)]
+        assert "RUN_PARTIAL" in kinds
+        # Readable as the latest run, and it covers the day: the scheduler does not retry it.
+        assert repo.latest_run().run_id == run.run_id
+        assert repo.latest_run(status="COMPLETED").run_id != run.run_id
+        assert run_once(repo, advance=False, cfg=cfg).status == "SKIPPED"
+
+        # Sign-off: metrics that exist can be signed; the capital metric cannot.
+        signoff.set_policy(repo, "CRO", ["VAR", "CAPITAL"], "partial-run check")
+        st = signoff.sign(repo, stored, "VAR", "Head of Market Risk")
+        cap = next(m for m in st["metrics"] if m["metric_id"] == "CAPITAL")
+        assert cap["status"] == "UNAVAILABLE" and "capital engine down" in cap["unavailable"]
+        assert st["release_status"] == "PENDING" and st["pending"] == ["CAPITAL"]
+        with pytest.raises(WorkflowError):
+            signoff.sign(repo, stored, "CAPITAL", "Head of Regulatory Reporting")
+        assert signoff.queue(repo)[0]["run_status"] == "PARTIAL"
+
+        # Re-running another stage keeps the failure; re-running the failed stage clears it.
+        other = rerun_stage(repo, run.run_id, "stress", "Risk Control", runs_dir=tmp_path / "runs")
+        assert other.run.status == "PARTIAL" and other.run.failed_stages == run.failed_stages
+        fixed = rerun_stage(repo, run.run_id, "regulatory", "Risk Control", runs_dir=tmp_path / "runs")
+        assert fixed.run.status == "COMPLETED" and not fixed.run.failed_stages
+        assert "regulatory" in fixed.run.summary
+        assert repo.load_run(run.run_id).status == "PARTIAL"  # the parent is untouched
+        st = signoff.sign(repo, fixed.run, "CAPITAL", "Head of Regulatory Reporting")
+        assert next(m for m in st["metrics"] if m["metric_id"] == "CAPITAL")["status"] == "SIGNED"

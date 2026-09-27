@@ -34,7 +34,7 @@ from novera.domain.snapshots import PortfolioSnapshot
 from novera.domain.trades import Trade
 from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
-from novera.workflows.runs import AuditEvent, RunRecord
+from novera.workflows.runs import USABLE_STATUSES, AuditEvent, RunRecord
 
 _TRADE = TypeAdapter(Trade)
 
@@ -646,11 +646,16 @@ class DuckDBRepository:
         params = ([run_type] if run_type else []) + [limit]
         return [_run_from_row(r) for r in self._conn.execute(q, params).fetchall()]
 
-    def latest_run(self, run_type: str = "EOD", status: str = "COMPLETED") -> RunRecord | None:
+    def latest_run(
+        self, run_type: str = "EOD", status: str | tuple[str, ...] = USABLE_STATUSES
+    ) -> RunRecord | None:
+        """Latest run of the type whose results can be read: COMPLETED or PARTIAL by default,
+        never one still RUNNING or FAILED."""
+        statuses = (status,) if isinstance(status, str) else tuple(status)
         row = self._conn.execute(
-            "SELECT * FROM risk_run WHERE run_type = ? AND status = ? "
-            "ORDER BY business_date DESC, started_at DESC LIMIT 1",
-            [run_type, status],
+            "SELECT * FROM risk_run WHERE run_type = ? AND status IN "
+            f"({', '.join('?' * len(statuses))}) ORDER BY business_date DESC, started_at DESC LIMIT 1",
+            [run_type, *statuses],
         ).fetchone()
         return _run_from_row(row) if row else None
 

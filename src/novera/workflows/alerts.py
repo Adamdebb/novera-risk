@@ -22,7 +22,8 @@ class Alert:
     business_date: date
     severity: str
     kind: (
-        str  # NEW_BREACH, AUTO_ESCALATION, BACK_WITHIN_LIMIT, RUN_VERDICT, RUN_FAILED, RUN_SUMMARY, RECON_GAP
+        str  # NEW_BREACH, AUTO_ESCALATION, BACK_WITHIN_LIMIT, RUN_VERDICT, RUN_PARTIAL, RUN_FAILED,
+        # RUN_SUMMARY, RECON_GAP
     )
     subject: str  # limit id, run id
     title: str
@@ -144,13 +145,28 @@ def alerts_from_run(result: Any, sync: Any | None) -> list[Alert]:
                 ["Market Risk Control"],
             )
         )
+    failed = run.failed_stages
+    if failed:
+        out.append(
+            _alert(
+                "RUN_PARTIAL",
+                "WARNING",
+                rid,
+                f"EOD run partial for {bd}: {', '.join(sorted(failed))} failed",
+                "; ".join(f"{k}: {v}" for k, v in sorted(failed.items()))
+                + ". VaR, stress, limits and P&L are stored; re-run the failed stage from the Admin page.",
+                bd,
+                rid,
+                ["Risk IT", "Market Risk Control"],
+            )
+        )
     sm = run.summary
     out.append(
         _alert(
             "RUN_SUMMARY",
             "INFO",
             rid,
-            f"EOD run complete for {bd}",
+            f"EOD run {'partial' if failed else 'complete'} for {bd}",
             f"VaR {sm['var'] / m:,.1f}m, ES {sm['es'] / m:,.1f}m, worst stress {sm['worst_stress_name']} "
             f"{(sm['worst_stress'] or 0) / m:,.1f}m, {sm['breaches']} breaches, {sm['warnings']} "
             f"warnings, verdict {run.verdict}.",

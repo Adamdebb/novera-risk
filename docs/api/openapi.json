@@ -8314,6 +8314,7 @@
             "title": "Started At"
           },
           "status": {
+            "description": "RUNNING, COMPLETED, PARTIAL (a stage in summary.failed_stages is missing) or FAILED",
             "title": "Status",
             "type": "string"
           },
@@ -8715,6 +8716,18 @@
             ],
             "title": "Alerts"
           },
+          "alerts_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why alert dispatch failed; results unaffected",
+            "title": "Alerts Error"
+          },
           "backtest_days": {
             "anyOf": [
               {
@@ -8867,6 +8880,21 @@
               }
             ],
             "title": "Es Confidence"
+          },
+          "failed_stages": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "On a PARTIAL run, each stage that failed after the core results were stored",
+            "title": "Failed Stages"
           },
           "fund": {
             "anyOf": [
@@ -9314,6 +9342,7 @@
             "title": "Started At"
           },
           "status": {
+            "description": "RUNNING, COMPLETED, PARTIAL (a stage in summary.failed_stages is missing) or FAILED",
             "title": "Status",
             "type": "string"
           },
@@ -9447,6 +9476,7 @@
             "title": "Started At"
           },
           "status": {
+            "description": "RUNNING, COMPLETED, PARTIAL (a stage in summary.failed_stages is missing) or FAILED",
             "title": "Status",
             "type": "string"
           },
@@ -9759,13 +9789,25 @@
             "type": "string"
           },
           "status": {
-            "description": "PENDING, SIGNED or REJECTED",
+            "description": "PENDING, SIGNED, REJECTED, or UNAVAILABLE when a stage it reads failed",
             "title": "Status",
             "type": "string"
           },
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "On a PARTIAL run, the failed stage and error that make the metric unsignable",
+            "title": "Unavailable"
           },
           "value": {
             "additionalProperties": true,
@@ -9956,6 +9998,11 @@
             "title": "Run Id",
             "type": "string"
           },
+          "run_status": {
+            "description": "COMPLETED or PARTIAL",
+            "title": "Run Status",
+            "type": "string"
+          },
           "signed_required": {
             "title": "Signed Required",
             "type": "integer"
@@ -9968,6 +10015,7 @@
         "required": [
           "run_id",
           "business_date",
+          "run_status",
           "verdict",
           "release_status",
           "signed_required",

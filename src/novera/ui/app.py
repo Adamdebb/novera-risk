@@ -55,13 +55,17 @@ if not runs:
     st.stop()
 labels = {
     r["run_id"]: f"{r['business_date']}  {r['run_id']}  [{r['verdict']}]"
+    + ("" if r["status"] == "COMPLETED" else f"  · {r['status']}")
     + (f"  · rerun of {r['summary'].get('rerun', {}).get('stage', '?')}" if r["run_type"] == "RERUN" else "")
     for r in runs
 }
 with st.sidebar:
     st.markdown(f"## {settings.platform_name}")
     st.caption(f"{settings.platform_tagline} · {firm_name}")
-    default_run = next((i for i, r in enumerate(runs) if r["run_type"] == "EOD"), 0)  # not a re-run
+    default_run = next(  # the latest readable EOD run, not a re-run nor one still RUNNING
+        (i for i, r in enumerate(runs) if r["run_type"] == "EOD" and r["status"] in ("COMPLETED", "PARTIAL")),
+        0,
+    )
     run_id = st.selectbox("Run", list(labels), index=default_run, format_func=labels.get)
     pages = ["Overview", "Analyst", "Drill-down", "Trade extract", "VaR", "Stress", "Stress library"]
     pages += ["Limit management"]
@@ -108,6 +112,15 @@ def header(title: str) -> None:
         f"{summary['market_snapshot_id']} · models "
         f"{', '.join(f'{k} {v}' for k, v in summary['model_versions'].items())}"
     )
+    failed = summary["summary"].get("failed_stages") or {}
+    if summary["status"] == "PARTIAL" and failed:
+        st.warning(
+            f"Partial run: {', '.join(sorted(failed))} failed after the core results were stored, so "
+            "their results are missing from this run. Re-run the stage from the Admin page. "
+            + " · ".join(f"{k}: {v}" for k, v in sorted(failed.items()))
+        )
+    elif summary["status"] not in ("COMPLETED", "PARTIAL"):
+        st.warning(f"This run is {summary['status']}: its results may be incomplete.")
 
 
 # --- pages ------------------------------------------------------------------------------
@@ -830,14 +843,21 @@ elif page == "Admin":
                     if res is not None:
                         for n in res.get("notes", []):
                             st.caption(n)
-                        if res["status"] == "COMPLETED" and res.get("run"):
+                        if res["status"] in ("COMPLETED", "PARTIAL") and res.get("run"):
                             r = res["run"]
                             sm = r["summary"]
                             secs = sum(r.get("timings", {}).values())
-                            st.success(
-                                f"Run {r['run_id']} for {r['business_date']} completed in {secs:.0f}s: "
+                            done = st.success if res["status"] == "COMPLETED" else st.warning
+                            done(
+                                f"Run {r['run_id']} for {r['business_date']} "
+                                f"{res['status'].lower()} in {secs:.0f}s: "
                                 f"verdict {r['verdict']}, VaR {money(sm.get('var'))}, "
                                 f"{sm.get('breaches', 0)} breach and {sm.get('warnings', 0)} warning."
+                                + (
+                                    " Failed: " + ", ".join(sorted(sm.get("failed_stages") or {})) + "."
+                                    if res["status"] == "PARTIAL"
+                                    else ""
+                                )
                             )
                             load_runs.clear()
                             st.cache_data.clear()
@@ -993,7 +1013,12 @@ elif page == "Sign-off":
     c2.metric("Required metrics signed", f"{so['signed_required']} / {so['required_total']}")
     c3.metric("Verdict", f"{verdict_colour} {so['verdict']}", "override" if so["override"] else None)
     c4.metric("Released by", so["released_by"] or "—", (so["released_at"] or "")[:19] or None)
-    status_icon = {"SIGNED": "🟢 signed", "REJECTED": "🔴 rejected", "PENDING": "⚪ pending"}
+    status_icon = {
+        "SIGNED": "🟢 signed",
+        "REJECTED": "🔴 rejected",
+        "PENDING": "⚪ pending",
+        "UNAVAILABLE": "⚫ unavailable",
+    }
     rows = [
         {
             "metric": m["title"],
@@ -1002,7 +1027,7 @@ elif page == "Sign-off":
             "status": status_icon.get(m["status"], m["status"]),
             "actor": m["actor"] or "",
             "at": (m["at"] or "")[:19],
-            "comment": m["comment"] or "",
+            "comment": m["comment"] or m.get("unavailable") or "",
             "value": fmt_value(m["value"]),
             "expected signer": m["signer"],
         }
@@ -1059,6 +1084,7 @@ elif page == "Sign-off":
                 {
                     "business_date": r["business_date"],
                     "run_id": r["run_id"],
+                    "run": r["run_status"],
                     "verdict": r["verdict"],
                     "release": f"{RELEASE_BADGE.get(r['release_status'], '')} {r['release_status']}",
                     "signed": f"{r['signed_required']} / {r['required_total']}",

@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.workflows.rerun`, `DuckDBRepository.copy_run_frames`, `GET /admin/rerun/options`, `POST /admin/rerun`, `novera rerun` |
-| Last validated | 2026-09-15 |
+| Last validated | 2026-09-27 |
 
 ## Definition
 An administrator re-runs one stage of the end-of-day workflow on a stored run, for example
@@ -14,7 +14,7 @@ after a market-data correction, a pricer fix or a limit change, without re-runni
 day and without editing the stored run. The result is a new run of type RERUN.
 
 ## Method
-1. The parent must be a COMPLETED run. The new run carries the parent's business date,
+1. The parent must be a COMPLETED or PARTIAL run. The new run carries the parent's business date,
    portfolio and market snapshot ids, reporting currency and configuration, plus a `rerun`
    block (parent run id, stage, actor, reason), so its config hash differs from the parent's.
    Model versions are those of the code that runs.
@@ -29,6 +29,10 @@ day and without editing the stored run. The result is a new run of type RERUN.
 5. The run summary is the parent's with the stage's keys refreshed; `changed` records every
    summary key whose value moved, before and after. Audit events RERUN_STARTED and
    RERUN_FINISHED name the actor and reason.
+6. On a PARTIAL parent, re-running a stage listed in its `failed_stages` removes it from the
+   re-run's list. The re-run is COMPLETED when nothing is left, PARTIAL otherwise. This is how
+   a day whose counterparty or regulatory engine failed is completed without re-running it
+   whole.
 
 ## Stages and what they replace
 | Stage | Replaces | Not recomputed |
@@ -67,3 +71,4 @@ events, unknown stage and wrong face rejected. `test_admin_rerun_endpoints`: the
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-15 | Partial re-run of a single stage, Admin page (decision 23.1) | Novera |
+| 1.1.0 | 2026-09-27 | PARTIAL parents accepted; a re-run of a failed stage clears it (decision 32.1) | Novera |
