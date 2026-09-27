@@ -92,7 +92,10 @@ measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
 - [x] Counterparty limits now on peak PFE95 after collateral; watchlist flag; current
       exposure under every stress scenario
 - [x] Counterparty page, API, Analyst tool, `novera run counterparty`, EOD integration
-- [ ] Initial margin (SIMM-lite) and CCP exposure: Phase 5
+- [x] Initial margin (SIMM-lite, REG-004) feeding the exposure engine: delivered in Phase 5,
+      aged across the exposure grid and shared with the CSA what-if
+- [ ] CCP exposure: CCPs and exchanges are in the counterparty reference data but carry no
+      netting sets, so cleared exposure, default-fund contributions and cleared IM are not modelled
 
 ## Phase 5 — Segment modules (delivered)
 

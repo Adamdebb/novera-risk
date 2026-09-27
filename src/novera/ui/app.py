@@ -1129,7 +1129,10 @@ elif page == "Counterparty":
     )
     prof = df(d["profile"])
     if not prof.empty:
-        chart = prof.set_index("step")[["ee_gross", "pfe95_gross", "ee", "pfe95", "mean_collateral"]] / M
+        cols = ["ee_gross", "pfe95_gross", "ee", "pfe95", "mean_collateral"]
+        if "initial_margin" in prof and prof["initial_margin"].fillna(0).abs().sum() > 0:
+            cols.append("initial_margin")
+        chart = prof.set_index("step")[cols] / M
         st.line_chart(
             chart.rename(
                 columns={
@@ -1138,6 +1141,7 @@ elif page == "Counterparty":
                     "ee": "EE",
                     "pfe95": "PFE95",
                     "mean_collateral": "collateral held",
+                    "initial_margin": "initial margin",
                 }
             )
         )

@@ -868,6 +868,7 @@ class RiskService:
                 pfe95_gross=("pfe95_gross", "sum"),
                 ene=("ene", "sum"),
                 mean_collateral=("mean_collateral", "sum"),
+                initial_margin=("initial_margin", "sum"),
             )
             .sort_values("years")
         )
@@ -931,7 +932,7 @@ class RiskService:
         margin_period_days: int = 10,
     ) -> dict[str, Any]:
         """Re-collateralise one netting set's stored paths under alternative CSA terms."""
-        from novera.counterparty_risk import csa_what_if, load_exposure_result
+        from novera.counterparty_risk import csa_what_if, load_exposure_result, stored_initial_margin
         from novera.domain.counterparties import CSA
 
         r = self.resolve(run_id)
@@ -963,8 +964,9 @@ class RiskService:
                     if v is not None
                 }
             )
-        before = csa_what_if(res, netting_set_id, base_csa, margin_period_days)
-        after = csa_what_if(res, netting_set_id, new_csa, margin_period_days)
+        im = stored_initial_margin(self.repo, r.run_id)
+        before = csa_what_if(res, netting_set_id, base_csa, margin_period_days, im)
+        after = csa_what_if(res, netting_set_id, new_csa, margin_period_days, im)
         return {
             "run_id": r.run_id,
             "netting_set_id": netting_set_id,

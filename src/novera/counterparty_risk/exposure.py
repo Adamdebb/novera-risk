@@ -7,6 +7,9 @@ above its threshold, in minimum-transfer-amount steps, plus any independent amou
 symmetrically. Exposure = max(V - balance, 0); negative exposure = max(balance - V, 0). Collateral we have
 posted (balance below zero) adds to our exposure if the value turns positive before it is
 returned, so collateralised exposure can exceed gross exposure on some paths.
+
+Initial margin (REG-004) is a further deduction for collateralised sets, aged across the grid
+by the notional-duration still outstanding so that it decays with the portfolio.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing.valuation import fx_to_reporting, value_trade
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 
 
 @dataclass
@@ -42,6 +45,7 @@ class ExposureResult:
     paths: int
     profiles: pd.DataFrame = field(default_factory=pd.DataFrame)  # filled by ``collateralise``
     proxy_paths: dict[str, np.ndarray] = field(default_factory=dict)  # factor -> (steps, paths) moves
+    im_scale: dict[str, np.ndarray] = field(default_factory=dict)  # netting_set_id -> (steps,) IM ageing
 
     def by_counterparty(self) -> dict[str, list[str]]:
         out: dict[str, list[str]] = {}
@@ -69,6 +73,35 @@ def _pv(t: Trade, snap: MarketSnapshot, as_of: date, reporting: str) -> float:
     except Exception:  # noqa: BLE001
         return 0.0
     return r.pv_local * fx_to_reporting(snap, r.currency, reporting)
+
+
+def _notional_duration(t: Trade, d: date) -> float:
+    """Proxy for a trade's SIMM sensitivity at ``d``: notional times the remaining years to
+    maturity, or notional alone for products that have none. Units are mixed across product
+    types, so it is only meaningful as a ratio within one netting set over time (REG-004)."""
+    mat = getattr(t.instrument, "maturity_date", None) or t.settlement_date
+    if mat is None:
+        return abs(t.quantity)
+    yrs = (mat - d).days / 365.0
+    return abs(t.quantity) * yrs if yrs > 0 else 0.0
+
+
+def im_scales(
+    trades: list[Trade], by_set: dict[str, list[int]], grid_dates: list[date], as_of: date
+) -> dict[str, np.ndarray]:
+    """Per netting set, the notional-duration still outstanding at each grid date as a fraction
+    of t0. Initial margin is computed on today's sensitivities, so it has to age with the
+    portfolio or it overstates the collateral benefit at the long end (REG-004)."""
+    out: dict[str, np.ndarray] = {}
+    for k, idx in by_set.items():
+        base = sum(_notional_duration(trades[j], as_of) for j in idx)
+        if base <= 0:
+            out[k] = np.ones(len(grid_dates))
+            continue
+        out[k] = np.array(
+            [min(sum(_notional_duration(trades[j], d) for j in idx) / base, 1.0) for d in grid_dates]
+        )
+    return out
 
 
 _W: dict = {}
@@ -152,6 +185,7 @@ def simulate_exposure(
         cfg.paths,
     )
     res.proxy_paths = {f: np.vstack(v) for f, v in paths.proxy_paths.items() if v}
+    res.im_scale = im_scales(bil, by_set, [g[1] for g in grid], base.as_of)
     res.profiles = collateralise(res, cfg.margin_period_days, initial_margin=initial_margin)
     return res
 
@@ -197,7 +231,9 @@ def collateralise(
             csa = res.csas.get(ns.csa_id) if ns.csa_id else None
         bal = collateral_balance(v, years, csa, mpor_days)
         im = float((initial_margin or {}).get(k, 0.0)) if csa is not None else 0.0
-        e_gross, e_coll = np.maximum(v, 0.0), np.maximum(v - bal - im, 0.0)
+        scale = res.im_scale.get(k)
+        im_by_step = im * (np.ones(len(years)) if scale is None or len(scale) != len(years) else scale)
+        e_gross, e_coll = np.maximum(v, 0.0), np.maximum(v - bal - im_by_step[:, None], 0.0)
         ne_gross, ne_coll = np.maximum(-v, 0.0), np.maximum(bal - v, 0.0)
         for i, (label, d, yrs) in enumerate(res.grid):
             rows.append(
@@ -219,7 +255,7 @@ def collateralise(
                     "ene_gross": float(ne_gross[i].mean()),
                     "mean_value": float(v[i].mean()),
                     "mean_collateral": float(bal[i].mean()),
-                    "initial_margin": im,
+                    "initial_margin": float(im_by_step[i]),
                 }
             )
     return pd.DataFrame(rows)

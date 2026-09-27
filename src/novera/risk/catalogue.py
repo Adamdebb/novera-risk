@@ -178,10 +178,11 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "CR-002",
                 "Collateral under the CSA",
                 "Collateral calls from thresholds, minimum transfer amounts, independent amounts and "
-                "the margin period of risk, netted into the exposure.",
+                "the margin period of risk, plus initial margin, netted into the exposure.",
                 "reporting currency",
                 "Counterparty",
                 "Collateral under the CSA",
+                version="1.1.0",
                 face="bank",
             ),
             MeasureSpec(
@@ -242,10 +243,12 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
             MeasureSpec(
                 "REG-004",
                 "SIMM-lite initial margin",
-                "Initial margin per netting set from sensitivities with a simplified SIMM aggregation.",
+                "Initial margin per netting set from sensitivities with a simplified SIMM aggregation, "
+                "aged across the exposure grid.",
                 "reporting currency",
                 "Capital",
                 "SIMM-lite initial margin",
+                version="1.1.0",
                 face="bank",
             ),
             MeasureSpec(

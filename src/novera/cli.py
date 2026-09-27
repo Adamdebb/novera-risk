@@ -346,6 +346,8 @@ def run_counterparty_cmd(
     typer.echo(
         f"run {rid}: {len(cps)} counterparties, {cr.notes['paths']} paths, grid {' '.join(cr.notes['grid'])}"
     )
+    for w in cr.notes.get("warnings", []):
+        typer.secho(f"  warning: {w}", fg=typer.colors.YELLOW)
     typer.echo(
         f"  total EPE {cps['epe'].sum() / m:,.1f}m  CVA {cps['cva'].sum() / m:,.2f}m  DVA "
         f"{cps['dva'].sum() / m:,.2f}m  wrong-way flags {int(cps['wrong_way'].fillna(False).sum())}"

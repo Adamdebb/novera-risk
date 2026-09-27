@@ -246,7 +246,15 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 
 ### 10.4 Initial margin
 - Options: simplified SIMM now ★ · defer to Phase 5
-- Choice: **Deferred to Phase 5** (then delivered there as REG-004)
+- Choice: **Deferred to Phase 5** (then delivered there as REG-004). SIMM needs a weighted-
+  sensitivity aggregation framework, which is the same machinery FRTB SA needed a phase later;
+  building it in Phase 4 for one consumer would have meant rebuilding it in Phase 5.
+- Where: `regulatory/simm.py`, REG-004; consumed by `counterparty_risk/exposure.py`
+  (`collateralise`, the `initial_margin` argument shipped in Phase 4 defaulting to zero, so
+  Phase 5 supplied a number rather than rewiring the engine)
+- Revisit: parameters are published-style approximations, not the licensed ISDA calibration, so
+  the figure must not be used for margin calls. IM is modelled one-directionally (received only)
+  and with no AANA in-scope test. See Round 31.
 
 ---
 
@@ -974,6 +982,59 @@ Ollama by itself when a tier runs out of credit. Built without a question round.
   printed on stderr by `novera ask`), naming the provider and the error; Groq's preset is
   `openai/gpt-oss-120b`. Preset ids will keep drifting; the chain makes that survivable.
 
+## Round 31 — Initial margin gaps found reading back 10.4 (2026-09-26)
+
+Context: the owner asked what was missing for entry 10.4 to improve the situation. Tracing the
+IM path from `regulatory/simm.py` to the exposure profiles turned up one defect, one modelling
+gap and several documentation gaps. All four were taken in one round.
+
+### 31.1 The CSA what-if dropped the initial margin
+- Found reading the code: headline profiles were built with `initial_margin`, but `csa_what_if`
+  called `collateralise` without it, so every what-if ran at IM = 0. The API computes **both**
+  legs through it, so `peak_pfe95_before` did not tie to the PFE95 on the Counterparty page for
+  any margined netting set — two figures shown side by side, disagreeing, with no explanation.
+- Choice: **`csa_what_if` takes the run's initial margin and the service passes it to both legs**;
+  `stored_initial_margin` is now the single accessor both the engine and the API read, so they
+  cannot drift apart again. `load_exposure_result` recomputes the ageing factors from the stored
+  snapshot rather than persisting them.
+- Where: `counterparty_risk/engine.py`, `api/service.py`, CR-002 1.1.0;
+  `tests/test_regulatory.py::test_csa_what_if_baseline_ties_to_the_reported_profile`
+
+### 31.2 Initial margin held constant across the exposure grid
+- Options: leave it constant · scale by notional-duration outstanding ★ · recompute
+  sensitivities on the aged portfolio at each grid point
+- Found: IM is computed on today's sensitivities and was subtracted unchanged at every grid
+  date, including points where the netting set has largely run off. The exposure paths age but
+  the collateral did not, so the collateral benefit was overstated at the long end and
+  far-dated EE, PFE and CVA understated.
+- Choice: **scale IM at each grid date by the notional-duration still outstanding**, clipped at
+  one, matching the ageing already applied to the paths. A full recomputation needs sensitivities
+  per grid point on the aged book, which the 12-point grid was not built to carry.
+- Where: `counterparty_risk/exposure.py` (`im_scales`, `_notional_duration`), REG-004 1.1.0
+- Revisit: notional units are mixed across product types, so the factor is a ratio within one
+  netting set over time and not comparable between sets.
+
+### 31.3 An IM-free run looked identical to a margined one
+- Found: `run_counterparty` falls back to no IM when the regulatory engine has not run on the
+  same run id. EOD orders regulatory first, but a standalone `novera run counterparty`, a fund
+  run or `regulatory=False` produced VM-only exposure whose only trace was
+  `initial_margin_sets: 0` in the notes. The same portfolio reported two different exposures
+  with nothing visible to explain it.
+- Choice: **the run warns** when collateralised netting sets exist and no IM was found, in
+  `notes["warnings"]` and printed by the CLI. The ordering dependency stays implicit; the
+  warning makes its absence loud instead of enforcing it.
+- Where: `counterparty_risk/engine.py`, `cli.py`
+
+### 31.4 Claims that outran their evidence
+- Found: REG-004 cited validation for "IM positive, reduces collateralised exposure" but the
+  only assertion was that IM is positive; nothing compared exposure with and without it. The
+  roadmap bundled delivered SIMM-lite with undelivered CCP exposure on one unticked line.
+- Choice: **test what the record claims and split what the roadmap bundled** — an assertion that
+  the same paths without IM give higher exposure, one that the margin decays across the grid, and
+  the CCP line separated out with what is missing named (no netting sets on CCPs, so no cleared
+  exposure, default-fund contributions or cleared IM).
+- Where: `tests/test_regulatory.py`, `docs/03-roadmap.md`, REG-004 1.1.0
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1038,3 +1099,12 @@ Ollama by itself when a tier runs out of credit. Built without a question round.
     looks at the S&P 500 only; a rates or credit book would pick a different year. With real
     history the window should be a named crisis, which the stress library will then mark
     REAL.
+21. **Initial margin is received-only and unconditional** (31.2): IM we post is not modelled,
+    so it neither reduces the counterparty's exposure to us nor feeds DVA, and its gap risk on
+    their default is not captured. There is no AANA in-scope test or group-level threshold
+    either, so every netting set with a CSA gets IM where the rules would exempt the small ones.
+    Both widen the collateral benefit the platform reports.
+22. **CCP exposure is not modelled** (10.4, roadmap Phase 4): CCPs and exchanges exist in the
+    counterparty reference data but carry no netting sets, so cleared exposure, default-fund
+    contributions and cleared initial margin are absent. Counterparty risk covers the bilateral
+    book only, which a reader may not infer from the Counterparty page.

@@ -19,7 +19,13 @@ from novera.counterparty_risk.cva import (
     hazard_from_spread,
     wrong_way_indicators,
 )
-from novera.counterparty_risk.exposure import ExposureResult, collateralise, simulate_exposure, summarise
+from novera.counterparty_risk.exposure import (
+    ExposureResult,
+    collateralise,
+    im_scales,
+    simulate_exposure,
+    summarise,
+)
 from novera.counterparty_risk.simulation import ExposureSimConfig
 from novera.domain.counterparties import CSA
 from novera.market_data.history import MarketHistory
@@ -82,12 +88,7 @@ def run_counterparty(
     history = MarketHistory.from_long(repo.load_market_history())
     netting_sets, csas = repo.load_netting_sets()
     counterparties = {c.counterparty_id: c for c in repo.load_counterparties()}
-    simm_frame = repo.load_run_frame(run_id, "reg_simm")
-    initial_margin = (
-        {str(r["netting_set_id"]): float(r["im"]) for _, r in simm_frame.iterrows()}
-        if len(simm_frame)
-        else {}
-    )
+    initial_margin = stored_initial_margin(repo, run_id)
     res = simulate_exposure(
         list(snap.trades),
         market,
@@ -130,6 +131,15 @@ def run_counterparty(
             lambda c, col=col: getattr(counterparties[c], col, None) if c in counterparties else None
         )
     cp_summary = cp_summary.reset_index().sort_values("peak_pfe95", ascending=False)
+    # An IM-free run is otherwise indistinguishable from one with IM, so say so rather than
+    # letting the same portfolio report two different exposures for no visible reason.
+    with_csa = [k for k, n in res.netting_sets.items() if n.csa_id]
+    warnings = []
+    if with_csa and not initial_margin:
+        warnings.append(
+            f"no initial margin on this run: {len(with_csa)} collateralised netting sets are "
+            "reported on variation margin only. Run the regulatory engine first (REG-004)."
+        )
     out = CounterpartyRun(
         run_id,
         profiles,
@@ -146,6 +156,8 @@ def run_counterparty(
             "own_spread_bp": settings.own_credit_spread_bp,
             "lgd": settings.lgd,
             "initial_margin_sets": len(initial_margin),
+            "collateralised_sets": len(with_csa),
+            "warnings": warnings,
         },
     )
     if persist:
@@ -196,12 +208,15 @@ def load_exposure_result(
     values = {k: g.sort_values("path")[steps].to_numpy().T for k, g in vals.groupby("netting_set_id")}
     run = repo.load_run(run_id)
     snap = repo.load_portfolio_snapshot(run.portfolio_snapshot_id)
+    trades = list(snap.trades)
     trades_by_set: dict[str, list[str]] = {}
-    for t in snap.trades:
+    by_index: dict[str, list[int]] = {}
+    for j, t in enumerate(trades):
         if t.netting_set_id in values:
             trades_by_set.setdefault(t.netting_set_id, []).append(t.trade_id)
+            by_index.setdefault(t.netting_set_id, []).append(j)
     current = {k: float(v[0].mean()) for k, v in values.items()}  # approximation; t0 value not stored
-    return ExposureResult(
+    out = ExposureResult(
         grid,
         values,
         current,
@@ -210,12 +225,30 @@ def load_exposure_result(
         trades_by_set,
         int(vals["path"].max()) + 1,
     )
+    out.im_scale = im_scales(trades, by_index, [g[1] for g in grid], snap.business_date)
+    return out
+
+
+def stored_initial_margin(repo: DuckDBRepository, run_id: str) -> dict[str, float]:
+    """The SIMM-lite initial margin (REG-004) held per netting set on a run, empty if the
+    regulatory engine has not run. The exposure engine and CSA what-ifs share this so both
+    report the same collateralised profile."""
+    frame = repo.load_run_frame(run_id, "reg_simm")
+    if not len(frame):
+        return {}
+    return {str(r["netting_set_id"]): float(r["im"]) for _, r in frame.iterrows()}
 
 
 def csa_what_if(
-    res: ExposureResult, netting_set_id: str, csa: CSA | None, mpor_days: int = 10
+    res: ExposureResult,
+    netting_set_id: str,
+    csa: CSA | None,
+    mpor_days: int = 10,
+    initial_margin: dict[str, float] | None = None,
 ) -> pd.DataFrame:
-    """Profile of one netting set under alternative CSA terms (None = uncollateralised)."""
+    """Profile of one netting set under alternative CSA terms (None = uncollateralised).
+    ``initial_margin`` must be the same margin the run's headline profile used, otherwise the
+    what-if baseline does not tie to the reported profile."""
     sub = ExposureResult(
         res.grid,
         {netting_set_id: res.netting_values[netting_set_id]},
@@ -225,7 +258,9 @@ def csa_what_if(
         {netting_set_id: res.trades_by_set.get(netting_set_id, [])},
         res.paths,
     )
-    return collateralise(sub, mpor_days, {netting_set_id: csa})
+    if netting_set_id in res.im_scale:
+        sub.im_scale = {netting_set_id: res.im_scale[netting_set_id]}
+    return collateralise(sub, mpor_days, {netting_set_id: csa}, initial_margin)
 
 
 _ = (credit_proxy, np)

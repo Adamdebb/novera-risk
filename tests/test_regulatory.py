@@ -6,7 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from novera.counterparty_risk import ExposureSimConfig, run_counterparty
+from novera.counterparty_risk import (
+    ExposureSimConfig,
+    collateralise,
+    csa_what_if,
+    load_exposure_result,
+    run_counterparty,
+    stored_initial_margin,
+)
 from novera.market_data.history import MarketHistory
 from novera.regulatory import run_regulatory
 from novera.regulatory.frtb_ima import liquidity_horizon, multiplier_from_exceptions
@@ -150,13 +157,69 @@ def test_regulatory_run_end_to_end(db):
         assert rr.by_desk["frtb_sa"].sum() == pytest.approx(rr.frtb_sa.total, rel=1e-6)
         assert not repo.load_run_frame(db["run_id"], "reg_summary").empty
         # Initial margin then reduces exposure in the counterparty engine.
-        cr = run_counterparty(
-            repo, db["run_id"], ExposureSimConfig(paths=30, seed=1), runs_dir=db["runs_dir"], workers=1
-        )
-        assert cr.notes["initial_margin_sets"] > 0
+        cfg = ExposureSimConfig(paths=30, seed=1)
+        cr = run_counterparty(repo, db["run_id"], cfg, runs_dir=db["runs_dir"], workers=1)
+        assert cr.notes["initial_margin_sets"] > 0 and not cr.notes["warnings"]
         prof = cr.profiles
         coll = prof[prof["collateralised"]]
         assert (coll["initial_margin"] > 0).any()
+        # The same paths without the margin: exposure has to be at least as high everywhere,
+        # and strictly higher somewhere, or the deduction is not reaching the profile.
+        no_im = collateralise(cr.result, cfg.margin_period_days)
+        on = coll.set_index(["netting_set_id", "step"])["ee"]
+        off = no_im[no_im["collateralised"]].set_index(["netting_set_id", "step"])["ee"]
+        assert (off >= on - 1e-6).all() and (off > on + 1e-6).any()
+        # The margin ages with the portfolio: never above its t0 value, and the sets that run
+        # off have less of it left at the end of the grid than at the start (REG-004).
+        ims = coll.pivot_table(index="netting_set_id", columns="years", values="initial_margin")
+        assert (ims.le(ims.max(axis=1), axis=0) | ims.isna()).all().all()
+        assert (ims.iloc[:, -1] <= ims.iloc[:, 0] + 1e-6).all()
+        assert (ims.iloc[:, -1] < ims.iloc[:, 0] - 1e-6).any()
+
+
+def test_csa_what_if_baseline_ties_to_the_reported_profile(db):
+    """A what-if on unchanged terms must reproduce the run's own profile, initial margin
+    included. The two are shown side by side on the Counterparty page, and the what-if used to
+    drop the margin silently, so the baseline disagreed with the headline for every margined set.
+    The API layer passes the same dict to both legs."""
+    with DuckDBRepository(db["path"]) as repo:
+        run_regulatory(repo, db["run_id"], runs_dir=db["runs_dir"])
+        cr = run_counterparty(
+            repo, db["run_id"], ExposureSimConfig(paths=30, seed=1), runs_dir=db["runs_dir"], workers=1
+        )
+        with_im = cr.profiles[cr.profiles["initial_margin"] > 0]
+        assert not with_im.empty, "no netting set carries initial margin on this run"
+        ns = str(with_im.iloc[0]["netting_set_id"])
+        res = load_exposure_result(repo, db["run_id"], db["runs_dir"])
+        assert res is not None
+        im = stored_initial_margin(repo, db["run_id"])
+        assert im.get(ns, 0.0) > 0
+        base_csa = res.csas[res.netting_sets[ns].csa_id]
+        before = csa_what_if(res, ns, base_csa, 10, im).sort_values("years")
+        reported = cr.profiles[cr.profiles["netting_set_id"] == ns].sort_values("years")
+        assert before["initial_margin"].to_numpy() == pytest.approx(
+            reported["initial_margin"].to_numpy(), rel=1e-9
+        )
+        assert before["ee"].to_numpy() == pytest.approx(reported["ee"].to_numpy(), rel=1e-9)
+        assert before["pfe95"].max() == pytest.approx(reported["pfe95"].max(), rel=1e-9)
+        # Without the margin the baseline no longer ties, which is the state this test pins shut.
+        assert csa_what_if(res, ns, base_csa)["ee"].sum() > before["ee"].sum() + 1e-6
+
+
+def test_counterparty_run_warns_when_initial_margin_is_absent(db):
+    """Exposure without IM is otherwise indistinguishable from exposure with it."""
+    with DuckDBRepository(db["path"]) as repo:
+        saved = repo.load_run_frame(db["run_id"], "reg_simm")
+        repo.save_run_frame(db["run_id"], "reg_simm", pd.DataFrame())
+        try:
+            cr = run_counterparty(
+                repo, db["run_id"], ExposureSimConfig(paths=20, seed=1), runs_dir=db["runs_dir"], workers=1
+            )
+        finally:
+            repo.save_run_frame(db["run_id"], "reg_simm", saved)  # the db fixture is module-scoped
+        assert cr.notes["initial_margin_sets"] == 0 and cr.notes["collateralised_sets"] > 0
+        assert any("initial margin" in w for w in cr.notes["warnings"])
+        assert (cr.profiles["initial_margin"] == 0).all()
 
 
 def test_eod_runs_regulatory_then_counterparty(db, tmp_path):
