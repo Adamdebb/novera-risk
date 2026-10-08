@@ -79,7 +79,7 @@ Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
 
 ```bash
 uv sync --all-extras
-uv run pytest                      # ~2 minutes
+uv run pytest                      # ~20 minutes
 uv run novera simulate             # build the bank, portfolio and market data (~10s)
 uv run novera run eod --business-date 2026-09-11   # day 1: the four planted breaches (~2 minutes)
 uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breaches auto-escalate
