@@ -1,127 +1,142 @@
 # Novera
 
-**AI-native risk intelligence layer for global trading portfolios.**
+**An AI-native market and counterparty risk platform: a deterministic risk engine, a governed daily workflow, and an AI analyst that explains the numbers but never computes them.**
 
-Novera is a working prototype of how a modern market and counterparty risk function can
-operate. It runs a deterministic, auditable risk engine over a simulated multi-asset
-trading organisation, then adds the layer most institutions lack: automated monitoring,
-explanation, scenario investigation, exception management and Novera Analyst, an AI assistant that
-works only from validated numbers.
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)
+![DuckDB](https://img.shields.io/badge/storage-DuckDB-FFF000.svg)
+
+Novera is a working prototype of how a modern risk function can operate. It runs an auditable
+risk engine over a simulated global bank and a simulated hedge fund, then adds what most
+institutions lack: automated monitoring, explanation, scenario investigation, exception
+management and an assistant that answers only from validated results.
 
 > We have enough risk numbers. The problem is turning them into decisions.
 
-## What it does
-
-| Capability          | What the platform answers                                   |
-|---------------------|-------------------------------------------------------------|
-| Aggregation         | What do we hold, what is it worth, at every hierarchy level |
-| Monitoring          | What changed since yesterday                                |
-| Investigation       | Why it changed: market move, new trades, model, data        |
-| Simulation          | What happens under historical and hypothetical stress       |
-| Control             | Which limits are breached, who owns them, what happens next |
-| Intelligence        | Which risks matter most today                               |
-| Analyst             | Ask the platform in plain language, get sourced answers     |
-
-Individual measures such as VaR, expected shortfall, Greeks, DV01, CS01, PFE and CVA are
-components that serve those capabilities.
-
-## Status
-
-Phases 1 to 7 delivered. See `docs/03-roadmap.md`.
-
-- Simulated bank: 3 legal entities, 14 desks, 38 books, 30 counterparties, ~1,500 trades
-  across nineteen products (bonds, swaps, repos, rates futures, swaptions, FX spot,
-  forwards and options, cash equity, index futures, equity options, barrier and digital
-  options, ETFs and mutual funds, commodity futures and options, CDS indices and single
-  names, crypto), ~1,400 risk factors with five years of correlated daily history.
-- Pricing written in Python and benchmarked against QuantLib, with a model inventory that
-  rates each product's model against the market standard and measures the gap where one
-  exists; sensitivities, historical VaR with a challenger, stress library, 79 seeded limits,
-  P&L explain, data-quality verdict.
-- A governed end-of-day run stored with its run id, snapshot ids, model versions and
-  audit events. A FastAPI API and a Streamlit morning dashboard over the stored run.
-- Breach workflow with auto-escalation and an approval matrix for temporary limit
-  increases, and run-to-run comparison. Two simulated business days out of the box.
-- Novera Analyst: ask questions in plain language, get answers built only from stored run
-  results and engine what-ifs, every answer recorded with its tool calls. Works without
-  an API key through a scripted provider; set `GEMINI_API_KEY` (free tier) or
-  `ANTHROPIC_API_KEY` (Claude) to use a model. Groq, OpenRouter and a local Ollama work too.
-- Three VaR methods (historical full revaluation, delta-gamma-vega challenger, Monte
-  Carlo), backtesting with Kupiec and Christoffersen tests, concentration and liquidity
-  measures, and a daily risk pack in HTML, PDF and Excel.
-- Counterparty risk: Monte Carlo exposure profiles with full revaluation, CSA collateral
-  with an instant what-if on terms, CVA and DVA, wrong-way indicators, PFE-based limits.
-- Bank capital: FRTB standardised and internal models, SA-CCR, SIMM-lite initial
-  margin, BA-CVA, a funding cash ladder, capital by desk.
-- Hedge-fund face: a second simulated organisation with strategies, prime brokers, NAV and
-  investors; leverage, broker margin, factor betas, redemption stress, strategy
-  attribution and crowding.
-- Instrument breadth: every product priced by a benchmarked closed form (QuantLib or
-  analytic), funds seen through to their constituents, and stale or missing market data
-  proxied before pricing with an audit trail that travels with the run.
-- Agents: breach investigation (evidence and an engine-sized remediation attached to the
-  breach), scenario suggestion (sized by the history, run through the engine), model
-  validation drafting from the methodology records, and CSA term-sheet ingestion with a
-  review step. Portfolio Lab: plant problems at a chosen size in a sandbox and see what
-  the platform detects. An MCP server exposes the same tools to Claude Desktop, Claude
-  Code or any MCP client, read-only by default, every call audited.
-- Operations: a scheduler that advances the simulated world and runs EOD with retries, a
-  manual full run from the Admin page for the bank or the fund, alerts to Slack or email, an independent-challenger reconciliation that attributes the
-  gap to a second risk system, and adapters for real market data (FRED, Yahoo, Coinbase).
-  A "Market data" page shows, for every risk factor, whether its history is real or
-  synthetic and which free and paid sources could replace it.
-
-## Morning dashboard
-
 ![Global market risk overview](docs/screenshots/overview.png)
+
+## Why it is different
+
+- **The engine is authoritative.** No LLM ever produces, adjusts or rounds a risk number. The AI
+  explains, investigates and drafts by calling tools that read stored results or run an engine what-if.
+- **Every run is reproducible.** Each run records its business date, portfolio and market-data
+  snapshots, model versions and config hash. Results are immutable; the same inputs give the same numbers.
+- **Every metric is documented.** More than fifty methodology records cover definition, maths,
+  assumptions, limitations and validation. A metric without one is not finished.
+- **Models are challenged.** Pricers are benchmarked against QuantLib or closed forms, VaR has a
+  challenger method, and an independent-challenger feed reconciles Novera against a second system.
+
+## What it covers
+
+| Area | What you get |
+|---|---|
+| **Market risk** | Sensitivities (DV01, CS01, Greeks), historical VaR with full revaluation, delta-gamma-vega and Monte Carlo variants, expected shortfall, stressed and weighted VaR, backtesting (Kupiec, Christoffersen), a stress library, P&L explain |
+| **Counterparty risk** | Monte Carlo exposure profiles (EE, PFE), CSA collateral with an instant terms what-if, CVA and DVA, wrong-way risk, PFE-based limits |
+| **Bank capital** | FRTB standardised and internal models, SA-CCR, SIMM-lite initial margin, BA-CVA, funding cash ladder |
+| **Hedge fund face** | Leverage, prime-broker margin, factor betas, redemption stress, strategy attribution, crowding, fund look-through |
+| **Control** | 79 seeded limits, breach workflow with auto-escalation, an approval matrix for temporary increases, per-metric sign-off and release |
+| **Data quality** | A verdict on whether today's run can be trusted, with proxies and an audit trail for stale or missing market data |
+| **Novera Analyst** | Plain-language questions answered from stored results, every answer logged with its tool calls |
+| **Agents** | Breach investigation, scenario suggestion, model-validation drafting, CSA term-sheet ingestion with human review |
+| **Operations** | In-process scheduler, partial stage re-runs, alerts to Slack or email, daily risk pack in HTML, PDF and Excel |
+| **Portfolio Lab** | Plant problems at a chosen size in a sandbox and see what the platform detects |
+
+The simulated bank has 3 legal entities, 14 desks, 38 books, 30 counterparties and about 1,500
+trades across nineteen products, with roughly 1,500 risk factors and five years of correlated
+daily history. The hedge fund is a second organisation with strategies, prime brokers, NAV and investors.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![VaR](docs/screenshots/var.png) | ![Limits](docs/screenshots/limits.png) |
+| ![Breaches](docs/screenshots/breaches.png) | ![Counterparty](docs/screenshots/counterparty.png) |
+| ![Capital](docs/screenshots/capital.png) | ![Analyst](docs/screenshots/analyst.png) |
 
 ## Quick start
 
+You need [uv](https://docs.astral.sh/uv/) and Python 3.11 or later.
+
 ```bash
+git clone https://github.com/Adamdebb/novera-risk.git
+cd novera-risk
 uv sync --all-extras
-uv run pytest                      # ~20 minutes
-uv run novera simulate             # build the bank, portfolio and market data (~10s)
-uv run novera run eod --business-date 2026-09-11   # day 1: the four planted breaches (~2 minutes)
-uv run novera run eod --business-date 2026-09-14   # day 2: unacknowledged breaches auto-escalate
+
+uv run novera simulate                                     # build the bank, portfolio and market data (~10s)
+uv run novera run eod --business-date 2026-09-11           # day 1: four planted breaches (~2 minutes)
+uv run novera run eod --business-date 2026-09-14           # day 2: unacknowledged breaches auto-escalate
 uv run novera breach list
 uv run novera ask "Why did VaR change since yesterday?"
-uv run novera schedule --once      # advance one business day and run EOD, with alerts (--fund for the fund)
-uv run novera rerun latest --stage stress --actor "Risk Control"   # re-run one stage into a new RERUN run; the parent is untouched
-uv run novera signoff sign VAR --actor "Head of Market Risk"        # sign-off and release of the run's metrics (OPS-003)
-uv run novera var-setup show / template hedge_fund --actor CRO      # which VaR measures run daily, for limits or information (OPS-004)
-uv run novera vendor-feed && uv run novera reconcile data/feeds/official_risk_2026-09-15.csv
-uv run novera run counterparty     # exposure, collateral, CVA, wrong-way on the latest run (~3 minutes)
-uv run novera run regulatory       # FRTB, SA-CCR, SIMM, BA-CVA, cash ladder on the latest run
-uv run novera simulate --template hedge_fund && uv run novera run eod --fund   # the fund face
-uv run novera report               # daily risk pack: HTML, PDF, Excel in data/reports
-uv run novera fetch --sources yahoo,coinbase --start 2019-01-01   # optional, needs network
-uv run streamlit run src/novera/ui/app.py           # morning dashboard
-uv run uvicorn novera.api.app:app --reload          # read API, docs at /docs
+
+uv run streamlit run src/novera/ui/app.py                  # morning dashboard
+uv run uvicorn novera.api.app:app --reload                 # read API, docs at /docs
 ```
 
-The dashboard reads the stored run in-process by default. Set `NOVERA_API_URL=http://127.0.0.1:8000`
-to make it call the API instead.
+The assistant works out of the box through a scripted provider. For a real model, copy
+`.env.example` to `.env` and set `GEMINI_API_KEY` (free tier), `ANTHROPIC_API_KEY`, or a Groq,
+OpenRouter or local Ollama setting. `NOVERA_LLM_PROVIDER` accepts a comma-separated fallback chain.
+
+More commands, in the same style:
+
+```bash
+uv run novera simulate --template hedge_fund && uv run novera run eod --fund   # the hedge fund face
+uv run novera run counterparty      # exposure, collateral, CVA, wrong-way on the latest run
+uv run novera run regulatory        # FRTB, SA-CCR, SIMM, BA-CVA, cash ladder
+uv run novera report                # daily risk pack: HTML, PDF, Excel in data/reports
+uv run novera signoff status        # sign-off and release of the run's metrics
+uv run novera mcp                   # MCP server for Claude Desktop, Claude Code or any MCP client
+uv run novera --help                # everything else
+```
+
+Alerts are stored always and delivered only when Slack or SMTP is configured. Leave them
+unconfigured while you explore, because a full EOD run delivers for real once they are set.
+The full test suite takes about 20 minutes (`uv run pytest`).
+
+## Architecture
+
+```
+simulation ─▶ market_data ─▶ pricing ─▶ risk / counterparty_risk / regulatory / fund
+                                              │
+              limits · data_quality ◀─────────┤
+                                              ▼
+                      workflows (governed EOD run, audit events)
+                                              │
+                                  storage (DuckDB, all SQL here)
+                                              │
+                          api (FastAPI) ─▶ ui (Streamlit) · ai (Analyst, agents, MCP)
+```
+
+The UI holds no business logic and only calls the API or the service layer. Only the storage
+layer writes SQL. The API is a contract: every route has a response model and every error is a
+problem document with a stable code. See [`docs/02-architecture.md`](docs/02-architecture.md).
 
 ## Documentation
 
-- `docs/01-product-vision.md` — positioning, audiences, claims we make and avoid
-- `docs/02-architecture.md` — layers, module map, boundaries
-- `docs/03-roadmap.md` — phases and instrument scope
-- `docs/04-governance.md` — methodology records, run reproducibility, AI rules
-- `docs/07-eod-workflow.md` — the end-of-day run step by step: what each stage reads, writes and guarantees
-- `docs/05-demo-script.md` — the 10-minute executive demo
-- `docs/06-decision-log.md` — every design question, the options, the choice made, and what to revisit
-- `docs/adr/` — architecture decision records
-- `docs/methodology/` — one record per metric
+- [`docs/01-product-vision.md`](docs/01-product-vision.md): positioning, audiences, claims we make and avoid
+- [`docs/02-architecture.md`](docs/02-architecture.md): layers, module map, boundaries
+- [`docs/03-roadmap.md`](docs/03-roadmap.md): phases and instrument scope
+- [`docs/04-governance.md`](docs/04-governance.md): methodology records, run reproducibility, AI rules
+- [`docs/05-demo-script.md`](docs/05-demo-script.md): the 10-minute executive demo
+- [`docs/07-eod-workflow.md`](docs/07-eod-workflow.md): the end-of-day run, step by step
+- [`docs/06-decision-log.md`](docs/06-decision-log.md): every design question, the options, the choice made
+- [`docs/methodology/`](docs/methodology): one record per metric
+- [`docs/adr/`](docs/adr): architecture decision records
+
+## Status
+
+Phases 1 to 7 of the roadmap are delivered. Market data is synthetic by default, with adapters
+for real data (FRED, Yahoo, Coinbase) available. Novera is a demonstration prototype, not
+production risk software, and the simulated organisations and numbers are not real.
 
 ## Design principles
 
 1. Deterministic engine, AI on top. No LLM produces an official number.
-2. One workflow end to end before breadth. Products are added only when the full
-   pipeline (capture, valuation, sensitivities, VaR, stress, limits, report) already works.
-3. Reproducible runs. Same inputs, same run ID lineage, same numbers.
-4. Vendor neutral. Designed to ingest results from other engines and reconcile them.
+2. One workflow end to end before breadth. A product is added only when the whole pipeline already works for it.
+3. Reproducible runs. Same inputs, same run lineage, same numbers.
+4. Vendor neutral. Built to ingest results from other engines and reconcile them.
 
 ## Licence
 
-Proprietary. All rights reserved.
+[MIT](LICENSE) © 2026 Adamdebb
