@@ -1288,6 +1288,47 @@ without a CSA, and chose to pass CSAs into pricing and to include CDS and repos.
   a separate FVA on the exposure profiles. Discounting at a funding curve double counts DVA,
   ignores netting and mixes funding into PV.
 
+## Round 36 — Stuck runs are swept (2026-10-14)
+
+Context: second-look item 22. A run is saved RUNNING at the start of an EOD and only made final
+at the end (32.3), so a process killed in between leaves it RUNNING for good, and the scheduler
+job that launched it too. DuckDB lets one process write to a file at a time, so no other process
+can be mid-run while a sweep holds the write connection; within one process (the API serves
+requests on threads) a live run can still overlap a sweep. The owner asked what the trigger and
+scope questions meant, then took every recommended option.
+
+### 36.1 Detection
+- Options: owner process with an age backstop ★ · age only
+- Choice (owner): **owner process with an age backstop**: each run and job records its host and
+  process id; a RUNNING one is abandoned when that process is no longer alive on this machine,
+  or after two hours when it was started elsewhere or carries no owner (runs from before this
+  round). A live run, including one in the sweeping process itself, is never touched.
+
+### 36.2 Status
+- Options: FAILED with a reason ★ · a new ABANDONED status
+- Choice (owner): **FAILED with a reason** in the run summary and a RUN_ABANDONED audit event;
+  the status set, the API contract and the screens are unchanged.
+
+### 36.3 Triggers
+- Options (several): at the start of every run or job ★ · when the scheduler starts ★ · a CLI
+  command ★ · an Admin page button
+- Choice (owner): **the three recommended**: start of every EOD, partial re-run, manual run and
+  scheduler job; scheduler start-up; `novera run sweep`.
+
+### 36.4 Scope
+- Options: runs and scheduler jobs ★ · runs only
+- Choice (owner): **both**, so the run list and the scheduler log agree.
+- Found building it: scheduler and manual jobs were saved only when they ended, so a killed job
+  left no record at all rather than a stuck one. Each job is now saved RUNNING as it starts, with
+  its owner, and the sweep closes it.
+- Found testing it: DuckDB returns TIMESTAMP columns as naive local time, not UTC; the sweep reads
+  a naive start time as local before comparing ages.
+- Where: `workflows/sweep.py` (`owner`, `abandoned_reason`, `sweep_stuck`), the owner on
+  `RunRecord.summary` (EOD, partial re-runs) and on `JobRecord`, `repo.list_running_runs`, the
+  sweep in `run_eod`, `rerun_stage`, `run_once`, `run_manual` and `serve`, `novera run sweep`,
+  OPS-001 1.3.0, `tests/test_sweep.py`; the API run summary and job schemas declare `owner` and
+  `abandoned` (the schema drift test caught the new summary key).
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1358,9 +1399,9 @@ without a CSA, and chose to pass CSAs into pricing and to include CDS and repos.
     counterparty reference data but carry no netting sets, so cleared exposure, default-fund
     contributions and cleared initial margin are absent. Counterparty risk covers the bilateral
     book only, which a reader may not infer from the Counterparty page.
-22. **A RUNNING run left by a killed process stays RUNNING** (32.3): it is never the latest
-    and the next job re-runs the day, but nothing marks it abandoned; a start-up sweep that
-    turns RUNNING runs older than a threshold into FAILED would tidy the run list.
+22. **Closed in round 36**: runs and jobs left RUNNING by a killed process are swept. Remaining:
+    a process that hangs without dying keeps its run RUNNING, since its process is alive; only a
+    watchdog with a heartbeat would catch that.
 23. **Fixings come from the simulated curves** (34.4): a trade's running-period fixing is read
     off the history (the 1M node stands for the overnight rate, the projection curve for the term
     fixing), not from published fixings; with real data a fixings table per index should feed it.

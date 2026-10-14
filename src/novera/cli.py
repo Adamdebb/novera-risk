@@ -327,6 +327,23 @@ def risk(
     pd.set_option("display.width", 200)
 
 
+@run_app.command("sweep")
+def run_sweep_cmd(fund: bool = typer.Option(False, help="Sweep the hedge-fund database")) -> None:
+    """Mark runs and scheduler jobs a killed process left RUNNING as FAILED (OPS-001). A run
+    whose process is alive on this machine is never touched; one from elsewhere after two hours."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.sweep import sweep_stuck
+
+    with DuckDBRepository(_db(fund)) as repo:
+        repo.init_schema()
+        res = sweep_stuck(repo, actor="cli")
+    if res.empty:
+        typer.echo("nothing stuck: no RUNNING run or job without a live process")
+    for kind, items in (("run", res.runs), ("job", res.jobs)):
+        for rid, reason in items.items():
+            typer.echo(f"{kind} {rid} marked FAILED: {reason}")
+
+
 @run_app.command("counterparty")
 def run_counterparty_cmd(
     run_id: str = typer.Option("latest"),

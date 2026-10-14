@@ -646,6 +646,13 @@ class DuckDBRepository:
         params = ([run_type] if run_type else []) + [limit]
         return [_run_from_row(r) for r in self._conn.execute(q, params).fetchall()]
 
+    def list_running_runs(self) -> list[RunRecord]:
+        """Every run still RUNNING, oldest first (the stuck-run sweep reads them, OPS-001)."""
+        rows = self._conn.execute(
+            "SELECT * FROM risk_run WHERE status = 'RUNNING' ORDER BY started_at"
+        ).fetchall()
+        return [_run_from_row(r) for r in rows]
+
     def latest_run(
         self, run_type: str = "EOD", status: str | tuple[str, ...] = USABLE_STATUSES
     ) -> RunRecord | None:

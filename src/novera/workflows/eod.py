@@ -70,6 +70,7 @@ from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
+from novera.workflows.sweep import owner, sweep_stuck
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +214,7 @@ def run_eod(
         netting_sets = {n.netting_set_id for n in ns_list}
         collateral = CollateralMap.from_reference(ns_list, csa_list)
 
+    sweep_stuck(repo)  # close runs a killed process left RUNNING (decision 36.3)
     run = RunRecord(
         new_run_id(),
         "EOD",
@@ -224,6 +226,7 @@ def run_eod(
         MODEL_VERSIONS,
         cfg.as_dict(),
     )
+    run.summary["owner"] = owner()  # lets a later sweep tell a live run from an abandoned one
     events.append(
         AuditEvent.now(
             cfg.actor,
@@ -352,6 +355,7 @@ def run_eod(
     st = stress_table(stress, val.table)
     worst = st.iloc[0] if len(st) else None
     run.summary = {
+        "owner": run.summary.get("owner"),
         "pv": pf.total_pv,
         "priced_trades": len(pf.priced_ids),
         "unpriced_trades": len(pf.errors),

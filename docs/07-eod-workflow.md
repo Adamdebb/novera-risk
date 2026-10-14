@@ -45,6 +45,10 @@ Each step is timed and its duration stored on the run. Durations below are from 
 bank run of 2026-09-15 (1,515 trades, 1,494 risk factors, 1,305 days of history, one worker
 per core).
 
+Before step 1 the run sweeps runs and jobs a killed process left RUNNING and records its own
+owner (host and process id) on its summary, so a later sweep can tell it is alive (OPS-001,
+decision round 36).
+
 | # | Step (timing key) | What it does | Reads | Writes | Record | Demo |
 |---|---|---|---|---|---|---|
 | 1 | `load` | Picks the market snapshot on or before the business date and the portfolio snapshot on or before it; loads the organisation, the risk-factor universe, the full market history, the limits in force and the approved temporary increases; expires increases past their end date; applies market-data proxies to stale or missing factors, keeping the raw snapshot | snapshots, history, limits, increases | `md_proxies`; INCREASE_EXPIRED audit events | MD-002, MR-008 | 0.4s |

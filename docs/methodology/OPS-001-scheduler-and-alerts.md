@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.workflows.scheduler`, `novera.workflows.alerts`, `novera.simulation.advance`, `GET /admin/run/options`, `POST /admin/run` |
@@ -70,8 +70,25 @@ deliveries like any other, so the test leaves a record. The email channel uses S
 and a login only when `NOVERA_SMTP_USER` and `NOVERA_SMTP_PASSWORD` are set; without them
 it speaks plain SMTP, which is what a local relay or a development sink expects.
 
+## Stuck runs (1.3.0, decision round 36)
+A run is RUNNING from its start until its final save (decision 32.3), so a process killed in
+between would leave it RUNNING for good. Every run records its owner, the host and process id,
+in its summary; every scheduler or manual job is saved RUNNING as it starts, with its owner, so a
+killed job is visible too. `workflows/sweep.py` marks a RUNNING run or job FAILED, with the reason
+in its summary or error and a RUN_ABANDONED audit event, when its process is no longer alive on
+this machine, or after two hours when it started on another machine or has no recorded owner
+(runs from before this version); a job is also closed with the run it launched. A run owned by a
+live process, the sweeping one included, is never touched. DuckDB lets one process write a
+database file at a time, so no other process can be mid-run during a sweep; the owner check is
+what protects a run on another thread of the same process (the API).
+
+The sweep runs at the start of every EOD, partial re-run, manual run and scheduler job, when
+`novera schedule` starts, and on demand with `novera run sweep` (`--fund` for the fund), which
+prints what it changed.
+
 ## Validation tests
-`tests/test_operations.py`: alert derivation, partial delivery, suppression, failed-run
+`tests/test_sweep.py`: dead, live, foreign and owner-less runs, jobs closed with their run, jobs
+saved RUNNING with their owner, the CLI. `tests/test_operations.py`: alert derivation, partial delivery, suppression, failed-run
 alert, weekend skipping, advance-and-run, skip when already run, injected clock loop,
 email channel message and TLS/login behaviour, `alert test` without a channel, manual run
 (job, audit event, advance, failure recorded). `tests/test_workflows.py`:

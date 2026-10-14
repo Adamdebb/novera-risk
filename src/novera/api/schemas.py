@@ -119,6 +119,12 @@ class RunFigures(ApiModel):
         default=None,
         description="On a PARTIAL run, each stage that failed after the core results were stored",
     )
+    owner: dict[str, Any] | None = Field(
+        default=None, description="Host and process id that ran it, read by the stuck-run sweep (OPS-001)"
+    )
+    abandoned: str | None = Field(
+        default=None, description="Why the sweep marked a run left RUNNING by a killed process FAILED"
+    )
 
 
 class RunRecord(ApiModel):
@@ -636,6 +642,7 @@ class JobRecord(ApiModel):
     error: str | None = None
     finished_at: str | None = None
     notes: list[str] = Field(default_factory=list)
+    owner: dict[str, Any] | None = Field(default=None, description="Host and process id running the job")
 
 
 class RunOptions(ApiModel):

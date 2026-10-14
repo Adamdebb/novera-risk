@@ -4709,6 +4709,19 @@
             "title": "Notes",
             "type": "array"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Host and process id running the job",
+            "title": "Owner"
+          },
           "run_id": {
             "anyOf": [
               {
@@ -5869,6 +5882,19 @@
             },
             "title": "Notes",
             "type": "array"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Host and process id running the job",
+            "title": "Owner"
           },
           "run": {
             "anyOf": [
@@ -8745,6 +8771,18 @@
         "additionalProperties": true,
         "description": "Headline figures stored with the run record (reporting currency).",
         "properties": {
+          "abandoned": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the sweep marked a run left RUNNING by a killed process FAILED",
+            "title": "Abandoned"
+          },
           "alerts": {
             "anyOf": [
               {
@@ -9049,6 +9087,19 @@
               }
             ],
             "title": "Monte Carlo Var"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Host and process id that ran it, read by the stuck-run sweep (OPS-001)",
+            "title": "Owner"
           },
           "pnl_steps": {
             "additionalProperties": {

@@ -58,6 +58,7 @@ from novera.workflows.eod import (
     run_dir,
 )
 from novera.workflows.runs import USABLE_STATUSES, AuditEvent, RunRecord, new_run_id
+from novera.workflows.sweep import owner, sweep_stuck
 
 MODEL_VERSION = "1.1.0"
 RECORD = "OPS-002"
@@ -521,6 +522,7 @@ def rerun_stage(
     if face not in spec.faces:
         raise ValueError(f"stage {stage!r} does not apply to the {face} face")
 
+    sweep_stuck(repo)  # decision 36.3
     run = RunRecord(
         new_run_id(),
         "RERUN",
@@ -536,7 +538,7 @@ def rerun_stage(
         },
     )
     run.verdict = parent.verdict  # data quality is not recomputed
-    run.summary = dict(parent.summary)
+    run.summary = {**dict(parent.summary), "owner": owner()}
     events = [
         AuditEvent.now(
             actor, "RERUN_STARTED", run.run_id, parent_run_id=parent.run_id, stage=stage, reason=reason

@@ -83,6 +83,7 @@ uv run novera breach list     # breach workflow: list, ack, escalate, close, req
 uv run novera ask "..."       # Novera Analyst; scripted provider unless a key is set (GEMINI_API_KEY free, ANTHROPIC_API_KEY)
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily; --fund for the fund
 uv run novera rerun latest --stage stress --actor "Risk Control" --reason "..."   # one stage into a new RERUN run (OPS-002); Admin page does the same
+uv run novera run sweep       # mark runs and jobs a killed process left RUNNING as FAILED (OPS-001); runs do it on start too
 uv run novera signoff status / sign VAR --actor "Head of Market Risk" / reject ... --comment / policy --require VAR,STRESS   # sign-off and release (OPS-003)
 uv run novera var-setup show / template bank|hedge_fund --actor CRO   # the VaR matrix: measures produced daily, for limits or information (OPS-004); Admin page edits it
 uv run novera alert test      # send one test alert through the configured channels (Slack, SMTP); `alert list` shows stored alerts

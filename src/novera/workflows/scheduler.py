@@ -19,6 +19,7 @@ from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import channels_from_settings, dispatch, run_failed_alert
 from novera.workflows.eod import EODConfig, run_eod
 from novera.workflows.runs import AuditEvent, new_run_id
+from novera.workflows.sweep import owner, sweep_stuck
 
 
 @dataclass
@@ -33,6 +34,7 @@ class JobRecord:
     error: str | None = None
     finished_at: datetime | None = None
     notes: list[str] = field(default_factory=list)
+    owner: dict[str, Any] = field(default_factory=owner)  # the process running it (decision 36.1)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,6 +48,7 @@ class JobRecord:
             "error": self.error,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "notes": self.notes,
+            "owner": self.owner,
         }
 
 
@@ -62,6 +65,8 @@ def run_once(
     settings = settings or get_settings()
     job = JobRecord(new_run_id("job"), datetime.now(UTC), "ADVANCE_AND_EOD" if advance else "EOD")
     repo.init_schema()
+    sweep_stuck(repo)
+    repo.save_job(job.to_dict())  # RUNNING until it ends, so a killed job is visible and swept
     try:
         msnaps = repo.list_market_snapshots()
         if not msnaps:
@@ -147,6 +152,8 @@ def run_manual(
     job = JobRecord(new_run_id("job"), datetime.now(UTC), action)
     job.notes.append(f"launched by {cfg.actor}" + (f": {reason.strip()}" if reason.strip() else ""))
     repo.init_schema()
+    sweep_stuck(repo)
+    repo.save_job(job.to_dict())
     try:
         msnaps = repo.list_market_snapshots()
         if not msnaps:
@@ -216,6 +223,9 @@ def serve(
     ``iterations`` caps the number of firings (tests); ``clock`` and ``sleep`` are
     injectable so the loop can be driven without waiting."""
     clock = clock or (lambda: datetime.now().astimezone())
+    with DuckDBRepository(db_path) as repo:  # tidy what a killed scheduler left (decision 36.3)
+        repo.init_schema()
+        sweep_stuck(repo)
     fired = 0
     while iterations is None or fired < iterations:
         now = clock()
