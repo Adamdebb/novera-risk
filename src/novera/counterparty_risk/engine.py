@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from novera.config import Settings, get_settings
+from novera.counterparty_risk.ccp import build_ccp_sets
 from novera.counterparty_risk.cva import (
     CreditTerms,
     credit_proxy,
@@ -89,8 +90,15 @@ def run_counterparty(
     netting_sets, csas = repo.load_netting_sets()
     counterparties = {c.counterparty_id: c for c in repo.load_counterparties()}
     initial_margin = stored_initial_margin(repo, run_id)
+    posted_margin = stored_posted_margin(repo, run_id)
+    # Trades cleared at LCH and ICE join the simulation in one netting set per CCP and legal
+    # entity (decision 39.4).
+    ccp = build_ccp_sets(snap.trades, repo.load_organisation(run.config.get("firm_id", "GMB")))
+    cleared = set(ccp.by_trade)
+    trades = [t for t in snap.trades if t.trade_id not in cleared] + ccp.trades
+    netting_sets, csas = netting_sets + ccp.netting_sets, csas + ccp.csas
     res = simulate_exposure(
-        list(snap.trades),
+        trades,
         market,
         history,
         universe,
@@ -100,6 +108,7 @@ def run_counterparty(
         cfg,
         workers,
         initial_margin=initial_margin,
+        posted_margin=posted_margin,
     )
     profiles = res.profiles
     netting_summary = summarise(profiles, "netting_set_id")
@@ -117,7 +126,7 @@ def run_counterparty(
         lambda s: float(s.clip(lower=0).sum())
     )
     cva_by_cp = cva.groupby("counterparty_id")[
-        ["cva", "dva", "bcva", "cva_gross", "fca", "fba", "fva", "xva"]
+        ["cva", "dva", "bcva", "cva_gross", "fca", "fba", "fva", "mva", "xva"]
     ].sum()
     wwr_by_cp = wwr.groupby("counterparty_id").agg(
         wwr_correlation=("correlation", "max"), wrong_way=("wrong_way", "any"), wwr_proxy=("proxy", "first")
@@ -207,11 +216,14 @@ def load_exposure_result(
     ]
     steps = [g[0] for g in grid]
     netting_sets, csas = repo.load_netting_sets()
-    ns_map = {n.netting_set_id: n for n in netting_sets}
     values = {k: g.sort_values("path")[steps].to_numpy().T for k, g in vals.groupby("netting_set_id")}
     run = repo.load_run(run_id)
     snap = repo.load_portfolio_snapshot(run.portfolio_snapshot_id)
-    trades = list(snap.trades)
+    ccp = build_ccp_sets(snap.trades, repo.load_organisation(run.config.get("firm_id", "GMB")))
+    netting_sets, csas = netting_sets + ccp.netting_sets, csas + ccp.csas
+    ns_map = {n.netting_set_id: n for n in netting_sets}
+    cleared = set(ccp.by_trade)
+    trades = [t for t in snap.trades if t.trade_id not in cleared] + ccp.trades
     trades_by_set: dict[str, list[str]] = {}
     by_index: dict[str, list[int]] = {}
     for j, t in enumerate(trades):
@@ -242,12 +254,22 @@ def stored_initial_margin(repo: DuckDBRepository, run_id: str) -> dict[str, floa
     return {str(r["netting_set_id"]): float(r["im"]) for _, r in frame.iterrows()}
 
 
+def stored_posted_margin(repo: DuckDBRepository, run_id: str) -> dict[str, float]:
+    """The initial margin we post per netting set on a run (decision 39.1), empty if the
+    regulatory engine has not run or predates posted margin."""
+    frame = repo.load_run_frame(run_id, "reg_simm")
+    if not len(frame) or "im_posted" not in frame:
+        return {}
+    return {str(r["netting_set_id"]): float(r["im_posted"]) for _, r in frame.iterrows()}
+
+
 def csa_what_if(
     res: ExposureResult,
     netting_set_id: str,
     csa: CSA | None,
     mpor_days: int = 10,
     initial_margin: dict[str, float] | None = None,
+    posted_margin: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Profile of one netting set under alternative CSA terms (None = uncollateralised).
     ``initial_margin`` must be the same margin the run's headline profile used, otherwise the
@@ -263,7 +285,7 @@ def csa_what_if(
     )
     if netting_set_id in res.im_scale:
         sub.im_scale = {netting_set_id: res.im_scale[netting_set_id]}
-    return collateralise(sub, mpor_days, {netting_set_id: csa}, initial_margin)
+    return collateralise(sub, mpor_days, {netting_set_id: csa}, initial_margin, posted_margin)
 
 
 _ = (credit_proxy, np)

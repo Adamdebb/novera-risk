@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Owner | Counterparty Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.regulatory.simm` |
@@ -21,6 +21,16 @@ sub-curves of one currency. As in FRTB SA (REG-001), a sub-curve's delta is BASI
 discount curve's is DV01 less BASIS01, because the platform's DV01 moves EURIBOR with ESTR.
 The cross-currency basis is one more factor per currency (XCCY01 summed, weight 21 per bp, 20%
 correlation with the curve factors: approximate, like the other parameters).
+
+## Both directions and the threshold (1.4.0, decision 39.1)
+`im_model` is the margin the counterparty would post on our exposure; `im_posted_model` ours on
+theirs, the same model on the sign-flipped sensitivities (equal for linear risk, curvature differs).
+Bilateral margin is exchanged only on a netting set with a CSA and only above `im_threshold` per
+counterparty (50m in reporting currency, standing for the EUR 50m uncleared-margin threshold),
+split across its sets pro rata: `im` received and `im_posted` posted. A CCP netting set receives
+nothing and posts its full model margin, as a stand-in for the CCP's own model (CR-006). Posted
+margin is segregated: it lowers the counterparty's exposure to us (ENE) and its funding is MVA
+(CR-005).
 
 ## Use
 The margin enters the exposure engine as collateral held from the counterparty
@@ -45,12 +55,9 @@ point. Notional units are mixed across product types, so the factor is only mean
 ratio within one netting set over time. `novera.counterparty_risk.exposure.im_scales`.
 
 ## Limitations
-- One margin amount per netting set, treated as received from the counterparty. Margin **we**
-  post is not modelled, so it neither reduces their exposure to us nor feeds DVA, and its gap
-  risk on their default is not captured.
-- No in-scope test: IM is applied to every netting set with a CSA. Real IM requires the AANA
-  test and is only exchanged above a group-level threshold, so coverage here is wider than the
-  rules would give.
+- Posted margin is assumed fully segregated (no loss on the counterparty's default).
+- The threshold is per counterparty, not per consolidated group, and there is no AANA in-scope
+  test: a small counterparty below the threshold exchanges nothing, as the rules would give.
 - Approximate published-style parameters, not the licensed ISDA calibration.
 
 ## Validation tests

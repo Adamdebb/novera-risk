@@ -245,7 +245,10 @@ def saccr(
     reporting: str,
     as_of: date | None = None,
     collateral_by_set: dict[str, float] | None = None,
+    cleared: bool = False,
 ) -> SACCRResult:
+    """EAD per netting set. ``cleared`` takes the CCP netting sets (decision 39.4) instead of the
+    bilateral ones: the same margined formula on the cleared trades relabelled to them."""
     as_of = as_of or market.as_of
     ns_map = {n.netting_set_id: n for n in netting_sets}
     csa_map = {c.csa_id: c for c in csas}
@@ -257,7 +260,7 @@ def saccr(
         if (
             t.status.value == "LIVE"
             and t.venue is Venue.OTC
-            and t.clearing is ClearingType.BILATERAL
+            and t.clearing is (ClearingType.CLEARED if cleared else ClearingType.BILATERAL)
             and t.netting_set_id in ns_map
         ):
             by_set.setdefault(t.netting_set_id, []).append(t)

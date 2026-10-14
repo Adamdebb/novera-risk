@@ -184,7 +184,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Counterparty",
                 "Collateral under the CSA",
-                version="1.1.0",
+                version="1.2.0",
                 face="bank",
             ),
             MeasureSpec(
@@ -206,6 +206,17 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Counterparty",
                 "Funding valuation adjustment",
+                version="1.1.0",
+                face="bank",
+            ),
+            MeasureSpec(
+                "CR-006",
+                "Exposure to central counterparties",
+                "EE and PFE to LCH and ICE per legal entity: cleared value after daily variation "
+                "margin plus the initial margin we post there.",
+                "reporting currency",
+                "Counterparty",
+                "Exposure to central counterparties",
                 face="bank",
             ),
             MeasureSpec(
@@ -255,6 +266,15 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 face="bank",
             ),
             MeasureSpec(
+                "REG-007",
+                "Qualifying-CCP capital",
+                "Trade exposure to LCH and ICE at a 2% risk weight plus the default-fund charge.",
+                "reporting currency",
+                "Capital",
+                "Qualifying-CCP capital",
+                face="bank",
+            ),
+            MeasureSpec(
                 "REG-004",
                 "SIMM-lite initial margin",
                 "Initial margin per netting set from sensitivities with a simplified SIMM aggregation, "
@@ -262,7 +282,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "SIMM-lite initial margin",
-                version="1.3.0",
+                version="1.4.0",
                 face="bank",
             ),
             MeasureSpec(

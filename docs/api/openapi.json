@@ -1198,6 +1198,46 @@
         "title": "BuySell",
         "type": "string"
       },
+      "CCPCapitalRow": {
+        "additionalProperties": true,
+        "description": "Qualifying-CCP capital per CCP (REG-007, decision 39.4).",
+        "properties": {
+          "capital": {
+            "title": "Capital",
+            "type": "number"
+          },
+          "counterparty_id": {
+            "title": "Counterparty Id",
+            "type": "string"
+          },
+          "default_fund_capital": {
+            "title": "Default Fund Capital",
+            "type": "number"
+          },
+          "default_fund_contribution": {
+            "title": "Default Fund Contribution",
+            "type": "number"
+          },
+          "trade_exposure": {
+            "title": "Trade Exposure",
+            "type": "number"
+          },
+          "trade_exposure_capital": {
+            "title": "Trade Exposure Capital",
+            "type": "number"
+          }
+        },
+        "required": [
+          "counterparty_id",
+          "trade_exposure",
+          "trade_exposure_capital",
+          "default_fund_contribution",
+          "default_fund_capital",
+          "capital"
+        ],
+        "title": "CCPCapitalRow",
+        "type": "object"
+      },
       "CDSIndex": {
         "additionalProperties": false,
         "properties": {
@@ -1690,6 +1730,17 @@
             "title": "Hazard",
             "type": "number"
           },
+          "mva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mva"
+          },
           "netting_set_id": {
             "title": "Netting Set Id",
             "type": "string"
@@ -1858,6 +1909,13 @@
               "$ref": "#/components/schemas/CashLadderRow"
             },
             "title": "Cash Ladder",
+            "type": "array"
+          },
+          "ccp": {
+            "items": {
+              "$ref": "#/components/schemas/CCPCapitalRow"
+            },
+            "title": "Ccp",
             "type": "array"
           },
           "components": {
@@ -2653,6 +2711,18 @@
             "description": "FCA \u2212 FBA",
             "title": "Fva"
           },
+          "mva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Funding of the initial margin we post (39.2)",
+            "title": "Mva"
+          },
           "name": {
             "anyOf": [
               {
@@ -2761,7 +2831,7 @@
                 "type": "null"
               }
             ],
-            "description": "CVA \u2212 DVA + FCA (decision 37.3)",
+            "description": "CVA \u2212 DVA + FCA + MVA (decisions 37.3, 39.2)",
             "title": "Xva"
           }
         },
@@ -3492,9 +3562,31 @@
       "ExposureProfilePoint": {
         "additionalProperties": true,
         "properties": {
+          "ccp": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ccp"
+          },
           "ee": {
             "title": "Ee",
             "type": "number"
+          },
+          "ee_funding": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ee Funding"
           },
           "ee_gross": {
             "anyOf": [
@@ -3565,6 +3657,17 @@
               }
             ],
             "title": "Pfe99"
+          },
+          "posted_margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted Margin"
           },
           "step": {
             "title": "Step",
@@ -8269,6 +8372,18 @@
             ],
             "title": "Ba Cva Capital"
           },
+          "ccp_capital": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Qualifying-CCP capital (REG-007)",
+            "title": "Ccp Capital"
+          },
           "frtb_ima": {
             "anyOf": [
               {
@@ -8411,6 +8526,18 @@
               }
             ],
             "title": "Simm Im"
+          },
+          "simm_im_posted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Initial margin we post, after threshold",
+            "title": "Simm Im Posted"
           }
         },
         "title": "RegulatorySummary",
@@ -9994,6 +10121,18 @@
         "additionalProperties": true,
         "description": "Margin by risk class arrives as extra fields named after the class.",
         "properties": {
+          "ccp": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A CCP netting set: we post, receive nothing",
+            "title": "Ccp"
+          },
           "counterparty_id": {
             "title": "Counterparty Id",
             "type": "string"
@@ -10001,6 +10140,42 @@
           "im": {
             "title": "Im",
             "type": "number"
+          },
+          "im_model": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Model margin they would post, before threshold",
+            "title": "Im Model"
+          },
+          "im_posted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Margin we post, after threshold (39.1)",
+            "title": "Im Posted"
+          },
+          "im_posted_model": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Model margin we would post",
+            "title": "Im Posted Model"
           },
           "netting_set_id": {
             "title": "Netting Set Id",

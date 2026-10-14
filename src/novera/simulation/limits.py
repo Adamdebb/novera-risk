@@ -15,6 +15,9 @@ from novera.simulation.organisation import CounterpartyUniverse
 EFFECTIVE = date(2026, 1, 1)
 
 
+# Peak PFE 95 limits on the OTC clearing houses, reporting currency (decision 39.4).
+CCP_LIMITS: dict[str, float] = {"CCP_LCH": 625e6, "CCP_ICE": 150e6}  # about 60% on the demo (39.5)
+
 def _lim(
     lid: str,
     lt: LimitType,
@@ -274,4 +277,19 @@ def build_limits(
                 f"{c.counterparty_type.value} rated {c.rating}",
             )
         )
+    # Exposure to the qualifying CCPs we clear OTC trades through (decision 39.4): peak PFE 95
+    # including the margin we post there, sized so the demo opens below the warning line.
+    for c in cp.counterparties:
+        if c.counterparty_id in CCP_LIMITS:
+            out.append(
+                _lim(
+                    f"CPTY_{c.counterparty_id}",
+                    LimitType.COUNTERPARTY_EXPOSURE,
+                    HierarchyLevel.COUNTERPARTY,
+                    c.counterparty_id,
+                    CCP_LIMITS[c.counterparty_id],
+                    "Head of Counterparty Risk",
+                    f"qualifying CCP rated {c.rating}",
+                )
+            )
     return out

@@ -197,26 +197,60 @@ def _credit_quality(underlying: str) -> str:
     return "IG" if ("IG" in underlying or "MAIN" in underlying) else "HY"
 
 
-def simm(sens: pd.DataFrame, valuation: pd.DataFrame, base_vols: dict[str, float]) -> SIMMResult:
-    """IM per bilateral netting set: sum over risk classes of the class margin (the delta and
-    vega margins are combined by simple sum, the SIMM's ψ cross-class terms are dropped)."""
+def simm(
+    sens: pd.DataFrame,
+    valuation: pd.DataFrame,
+    base_vols: dict[str, float],
+    csa_sets: set[str] | None = None,
+    threshold: float = 0.0,
+    ccp_sets: set[str] | frozenset[str] = frozenset(),
+) -> SIMMResult:
+    """IM per netting set: sum over risk classes of the class margin (the delta and vega margins
+    are combined by simple sum, the SIMM's ψ cross-class terms are dropped).
+
+    Both directions (decision 39.1): ``im_model`` is the margin the counterparty would post on our
+    exposure, ``im_posted_model`` ours on theirs (the same model on the sign-flipped
+    sensitivities, so curvature differs). Bilateral margin is exchanged only on a netting set with
+    a CSA (``csa_sets``; all sets when None) and only above ``threshold`` per counterparty, split
+    across its sets pro rata: ``im`` and ``im_posted``. A CCP set (``ccp_sets``) receives nothing
+    and posts its full model margin, with no threshold."""
     v = (
         valuation[(valuation["status"] == "LIVE") & valuation["netting_set_id"].notna()]
         if "netting_set_id" in valuation
         else pd.DataFrame()
     )
+    cols = ["netting_set_id", "counterparty_id", "im", "im_posted", "im_model", "im_posted_model", "ccp"]
     if v.empty:
-        return SIMMResult(pd.DataFrame(columns=["netting_set_id", "counterparty_id", "im"]), 0.0)
+        return SIMMResult(pd.DataFrame(columns=cols), 0.0)
     keys = v[["trade_id", "netting_set_id", "counterparty_id"]].drop_duplicates("trade_id")
     s2 = sens.merge(keys, on="trade_id", how="inner")
     rows, detail = [], []
     for ns, g in s2.groupby("netting_set_id"):
         parts = simm_for_sensitivities(g, base_vols)
-        im = float(sum(parts.values()))
+        posted = simm_for_sensitivities(g.assign(value=-g["value"]), base_vols)
         rows.append(
-            {"netting_set_id": ns, "counterparty_id": g["counterparty_id"].iloc[0], "im": im, **parts}
+            {
+                "netting_set_id": ns,
+                "counterparty_id": g["counterparty_id"].iloc[0],
+                "im_model": float(sum(parts.values())),
+                "im_posted_model": float(sum(posted.values())),
+                "ccp": ns in ccp_sets,
+                **parts,
+            }
         )
         for cls, val in parts.items():
             detail.append({"netting_set_id": ns, "risk_class": cls, "margin": val})
-    df = pd.DataFrame(rows).sort_values("im", ascending=False)
+    df = pd.DataFrame(rows)
+    exchanged = (
+        df["netting_set_id"].isin(csa_sets) if csa_sets is not None else pd.Series(True, index=df.index)
+    )
+    bilateral = exchanged & ~df["ccp"]
+    for model, out in (("im_model", "im"), ("im_posted_model", "im_posted")):
+        gross = df[model].where(bilateral, 0.0)
+        total = gross.groupby(df["counterparty_id"]).transform("sum")
+        above = (total - threshold).clip(lower=0.0)
+        df[out] = (gross * (above / total.where(total > 0, 1.0))).fillna(0.0)
+    df["im"] = df["im"].where(~df["ccp"], 0.0)
+    df["im_posted"] = df["im_posted"].where(~df["ccp"], df["im_posted_model"])
+    df = df.sort_values("im", ascending=False)
     return SIMMResult(df, float(df["im"].sum()), pd.DataFrame(detail))

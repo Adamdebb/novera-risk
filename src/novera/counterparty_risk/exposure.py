@@ -61,7 +61,7 @@ def _bilateral(trades: list[Trade]) -> list[Trade]:
         for t in trades
         if t.status.value == "LIVE"
         and t.venue is Venue.OTC
-        and t.clearing is ClearingType.BILATERAL
+        and t.clearing in (ClearingType.BILATERAL, ClearingType.CLEARED)  # cleared: CCP sets (39.4)
         and t.netting_set_id
     ]
 
@@ -136,12 +136,15 @@ def simulate_exposure(
     cfg: ExposureSimConfig | None = None,
     workers: int | None = None,
     initial_margin: dict[str, float] | None = None,
+    posted_margin: dict[str, float] | None = None,
 ) -> ExposureResult:
     cfg = cfg or ExposureSimConfig()
     bil = _bilateral(trades)
     ns_map = {n.netting_set_id: n for n in netting_sets}
     csa_map = {c.csa_id: c for c in csas}
-    discounting = CollateralMap.from_reference(netting_sets, csas)  # decision 35.2
+    # Discounting reads the bilateral CSAs only: CCP margin is paid in each trade's own currency,
+    # so a cleared trade stays on its OIS curve (decisions 35.2, 39.4).
+    discounting = CollateralMap.from_reference([n for n in netting_sets if n.agreement_type != "CCP"], csas)
     bil = [t for t in bil if t.netting_set_id in ns_map]  # dangling netting sets are a data-quality finding
     by_set: dict[str, list[int]] = {}
     for j, t in enumerate(bil):
@@ -191,7 +194,9 @@ def simulate_exposure(
     )
     res.proxy_paths = {f: np.vstack(v) for f, v in paths.proxy_paths.items() if v}
     res.im_scale = im_scales(bil, by_set, [g[1] for g in grid], base.as_of)
-    res.profiles = collateralise(res, cfg.margin_period_days, initial_margin=initial_margin)
+    res.profiles = collateralise(
+        res, cfg.margin_period_days, initial_margin=initial_margin, posted_margin=posted_margin
+    )
     return res
 
 
@@ -223,9 +228,16 @@ def collateralise(
     mpor_days: int = 10,
     csa_override: dict[str, CSA | None] | None = None,
     initial_margin: dict[str, float] | None = None,
+    posted_margin: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Profiles per netting set: gross and collateralised EE, ENE, PFE95, PFE99 by grid point.
-    ``csa_override`` maps netting_set_id to a CSA (or None) to run a what-if on terms."""
+    ``csa_override`` maps netting_set_id to a CSA (or None) to run a what-if on terms.
+
+    Initial margin both ways (decision 39.2): margin received lowers our exposure, margin we post
+    (segregated) lowers the counterparty's exposure to us, ENE. At a CCP (agreement ``CCP``) the
+    margin we post is not bankruptcy-remote, so it adds to our exposure; the CCP's own margin
+    period applies. ``ee_funding`` is the exposure to fund, without posted margin (FCA), which
+    the separate ``posted_margin`` column funds (MVA)."""
     years = np.array([g[2] for g in res.grid])
     rows = []
     for k, v in res.netting_values.items():
@@ -234,12 +246,18 @@ def collateralise(
             csa = csa_override[k]
         else:
             csa = res.csas.get(ns.csa_id) if ns.csa_id else None
-        bal = collateral_balance(v, years, csa, mpor_days)
-        im = float((initial_margin or {}).get(k, 0.0)) if csa is not None else 0.0
+        at_ccp = ns.agreement_type == "CCP"
+        mpor = csa.margin_period_of_risk_days if (at_ccp and csa is not None) else mpor_days
+        bal = collateral_balance(v, years, csa, mpor)
         scale = res.im_scale.get(k)
-        im_by_step = im * (np.ones(len(years)) if scale is None or len(scale) != len(years) else scale)
-        e_gross, e_coll = np.maximum(v, 0.0), np.maximum(v - bal - im_by_step[:, None], 0.0)
-        ne_gross, ne_coll = np.maximum(-v, 0.0), np.maximum(bal - v, 0.0)
+        ageing = np.ones(len(years)) if scale is None or len(scale) != len(years) else scale
+        im = float((initial_margin or {}).get(k, 0.0)) if csa is not None and not at_ccp else 0.0
+        im_by_step = im * ageing
+        posted_by_step = (float((posted_margin or {}).get(k, 0.0)) if csa is not None else 0.0) * ageing
+        e_gross = np.maximum(v, 0.0)
+        e_fund = np.maximum(v - bal - im_by_step[:, None], 0.0)
+        e_coll = e_fund + posted_by_step[:, None] if at_ccp else e_fund
+        ne_gross, ne_coll = np.maximum(-v, 0.0), np.maximum(bal - v - posted_by_step[:, None], 0.0)
         for i, (label, d, yrs) in enumerate(res.grid):
             rows.append(
                 {
@@ -261,6 +279,9 @@ def collateralise(
                     "mean_value": float(v[i].mean()),
                     "mean_collateral": float(bal[i].mean()),
                     "initial_margin": float(im_by_step[i]),
+                    "posted_margin": float(posted_by_step[i]),
+                    "ee_funding": float(e_fund[i].mean()),
+                    "ccp": at_ccp,
                 }
             )
     return pd.DataFrame(rows)

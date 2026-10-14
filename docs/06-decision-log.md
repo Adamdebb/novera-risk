@@ -1407,6 +1407,56 @@ the owner took every recommended option.
   1.1.0, OPS-001 1.4.0. Tests: `test_auto_commentary_drafts_falls_back_and_can_be_off`,
   `test_scheduler_job_notes_the_commentary`.
 
+## Round 39 — Posted initial margin and CCP exposure (2026-10-14)
+
+Context: second-look items 20 and 21. Initial margin was SIMM-lite received only, applied to every
+netting set with a CSA; nothing modelled the margin we post. CCPs (LCH, CME, ICE) existed as
+reference data with no netting sets, so the 304 trades cleared at LCH and ICE carried no
+counterparty exposure and no capital. One question round; the owner took every recommended option.
+
+### 39.1 Posted margin
+- Options: SIMM-lite on our side with the regulatory threshold ★ · the received amount, no threshold
+- Choice (owner): **SIMM-lite on our side of each netting set**, and both directions exchanged only
+  above the uncleared-margin threshold per counterparty (closes the "IM on every CSA" gap of 31.2).
+
+### 39.2 What posted margin changes
+- Options: the counterparty's exposure to us plus MVA ★ · exposure only
+- Choice (owner): **both**: posted margin is segregated, so it lowers the counterparty's exposure to
+  us (ENE, hence DVA and FBA) and is not lost if they default; its funding cost is a new MVA line
+  at the funding spread.
+
+### 39.3 Which cleared trades
+- Options: OTC-cleared at LCH and ICE ★ · also listed derivatives at exchange clearing houses
+- Choice (owner): **OTC-cleared at LCH and ICE**.
+
+### 39.4 What CCP exposure includes
+- Options: trade exposure, default fund and qualifying-CCP capital, with limits ★ · exposure and
+  limits only · capital only
+- Choice (owner): **all of it**: trade exposure after daily variation margin plus the margin we post
+  at the CCP (a house account is not bankruptcy-remote), the default fund contribution, the
+  qualifying-CCP charge (2% risk weight on trade exposure plus a default-fund charge, simplified
+  from CRE54) and a limit per CCP.
+
+### 39.5 Demo
+- Options: same process, CCP limits that do not breach ★ · plant a CCP breach
+- Choice (owner): **same process**: rebuild, compare, bring any change to the owner; no new planted
+  problem.
+- Where: `counterparty_risk/ccp.py` (`build_ccp_sets`, `qccp_capital`, `CCP_DEFAULT_FUND`), SIMM-lite
+  both ways with `Settings.im_threshold` (`regulatory/simm.py`, REG-004 1.4.0), `collateralise` with
+  posted margin and CCP sets (CR-002 1.2.0), the CCP sets in the exposure engine and the what-if
+  (CR-006 1.0.0, new), MVA in `netting_set_xva` (CR-005 1.1.0), SA-CCR with `cleared=True` and the
+  two capital components (REG-007 1.0.0, new), `CCP_LIMITS` (LCH 625m, ICE 150m, about 60% on the
+  demo), the Capital and Counterparty pages, the API schemas. Tests: `tests/test_ccp.py`.
+- Measured before the rebuild on the latest run: margin received 159m after the threshold against
+  1,312m before it; margin posted 512m with the CCPs; LCH peak PFE95 375m, ICE 93m; QCCP capital
+  15.6m and 6.2m, mostly the default-fund charge; XVA 15.1m of which MVA 16.6m, most of it on the
+  margin posted at LCH. CVA rises (0.42m to 1.19m) because the threshold takes received margin away.
+- Result of the rebuild: the bank keeps its eight breaches and the fund its three. The threshold
+  raises several bilateral exposures (dealers G and H, Bank E, Corporate Auto, up to 46 points);
+  the only status change is CPTY_CORP_AUTO turning WARNING on the 14th (81%). The CCP limits run at
+  53% to 62%. On the 15th: XVA 15.13m (CVA 1.19m, DVA 4.32m, FCA 1.68m, MVA 16.58m); capital adds
+  0.72m for CCP trade exposure and 21.0m for the default funds.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1468,12 +1518,14 @@ the owner took every recommended option.
     looks at the S&P 500 only; a rates or credit book would pick a different year. With real
     history the window should be a named crisis, which the stress library will then mark
     REAL.
-20. **Initial margin is received-only and unconditional** (31.2): IM we post is not modelled,
+20. **Closed in round 39** (posted margin, threshold, MVA). Was: **Initial margin is received-only and unconditional** (31.2): IM we post is not modelled,
     so it neither reduces the counterparty's exposure to us nor feeds DVA, and its gap risk on
     their default is not captured. There is no AANA in-scope test or group-level threshold
     either, so every netting set with a CSA gets IM where the rules would exempt the small ones.
     Both widen the collateral benefit the platform reports.
-21. **CCP exposure is not modelled** (10.4, roadmap Phase 4): CCPs and exchanges exist in the
+21. **Closed in round 39 for LCH and ICE** (CR-006, REG-007); listed derivatives at exchange clearing
+    houses remain out, and the CCP margin model is SIMM-lite standing in for PAIRS or SPAN. Was:
+    **CCP exposure is not modelled** (10.4, roadmap Phase 4): CCPs and exchanges exist in the
     counterparty reference data but carry no netting sets, so cleared exposure, default-fund
     contributions and cleared initial margin are absent. Counterparty risk covers the bilateral
     book only, which a reader may not infer from the Counterparty page.

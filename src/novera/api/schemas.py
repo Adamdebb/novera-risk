@@ -49,6 +49,8 @@ class RegulatorySummary(ApiModel):
     saccr_rwa: float | None = None
     saccr_capital: float | None = None
     simm_im: float | None = None
+    simm_im_posted: float | None = Field(default=None, description="Initial margin we post, after threshold")
+    ccp_capital: float | None = Field(default=None, description="Qualifying-CCP capital (REG-007)")
     ba_cva_capital: float | None = None
     pla_red_desks: float | None = None
 
@@ -1313,7 +1315,8 @@ class CounterpartyExposureRow(ApiModel):
     fca: float | None = Field(default=None, description="Funding cost adjustment on EE (CR-005)")
     fba: float | None = Field(default=None, description="Funding benefit adjustment on ENE, not in XVA")
     fva: float | None = Field(default=None, description="FCA − FBA")
-    xva: float | None = Field(default=None, description="CVA − DVA + FCA (decision 37.3)")
+    mva: float | None = Field(default=None, description="Funding of the initial margin we post (39.2)")
+    xva: float | None = Field(default=None, description="CVA − DVA + FCA + MVA (decisions 37.3, 39.2)")
     wwr_correlation: float | None = None
     wrong_way: bool = False
     wwr_proxy: str | None = None
@@ -1354,6 +1357,11 @@ class ExposureProfilePoint(ApiModel):
     mean_collateral: float | None = None
     initial_margin: float | None = None
     """SIMM-lite IM held at this grid point (REG-004): it ages with the portfolio."""
+    posted_margin: float | None = None
+    """Initial margin we post at this grid point (decision 39.1), aged the same way."""
+    ee_funding: float | None = None
+    """Expected exposure to fund, without posted margin (FCA, CR-005)."""
+    ccp: bool | None = None
 
 
 class NettingSetRecord(ApiModel):
@@ -1389,6 +1397,7 @@ class CVARow(ApiModel):
     fca: float | None = None
     fba: float | None = None
     fva: float | None = None
+    mva: float | None = None
     xva: float | None = None
 
 
@@ -1511,6 +1520,21 @@ class SIMMRow(Row):
     netting_set_id: str
     counterparty_id: str
     im: float
+    im_posted: float | None = Field(default=None, description="Margin we post, after threshold (39.1)")
+    im_model: float | None = Field(default=None, description="Model margin they would post, before threshold")
+    im_posted_model: float | None = Field(default=None, description="Model margin we would post")
+    ccp: bool | None = Field(default=None, description="A CCP netting set: we post, receive nothing")
+
+
+class CCPCapitalRow(ApiModel):
+    """Qualifying-CCP capital per CCP (REG-007, decision 39.4)."""
+
+    counterparty_id: str
+    trade_exposure: float
+    trade_exposure_capital: float
+    default_fund_contribution: float
+    default_fund_capital: float
+    capital: float
 
 
 class BACVARow(ApiModel):
@@ -1546,6 +1570,7 @@ class CapitalReport(ApiModel):
     saccr_counterparty: list[SACCRCounterpartyRow] = Field(default_factory=list)
     saccr_netting: list[SACCRNettingRow] = Field(default_factory=list)
     simm: list[SIMMRow] = Field(default_factory=list)
+    ccp: list[CCPCapitalRow] = Field(default_factory=list)
     ba_cva: list[BACVARow] = Field(default_factory=list)
     cash_ladder: list[CashLadderRow] = Field(default_factory=list)
 

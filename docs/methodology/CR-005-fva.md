@@ -2,7 +2,7 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.0.0 |
+| Version          | 1.1.0 |
 | Owner            | Counterparty Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.counterparty_risk.cva.fva_from_profile`, `netting_set_xva`, `cva_table` |
@@ -23,6 +23,11 @@ initial margin), `DF` the reporting-currency OIS discount factor, `Q_c` and `Q_o
 of the counterparty and of the firm (flat hazards as in CR-003), so funding stops at either
 default, and `Δt_i` the grid spacing. XVA = CVA − DVA + FCA.
 
+MVA (1.1.0, decision 39.2): `MVA = s_f Σ_i IM_posted(t_i) DF(t_i) Q_c(t_i) Q_o(t_i) Δt_i` funds the
+initial margin we post (REG-004), aged with the portfolio. FCA then funds `ee_funding`, the
+exposure without that margin (at a CCP the posted margin is part of the credit exposure,
+CR-006). Headline XVA = CVA − DVA + FCA + MVA.
+
 ## Inputs
 Exposure profiles of the run (stored with it); counterparty one-year PD from the reference data;
 the firm's own spread `own_credit_spread_bp` and LGD as for DVA; the funding spread
@@ -39,8 +44,7 @@ The funding spread is a setting, not a market factor: FVA moves with exposure, n
 markets, and has no sensitivity or VaR of its own.
 
 ## Limitations
-No term structure or currency basis in the funding spread; no MVA (funding of initial margin
-posted) or ColVA (collateral remuneration differing from OIS); FVA is not hedged or limited and
+No term structure or currency basis in the funding spread; no ColVA (collateral remuneration differing from OIS); FVA is not hedged or limited and
 does not enter market-risk VaR. The FCA/FBA split follows one accounting choice among several.
 
 ## Validation tests
@@ -53,3 +57,4 @@ netting set uncollateralised raises its FCA.
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-10-14 | FCA and FBA on the collateralised profiles, headline XVA = CVA − DVA + FCA (decision 37) | Novera |
+| 1.1.0 | 2026-10-14 | MVA on the initial margin we post; XVA = CVA − DVA + FCA + MVA (decision 39.2) | Novera |

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
 
     # Counterparty risk.
     own_credit_spread_bp: float = Field(default=80.0, description="Firm's own CDS spread for DVA")
+    im_threshold: float = Field(
+        default=50e6,
+        description="Uncleared-margin threshold per counterparty in reporting currency (39.1, for EUR 50m)",
+    )
     commentary_auto: bool = Field(
         default=True, description="Draft the morning commentary after every EOD (decision round 38)"
     )

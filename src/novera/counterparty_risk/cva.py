@@ -3,8 +3,9 @@
 CVA = LGD × Σ_i EE(t_i) × DF(t_i) × (Q(t_{i-1}) − Q(t_i)) with a flat hazard rate from the
 counterparty's one-year PD. DVA is the mirror on the negative exposure with the firm's own
 spread. FCA = s_f × Σ_i EE(t_i) × DF(t_i) × Q_c(t_i) × Q_own(t_i) × Δt_i and FBA the same on
-the negative exposure, with the firm's funding spread s_f; headline XVA = CVA − DVA + FCA, FBA
-being left out because it and DVA both come from the firm's own credit (decision 37.3).
+the negative exposure, with the firm's funding spread s_f; headline XVA = CVA − DVA + FCA + MVA,
+FBA being left out because it and DVA both come from the firm's own credit (decision 37.3);
+MVA funds the initial margin we post (decision 39.2).
 Wrong-way risk: correlation across paths, at the one-year point, between the
 netting set's exposure and a credit-deterioration proxy for the counterparty.
 """
@@ -21,7 +22,7 @@ from novera.counterparty_risk.exposure import ExposureResult
 from novera.domain.counterparties import Counterparty, CounterpartyType
 from novera.market_data.curves import ZeroCurve
 
-MODEL_VERSION = "1.1.0"
+MODEL_VERSION = "1.2.0"
 
 
 def hazard_from_pd(pd_1y: float) -> float:
@@ -62,18 +63,23 @@ def fva_from_profile(
 def netting_set_xva(
     profile: pd.DataFrame, cpty: CreditTerms, own: CreditTerms, curve: ZeroCurve, funding_spread_bp: float
 ) -> dict[str, float]:
-    """CVA, DVA, FCA, FBA and the headline XVA of one netting set's profile (columns years, ee,
-    ene). The engine and the CSA what-if both call it, so their figures agree."""
+    """CVA, DVA, FCA, FBA, MVA and the headline XVA of one netting set's profile (columns years,
+    ee, ene; optionally ee_funding and posted_margin). The engine and the CSA what-if both call it,
+    so their figures agree. FCA funds the exposure without posted margin (at a CCP that margin is
+    part of the credit exposure), MVA funds the posted margin itself (decision 39.2)."""
     p = profile.sort_values("years")
     years = p["years"].to_numpy()
     df = curve.df(years)
     ee, ene = p["ee"].to_numpy(), p["ene"].to_numpy()
+    funded = p["ee_funding"].to_numpy() if "ee_funding" in p else ee
+    posted = p["posted_margin"].to_numpy() if "posted_margin" in p else np.zeros_like(ee)
     cva = cva_from_profile(years, ee, df, cpty)
     dva = cva_from_profile(years, ene, df, own)
-    fca = fva_from_profile(years, ee, df, funding_spread_bp, cpty, own)
+    fca = fva_from_profile(years, funded, df, funding_spread_bp, cpty, own)
     fba = fva_from_profile(years, ene, df, funding_spread_bp, cpty, own)
+    mva = fva_from_profile(years, posted, df, funding_spread_bp, cpty, own)
     return {"cva": cva, "dva": dva, "bcva": cva - dva, "fca": fca, "fba": fba, "fva": fca - fba,
-            "xva": cva - dva + fca}  # fmt: skip
+            "mva": mva, "xva": cva - dva + fca + mva}  # fmt: skip
 
 
 def counterparty_terms(cp: Counterparty | None, lgd: float) -> tuple[float, CreditTerms]:

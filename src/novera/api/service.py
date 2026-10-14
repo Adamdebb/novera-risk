@@ -954,6 +954,7 @@ class RiskService:
     ) -> dict[str, Any]:
         """Re-collateralise one netting set's stored paths under alternative CSA terms."""
         from novera.counterparty_risk import csa_what_if, load_exposure_result, stored_initial_margin
+        from novera.counterparty_risk.engine import stored_posted_margin
         from novera.domain.counterparties import CSA
 
         r = self.resolve(run_id)
@@ -985,9 +986,9 @@ class RiskService:
                     if v is not None
                 }
             )
-        im = stored_initial_margin(self.repo, r.run_id)
-        before = csa_what_if(res, netting_set_id, base_csa, margin_period_days, im)
-        after = csa_what_if(res, netting_set_id, new_csa, margin_period_days, im)
+        im, posted = stored_initial_margin(self.repo, r.run_id), stored_posted_margin(self.repo, r.run_id)
+        before = csa_what_if(res, netting_set_id, base_csa, margin_period_days, im, posted)
+        after = csa_what_if(res, netting_set_id, new_csa, margin_period_days, im, posted)
         # XVA on both sets of terms, with the same credit and funding inputs as the run (CR-005).
         from novera.config import get_settings
         from novera.counterparty_risk.cva import (
@@ -1036,6 +1037,7 @@ class RiskService:
             "saccr_counterparty": _records(self.repo.load_run_frame(r.run_id, "reg_saccr_counterparty")),
             "saccr_netting": _records(self.repo.load_run_frame(r.run_id, "reg_saccr_netting")),
             "simm": _records(self.repo.load_run_frame(r.run_id, "reg_simm")),
+            "ccp": _records(self.repo.load_run_frame(r.run_id, "reg_ccp")),
             "ba_cva": _records(self.repo.load_run_frame(r.run_id, "reg_ba_cva")),
             "cash_ladder": _records(self.repo.load_run_frame(r.run_id, "reg_cash_ladder")),
         }

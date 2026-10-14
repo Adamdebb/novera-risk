@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Owner | Counterparty Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.counterparty_risk.exposure.collateral_balance` |
@@ -39,6 +39,11 @@ margin balance: `exposure = max(V − balance − IM(t), 0)`, with IM from REG-0
 the grid there. Uncollateralised sets carry neither. When the regulatory engine has not run on
 the same run there is no IM, and the counterparty run says so in its warnings rather than
 reporting a VM-only profile silently.
+
+Since 1.2.0 (decision 39) margin flows both ways and only above the threshold (REG-004): received
+margin lowers our exposure, posted margin lowers the counterparty's, `ENE = E[max(balance − V −
+IM_posted(t), 0)]`. A CCP netting set (CR-006) uses its own five-day margin period and adds the
+margin we post to our exposure instead.
 
 ## Validation tests
 `tests/test_counterparty.py::test_collateral_balance_rules`.

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from novera.config import Settings, get_settings
+from novera.counterparty_risk.ccp import build_ccp_sets, qccp_capital
 from novera.market_data.history import MarketHistory
 from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting
@@ -39,6 +40,7 @@ class RegulatoryRun:
     capital: pd.DataFrame  # component table
     by_desk: pd.DataFrame
     notes: dict[str, Any] = field(default_factory=dict)
+    ccp: pd.DataFrame = field(default_factory=pd.DataFrame)  # qualifying-CCP capital per CCP
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -54,6 +56,10 @@ class RegulatoryRun:
             "saccr_rwa": self.saccr.total_rwa,
             "saccr_capital": self.saccr.total_rwa * 0.08,
             "simm_im": self.simm.total,
+            "simm_im_posted": float(self.simm.by_netting_set["im_posted"].sum())
+            if len(self.simm.by_netting_set)
+            else 0.0,
+            "ccp_capital": float(self.ccp["capital"].sum()) if len(self.ccp) else 0.0,
             "ba_cva_capital": self.ba_cva_capital,
             "pla_red_desks": int((self.frtb_ima.pla["zone"] == "RED").sum()) if len(self.frtb_ima.pla) else 0,
         }
@@ -90,6 +96,7 @@ def run_regulatory(
     netting_sets, csas = repo.load_netting_sets()
     counterparties = {c.counterparty_id: c for c in repo.load_counterparties()}
     reporting = run.reporting_currency
+    ccp = build_ccp_sets(snap.trades, repo.load_organisation(run.config.get("firm_id", "GMB")))
     base_vols = {
         u: market.vol_surface(u).atm(0.25)
         for u in {f.split(":")[1] for f in market.factors_with_prefix("VOL:")}
@@ -100,7 +107,7 @@ def run_regulatory(
         )
     exotic_notional = exotic_gross_notional(snap.trades, market, reporting)
     # Valuation lacks netting_set_id; add it from the snapshot for SIMM.
-    ns_by_trade = {t.trade_id: t.netting_set_id for t in snap.trades}
+    ns_by_trade = {t.trade_id: t.netting_set_id for t in snap.trades} | ccp.by_trade
     val = val.assign(netting_set_id=val["trade_id"].map(ns_by_trade))
 
     sa = frtb_sa(sens, val, base_vols, exotic_notional)
@@ -135,7 +142,14 @@ def run_regulatory(
         exceptions,
         int(run.config.get("var", {}).get("window_days", 500)),
     )
-    im = simm(sens, val, base_vols)
+    im = simm(
+        sens,
+        val,
+        base_vols,
+        csa_sets={n.netting_set_id for n in netting_sets if n.csa_id},
+        threshold=settings.im_threshold,
+        ccp_sets=ccp.ids,
+    )
     # Collateral held today per netting set (from the exposure engine's t0 balance if stored).
     prof = repo.load_run_frame(run_id, "cp_profiles")
     coll = {}
@@ -143,6 +157,28 @@ def run_regulatory(
         first = prof[prof["step"] == prof["step"].iloc[0]]
         coll = {r["netting_set_id"]: float(r["mean_collateral"]) for _, r in first.iterrows()}
     sc = saccr(list(snap.trades), market, netting_sets, csas, counterparties, reporting, market.as_of, coll)
+    # Exposure to qualifying CCPs (decision 39.4): margined SA-CCR on the CCP sets plus the margin
+    # we post there, at 2%, and the default-fund charge.
+    sc_ccp = saccr(
+        ccp.trades,
+        market,
+        ccp.netting_sets,
+        ccp.csas,
+        counterparties,
+        reporting,
+        market.as_of,
+        coll,
+        cleared=True,
+    )
+    ccp_ead = (
+        sc_ccp.by_netting_set.groupby("counterparty_id")["ead"].sum().to_dict()
+        if len(sc_ccp.by_netting_set)
+        else {}
+    )
+    posted = im.by_netting_set[im.by_netting_set["ccp"]] if len(im.by_netting_set) else im.by_netting_set
+    ccp_cap = qccp_capital(
+        ccp_ead, posted.groupby("counterparty_id")["im_posted"].sum().to_dict() if len(posted) else {}
+    )
     maturities: dict[str, float] = {}
     if len(sc.trades):
         # Effective maturity proxy: EAD-weighted average of the add-on maturity factors is not
@@ -168,6 +204,16 @@ def run_regulatory(
                 "basis": "RWA x 8%",
             },
             {"component": "CVA risk, BA-CVA", "capital": cva_k, "basis": "reduced basic approach"},
+            {
+                "component": "CCP trade exposure",
+                "capital": float(ccp_cap["trade_exposure_capital"].sum()) if len(ccp_cap) else 0.0,
+                "basis": "2% risk weight, qualifying CCP",
+            },
+            {
+                "component": "CCP default fund",
+                "capital": float(ccp_cap["default_fund_capital"].sum()) if len(ccp_cap) else 0.0,
+                "basis": "K_CM, CRE54 simplified",
+            },
         ]
     )
     # Desk attribution: FRTB (SA attributed) + SA-CCR (by EAD share of trades) + CVA (same share).
@@ -213,7 +259,12 @@ def run_regulatory(
         ladder,
         capital,
         by_desk,
-        notes={"nmrf": sorted(set(nmrf)), "backtest_exceptions": exceptions},
+        notes={
+            "nmrf": sorted(set(nmrf)),
+            "backtest_exceptions": exceptions,
+            "im_threshold": settings.im_threshold,
+        },
+        ccp=ccp_cap,
     )
     if persist:
         repo.save_run_frame(run_id, "reg_capital", capital)
@@ -225,6 +276,7 @@ def run_regulatory(
         repo.save_run_frame(run_id, "reg_saccr_netting", sc.by_netting_set)
         repo.save_run_frame(run_id, "reg_saccr_counterparty", sc.by_counterparty)
         repo.save_run_frame(run_id, "reg_simm", im.by_netting_set)
+        repo.save_run_frame(run_id, "reg_ccp", ccp_cap)
         repo.save_run_frame(run_id, "reg_ba_cva", cva_detail)
         repo.save_run_frame(run_id, "reg_cash_ladder", ladder)
         repo.save_run_frame(run_id, "reg_summary", pd.DataFrame([out.summary()]))

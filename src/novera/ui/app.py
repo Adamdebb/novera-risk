@@ -1146,13 +1146,15 @@ elif page == "Counterparty":
     c3.metric("Largest PFE 95", money(top["peak_pfe95"]), top["counterparty_id"])
     c4.metric("Wrong-way flags", int(summ["wrong_way"].fillna(False).sum()))
     if "xva" in summ and summ["xva"].notna().any():
+        mva = summ["mva"].sum() if "mva" in summ else 0.0
         st.caption(
             f"XVA {money(summ['xva'].sum(), digits=2)} = CVA {money(summ['cva'].sum(), digits=2)} − DVA "
-            f"{money(summ['dva'].sum(), digits=2)} + FCA {money(summ['fca'].sum(), digits=2)}. FBA "
-            f"{money(summ['fba'].sum(), digits=2)} is shown but left out: it and DVA both come from our own "
-            "credit (CR-005)."
+            f"{money(summ['dva'].sum(), digits=2)} + FCA {money(summ['fca'].sum(), digits=2)} + MVA "
+            f"{money(mva, digits=2)}. FBA {money(summ['fba'].sum(), digits=2)} is shown but left out: it and "
+            "DVA both come from our own credit (CR-005). CCPs (LCH, ICE) carry the margin we post there "
+            "in their exposure (CR-006)."
         )
-    for c_ in ("fca", "fba", "xva"):
+    for c_ in ("fca", "fba", "mva", "xva"):
         if c_ not in summ:
             summ[c_] = float("nan")  # runs stored before FVA (decision round 37)
     show = summ[
@@ -1173,6 +1175,7 @@ elif page == "Counterparty":
             "bcva",
             "fca",
             "fba",
+            "mva",
             "xva",
             "wwr_correlation",
             "wrong_way",
@@ -1191,6 +1194,7 @@ elif page == "Counterparty":
         "bcva",
         "fca",
         "fba",
+        "mva",
         "xva",
     ):
         show[c_] = show[c_] / M
@@ -1477,15 +1481,26 @@ elif page == "Capital":
             for c_ in ("ead", "rc", "pfe", "rwa", "capital"):
                 sc[c_] = sc[c_] / M
             st.dataframe(sc.round(1), hide_index=True, use_container_width=True)
-        st.subheader("Initial margin by netting set")
+        st.subheader("Initial margin by netting set (received and posted, after threshold)")
         sim = df(cap["simm"])
         if not sim.empty:
-            sim["im"] = sim["im"] / M
-            st.dataframe(
-                sim[["netting_set_id", "counterparty_id", "im"]].round(1).head(15),
-                hide_index=True,
-                use_container_width=True,
-            )
+            cols = [c_ for c_ in ("netting_set_id", "counterparty_id", "im", "im_posted") if c_ in sim]
+            for c_ in ("im", "im_posted"):
+                if c_ in sim:
+                    sim[c_] = sim[c_] / M
+            st.dataframe(sim[cols].round(1).head(15), hide_index=True, use_container_width=True)
+        ccp_rows = df(cap.get("ccp", []))
+        if not ccp_rows.empty:
+            st.subheader("Qualifying CCPs (REG-007)")
+            for c_ in (
+                "trade_exposure",
+                "trade_exposure_capital",
+                "default_fund_contribution",
+                "default_fund_capital",
+                "capital",
+            ):
+                ccp_rows[c_] = ccp_rows[c_] / M
+            st.dataframe(ccp_rows.round(2), hide_index=True, use_container_width=True)
     st.subheader("Funding cash ladder (contractual, reporting currency)")
     lad = df(cap["cash_ladder"])
     if not lad.empty:

@@ -221,13 +221,13 @@ def test_regulatory_run_end_to_end(db):
         cr = run_counterparty(repo, db["run_id"], cfg, runs_dir=db["runs_dir"], workers=1)
         assert cr.notes["initial_margin_sets"] > 0 and not cr.notes["warnings"]
         prof = cr.profiles
-        coll = prof[prof["collateralised"]]
+        coll = prof[prof["collateralised"] & ~prof["ccp"]]  # at a CCP posted margin adds exposure
         assert (coll["initial_margin"] > 0).any()
         # The same paths without the margin: exposure has to be at least as high everywhere,
         # and strictly higher somewhere, or the deduction is not reaching the profile.
         no_im = collateralise(cr.result, cfg.margin_period_days)
         on = coll.set_index(["netting_set_id", "step"])["ee"]
-        off = no_im[no_im["collateralised"]].set_index(["netting_set_id", "step"])["ee"]
+        off = no_im[no_im["collateralised"] & ~no_im["ccp"]].set_index(["netting_set_id", "step"])["ee"]
         assert (off >= on - 1e-6).all() and (off > on + 1e-6).any()
         # The margin ages with the portfolio: never above its t0 value, and the sets that run
         # off have less of it left at the end of the grid than at the start (REG-004).
