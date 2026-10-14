@@ -967,6 +967,20 @@ class RiskService:
         im = stored_initial_margin(self.repo, r.run_id)
         before = csa_what_if(res, netting_set_id, base_csa, margin_period_days, im)
         after = csa_what_if(res, netting_set_id, new_csa, margin_period_days, im)
+        # XVA on both sets of terms, with the same credit and funding inputs as the run (CR-005).
+        from novera.config import get_settings
+        from novera.counterparty_risk.cva import (
+            CreditTerms,
+            counterparty_terms,
+            hazard_from_spread,
+            netting_set_xva,
+        )
+
+        st = get_settings()
+        cps = {c.counterparty_id: c for c in self.repo.load_counterparties()}
+        _, cpty = counterparty_terms(cps.get(ns.counterparty_id), st.lgd)
+        own = CreditTerms(hazard_from_spread(st.own_credit_spread_bp, 1 - st.lgd), st.lgd)
+        curve = self.repo.load_run_market(r.run_id).zero_curve(r.reporting_currency)
         return {
             "run_id": r.run_id,
             "netting_set_id": netting_set_id,
@@ -978,6 +992,8 @@ class RiskService:
             "peak_pfe95_after": float(after["pfe95"].max()),
             "epe_before": float(before[before["years"] <= 1]["ee"].mean()),
             "epe_after": float(after[after["years"] <= 1]["ee"].mean()),
+            "xva_before": netting_set_xva(before, cpty, own, curve, st.funding_spread_bp),
+            "xva_after": netting_set_xva(after, cpty, own, curve, st.funding_spread_bp),
         }
 
     # --- regulatory capital ------------------------------------------------------------------------

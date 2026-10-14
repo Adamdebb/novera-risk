@@ -115,6 +115,31 @@ def test_cva_formula_and_hazards():
     assert cva_from_profile(years, ee * 0, df, CreditTerms(0.1, 0.6)) == 0.0
 
 
+def test_fva_formula_and_xva():
+    """CR-005: FCA = s_f Σ EE DF Q_c Q_o Δt on a flat profile; FBA likewise on ENE; nothing at a
+    zero spread; XVA = CVA − DVA + FCA with FBA left out (decision 37.3)."""
+    from novera.counterparty_risk.cva import fva_from_profile, netting_set_xva
+    from novera.market_data.curves import ZeroCurve
+
+    years = np.array([0.5, 1.0, 2.0])
+    cpty, own = CreditTerms(0.02, 0.6), CreditTerms(0.01, 0.6)
+    expected = (
+        0.008 * 10e6 * sum(dt * np.exp(-0.03 * t) for t, dt in zip(years, [0.5, 0.5, 1.0], strict=True))
+    )
+    assert fva_from_profile(years, np.full(3, 10e6), np.ones(3), 80.0, cpty, own) == pytest.approx(expected)
+    assert fva_from_profile(years, np.full(3, 10e6), np.ones(3), 0.0, cpty, own) == 0.0
+    flat = ZeroCurve("USD", np.array([1.0, 2.0]), np.array([0.0, 0.0]))
+    prof = pd.DataFrame({"years": years, "ee": [10e6] * 3, "ene": [4e6] * 3})
+    x = netting_set_xva(prof, cpty, own, flat, 80.0)
+    assert x["fca"] == pytest.approx(expected) and x["fba"] == pytest.approx(expected * 0.4)
+    assert x["xva"] == pytest.approx(x["cva"] - x["dva"] + x["fca"]) and x["fva"] == pytest.approx(
+        x["fca"] - x["fba"]
+    )
+    # Collateral that halves the expected exposure halves the funding cost.
+    half = netting_set_xva(prof.assign(ee=5e6), cpty, own, flat, 80.0)
+    assert half["fca"] == pytest.approx(x["fca"] / 2)
+
+
 def test_run_counterparty_end_to_end(db):
     with DuckDBRepository(db["path"]) as repo:
         cr = run_counterparty(repo, db["run_id"], SMALL, runs_dir=db["runs_dir"], workers=1)
@@ -132,6 +157,9 @@ def test_run_counterparty_end_to_end(db):
             "SOV_EM",
         }
         assert (cva["cva"] >= 0).all() and (cva["dva"] >= 0).all()
+        assert (cva["fca"] >= 0).all() and (cva["fba"] >= 0).all()
+        assert np.allclose(cva["xva"], cva["cva"] - cva["dva"] + cva["fca"])
+        assert cr.notes["funding_spread_bp"] == 80.0
         assert (cva["cva"] <= cva["cva_gross"] + 1e-6).mean() > 0.8  # our posted collateral can raise it
         assert {"BANK_A", "SOV_EM", "CORP_AIR"} <= set(cps["counterparty_id"])
         assert wwr[wwr["counterparty_id"] == "CORP_AIR"]["proxy"].iloc[0] == "CDS:CDX.NA.HY"

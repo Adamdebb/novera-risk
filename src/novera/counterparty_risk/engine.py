@@ -106,7 +106,7 @@ def run_counterparty(
     cp_summary = summarise(profiles, "counterparty_id")
     curve = market.zero_curve(run.reporting_currency)
     own = CreditTerms(hazard_from_spread(settings.own_credit_spread_bp, 1 - settings.lgd), settings.lgd)
-    cva = cva_table(profiles, counterparties, curve, own, settings.lgd)
+    cva = cva_table(profiles, counterparties, curve, own, settings.lgd, settings.funding_spread_bp)
     first_year = [i for i, g in enumerate(res.grid) if g[2] <= 1.0001] or [0]
     wwr = wrong_way_indicators(res, res.proxy_paths, counterparties, first_year)
     stressed = _current_exposure_under_stress(repo, run_id, res)
@@ -116,7 +116,9 @@ def run_counterparty(
     cur_by_cp = cur.groupby(cur.index.map(lambda k: res.netting_sets[k].counterparty_id)).apply(
         lambda s: float(s.clip(lower=0).sum())
     )
-    cva_by_cp = cva.groupby("counterparty_id")[["cva", "dva", "bcva", "cva_gross"]].sum()
+    cva_by_cp = cva.groupby("counterparty_id")[
+        ["cva", "dva", "bcva", "cva_gross", "fca", "fba", "fva", "xva"]
+    ].sum()
     wwr_by_cp = wwr.groupby("counterparty_id").agg(
         wwr_correlation=("correlation", "max"), wrong_way=("wrong_way", "any"), wwr_proxy=("proxy", "first")
     )
@@ -154,6 +156,7 @@ def run_counterparty(
             "grid": [g[0] for g in res.grid],
             "margin_period_days": cfg.margin_period_days,
             "own_spread_bp": settings.own_credit_spread_bp,
+            "funding_spread_bp": settings.funding_spread_bp,
             "lgd": settings.lgd,
             "initial_margin_sets": len(initial_margin),
             "collateralised_sets": len(with_csa),

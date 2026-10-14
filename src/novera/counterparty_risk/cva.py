@@ -1,8 +1,11 @@
-"""CVA, DVA and wrong-way-risk indicators. Records CR-003 and CR-004.
+"""CVA, DVA, FVA and wrong-way-risk indicators. Records CR-003, CR-004 and CR-005.
 
 CVA = LGD × Σ_i EE(t_i) × DF(t_i) × (Q(t_{i-1}) − Q(t_i)) with a flat hazard rate from the
 counterparty's one-year PD. DVA is the mirror on the negative exposure with the firm's own
-spread. Wrong-way risk: correlation across paths, at the one-year point, between the
+spread. FCA = s_f × Σ_i EE(t_i) × DF(t_i) × Q_c(t_i) × Q_own(t_i) × Δt_i and FBA the same on
+the negative exposure, with the firm's funding spread s_f; headline XVA = CVA − DVA + FCA, FBA
+being left out because it and DVA both come from the firm's own credit (decision 37.3).
+Wrong-way risk: correlation across paths, at the one-year point, between the
 netting set's exposure and a credit-deterioration proxy for the counterparty.
 """
 
@@ -18,7 +21,7 @@ from novera.counterparty_risk.exposure import ExposureResult
 from novera.domain.counterparties import Counterparty, CounterpartyType
 from novera.market_data.curves import ZeroCurve
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 
 
 def hazard_from_pd(pd_1y: float) -> float:
@@ -41,33 +44,64 @@ def cva_from_profile(years: np.ndarray, ee: np.ndarray, df: np.ndarray, terms: C
     return float(terms.lgd * np.sum(ee * df * (q_prev - q)))
 
 
+def fva_from_profile(
+    years: np.ndarray,
+    exposure: np.ndarray,
+    df: np.ndarray,
+    spread_bp: float,
+    cpty: CreditTerms,
+    own: CreditTerms,
+) -> float:
+    """Funding cost (on EE) or benefit (on ENE): s_f Σ X(t_i) DF(t_i) Q_c(t_i) Q_own(t_i) Δt_i,
+    funding stopping at either party's default (CR-005)."""
+    dt = np.diff(np.concatenate([[0.0], years]))
+    survival = np.exp(-(cpty.hazard + own.hazard) * years)
+    return float(spread_bp / 1e4 * np.sum(exposure * df * survival * dt))
+
+
+def netting_set_xva(
+    profile: pd.DataFrame, cpty: CreditTerms, own: CreditTerms, curve: ZeroCurve, funding_spread_bp: float
+) -> dict[str, float]:
+    """CVA, DVA, FCA, FBA and the headline XVA of one netting set's profile (columns years, ee,
+    ene). The engine and the CSA what-if both call it, so their figures agree."""
+    p = profile.sort_values("years")
+    years = p["years"].to_numpy()
+    df = curve.df(years)
+    ee, ene = p["ee"].to_numpy(), p["ene"].to_numpy()
+    cva = cva_from_profile(years, ee, df, cpty)
+    dva = cva_from_profile(years, ene, df, own)
+    fca = fva_from_profile(years, ee, df, funding_spread_bp, cpty, own)
+    fba = fva_from_profile(years, ene, df, funding_spread_bp, cpty, own)
+    return {"cva": cva, "dva": dva, "bcva": cva - dva, "fca": fca, "fba": fba, "fva": fca - fba,
+            "xva": cva - dva + fca}  # fmt: skip
+
+
+def counterparty_terms(cp: Counterparty | None, lgd: float) -> tuple[float, CreditTerms]:
+    pd_1y = cp.internal_pd if cp and cp.internal_pd is not None else 0.01
+    return pd_1y, CreditTerms(hazard_from_pd(pd_1y), lgd)
+
+
 def cva_table(
     profiles: pd.DataFrame,
     counterparties: dict[str, Counterparty],
     curve: ZeroCurve,
     own: CreditTerms,
     lgd: float,
+    funding_spread_bp: float = 0.0,
 ) -> pd.DataFrame:
-    """Per netting set: CVA, DVA, bilateral CVA (CVA − DVA)."""
+    """Per netting set: CVA, DVA, bilateral CVA, FCA, FBA, FVA and headline XVA."""
     rows = []
     for k, grp in profiles.sort_values("years").groupby("netting_set_id"):
-        cp = counterparties.get(grp["counterparty_id"].iloc[0])
-        pd_1y = cp.internal_pd if cp and cp.internal_pd is not None else 0.01
-        terms = CreditTerms(hazard_from_pd(pd_1y), lgd)
+        pd_1y, terms = counterparty_terms(counterparties.get(grp["counterparty_id"].iloc[0]), lgd)
         years = grp["years"].to_numpy()
-        df = curve.df(years)
-        cva = cva_from_profile(years, grp["ee"].to_numpy(), df, terms)
-        dva = cva_from_profile(years, grp["ene"].to_numpy(), df, own)
-        cva_gross = cva_from_profile(years, grp["ee_gross"].to_numpy(), df, terms)
+        cva_gross = cva_from_profile(years, grp["ee_gross"].to_numpy(), curve.df(years), terms)
         rows.append(
             {
                 "netting_set_id": k,
                 "counterparty_id": grp["counterparty_id"].iloc[0],
                 "pd_1y": pd_1y,
                 "hazard": terms.hazard,
-                "cva": cva,
-                "dva": dva,
-                "bcva": cva - dva,
+                **netting_set_xva(grp, terms, own, curve, funding_spread_bp),
                 "cva_gross": cva_gross,
             }
         )

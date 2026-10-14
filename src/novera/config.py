@@ -52,6 +52,9 @@ class Settings(BaseSettings):
 
     # Counterparty risk.
     own_credit_spread_bp: float = Field(default=80.0, description="Firm's own CDS spread for DVA")
+    funding_spread_bp: float = Field(
+        default=80.0, description="Firm's unsecured funding spread over OIS for FCA and FBA (CR-005)"
+    )
     lgd: float = Field(default=0.6, description="Loss given default for CVA and DVA")
     exposure_paths: int = 1000
     exposure_enabled: bool = True

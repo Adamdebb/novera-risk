@@ -299,6 +299,9 @@ def test_counterparty_endpoints(client):
     assert (
         r.status_code == 200 and r.json()["what_if_csa"] is None and r.json()["after"] and r.json()["before"]
     )
+    xb, xa = r.json()["xva_before"], r.json()["xva_after"]  # CR-005 on both sets of terms
+    assert set(xb) >= {"cva", "dva", "fca", "fba", "fva", "xva"}
+    assert xa["fca"] >= xb["fca"] - 1e-6 and xa["xva"] == pytest.approx(xa["cva"] - xa["dva"] + xa["fca"])
     assert client.get("/runs/latest/counterparties/NOPE").status_code == 404
 
 

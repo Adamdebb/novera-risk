@@ -1295,6 +1295,10 @@ class CounterpartyExposureRow(ApiModel):
     dva: float | None = None
     bcva: float | None = None
     cva_gross: float | None = None
+    fca: float | None = Field(default=None, description="Funding cost adjustment on EE (CR-005)")
+    fba: float | None = Field(default=None, description="Funding benefit adjustment on ENE, not in XVA")
+    fva: float | None = Field(default=None, description="FCA − FBA")
+    xva: float | None = Field(default=None, description="CVA − DVA + FCA (decision 37.3)")
     wwr_correlation: float | None = None
     wrong_way: bool = False
     wwr_proxy: str | None = None
@@ -1367,6 +1371,10 @@ class CVARow(ApiModel):
     dva: float
     bcva: float
     cva_gross: float | None = None
+    fca: float | None = None
+    fba: float | None = None
+    fva: float | None = None
+    xva: float | None = None
 
 
 class WrongWayRow(ApiModel):
@@ -1397,6 +1405,14 @@ class CSAWhatIf(ApiModel):
     what_if_csa: dict[str, Any] | None = None
     before: list[ExposureProfilePoint]
     after: list[ExposureProfilePoint]
+    peak_pfe95_before: float | None = None
+    peak_pfe95_after: float | None = None
+    epe_before: float | None = None
+    epe_after: float | None = None
+    xva_before: dict[str, float] | None = Field(
+        default=None, description="CVA, DVA, FCA, FBA, FVA and XVA on the current terms (CR-005)"
+    )
+    xva_after: dict[str, float] | None = Field(default=None, description="The same on the what-if terms")
 
 
 # --- regulatory capital -------------------------------------------------------------------

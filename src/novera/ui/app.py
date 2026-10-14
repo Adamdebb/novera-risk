@@ -1119,8 +1119,8 @@ elif page == "Counterparty":
     notes = cps["notes"]
     st.caption(
         f"{notes.get('paths')} Monte Carlo paths · grid {notes.get('grid')} · margin period "
-        f"{notes.get('margin_period_days')} days · own spread {notes.get('own_spread_bp')}bp · LGD "
-        f"{notes.get('lgd')} (CR-001 to CR-004)"
+        f"{notes.get('margin_period_days')} days · own spread {notes.get('own_spread_bp')}bp · funding "
+        f"spread {notes.get('funding_spread_bp', '–')}bp · LGD {notes.get('lgd')} (CR-001 to CR-005)"
     )
     summ = df(cps["summary"])
     c1, c2, c3, c4 = st.columns(4)
@@ -1129,6 +1129,16 @@ elif page == "Counterparty":
     top = summ.iloc[0]
     c3.metric("Largest PFE 95", money(top["peak_pfe95"]), top["counterparty_id"])
     c4.metric("Wrong-way flags", int(summ["wrong_way"].fillna(False).sum()))
+    if "xva" in summ and summ["xva"].notna().any():
+        st.caption(
+            f"XVA {money(summ['xva'].sum(), digits=2)} = CVA {money(summ['cva'].sum(), digits=2)} − DVA "
+            f"{money(summ['dva'].sum(), digits=2)} + FCA {money(summ['fca'].sum(), digits=2)}. FBA "
+            f"{money(summ['fba'].sum(), digits=2)} is shown but left out: it and DVA both come from our own "
+            "credit (CR-005)."
+        )
+    for c_ in ("fca", "fba", "xva"):
+        if c_ not in summ:
+            summ[c_] = float("nan")  # runs stored before FVA (decision round 37)
     show = summ[
         [
             "counterparty_id",
@@ -1145,13 +1155,28 @@ elif page == "Counterparty":
             "cva",
             "dva",
             "bcva",
+            "fca",
+            "fba",
+            "xva",
             "wwr_correlation",
             "wrong_way",
             "on_watchlist",
             "trades",
         ]
     ].copy()
-    for c_ in ("current_exposure", "epe", "eepe", "peak_pfe95", "peak_pfe95_gross", "cva", "dva", "bcva"):
+    for c_ in (
+        "current_exposure",
+        "epe",
+        "eepe",
+        "peak_pfe95",
+        "peak_pfe95_gross",
+        "cva",
+        "dva",
+        "bcva",
+        "fca",
+        "fba",
+        "xva",
+    ):
         show[c_] = show[c_] / M
     st.dataframe(show.round(2), use_container_width=True, hide_index=True)
     st.caption(
@@ -1247,6 +1272,12 @@ elif page == "Counterparty":
                 money(res["peak_pfe95_after"]),
                 money(res["peak_pfe95_after"] - res["peak_pfe95_before"]),
             )
+            xb, xa = res.get("xva_before"), res.get("xva_after")
+            if xb and xa:
+                x1, x2, x3 = st.columns(3)
+                x1.metric("XVA after", money(xa["xva"], digits=2), money(xa["xva"] - xb["xva"], digits=2))
+                x2.metric("CVA after", money(xa["cva"], digits=2), money(xa["cva"] - xb["cva"], digits=2))
+                x3.metric("FCA after", money(xa["fca"], digits=2), money(xa["fca"] - xb["fca"], digits=2))
             before = df(res["before"]).set_index("step")["pfe95"] / M
             after = df(res["after"]).set_index("step")["pfe95"] / M
             st.line_chart(pd.DataFrame({"PFE95 before": before, "PFE95 after": after}))

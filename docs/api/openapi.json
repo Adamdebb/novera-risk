@@ -1440,6 +1440,28 @@
             "title": "Before",
             "type": "array"
           },
+          "epe_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epe After"
+          },
+          "epe_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epe Before"
+          },
           "netting_set_id": {
             "anyOf": [
               {
@@ -1450,6 +1472,28 @@
               }
             ],
             "title": "Netting Set Id"
+          },
+          "peak_pfe95_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pfe95 After"
+          },
+          "peak_pfe95_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pfe95 Before"
           },
           "run_id": {
             "anyOf": [
@@ -1473,6 +1517,36 @@
               }
             ],
             "title": "What If Csa"
+          },
+          "xva_after": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The same on the what-if terms",
+            "title": "Xva After"
+          },
+          "xva_before": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CVA, DVA, FCA, FBA, FVA and XVA on the current terms (CR-005)",
+            "title": "Xva Before"
           }
         },
         "required": [
@@ -1579,6 +1653,39 @@
             "title": "Dva",
             "type": "number"
           },
+          "fba": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fba"
+          },
+          "fca": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fca"
+          },
+          "fva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fva"
+          },
           "hazard": {
             "title": "Hazard",
             "type": "number"
@@ -1590,6 +1697,17 @@
           "pd_1y": {
             "title": "Pd 1Y",
             "type": "number"
+          },
+          "xva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xva"
           }
         },
         "required": [
@@ -2499,6 +2617,42 @@
             "title": "Epe",
             "type": "number"
           },
+          "fba": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Funding benefit adjustment on ENE, not in XVA",
+            "title": "Fba"
+          },
+          "fca": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Funding cost adjustment on EE (CR-005)",
+            "title": "Fca"
+          },
+          "fva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "FCA \u2212 FBA",
+            "title": "Fva"
+          },
           "name": {
             "anyOf": [
               {
@@ -2597,6 +2751,18 @@
               }
             ],
             "title": "Wwr Proxy"
+          },
+          "xva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CVA \u2212 DVA + FCA (decision 37.3)",
+            "title": "Xva"
           }
         },
         "required": [

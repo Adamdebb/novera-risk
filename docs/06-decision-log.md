@@ -1329,6 +1329,45 @@ scope questions meant, then took every recommended option.
   OPS-001 1.3.0, `tests/test_sweep.py`; the API run summary and job schemas declare `owner` and
   `abandoned` (the schema drift test caught the new summary key).
 
+## Round 37 — Funding valuation adjustment (2026-10-14)
+
+Context: second-look item 26. Uncollateralised trades discount on their own OIS curve (35.4), the
+clean price, so their funding cost and benefit were nowhere. The exposure engine already produces
+the EPE and ENE profiles CVA and DVA use. One question round; the owner took every recommended
+option.
+
+### 37.1 Funded exposure
+- Options: collateralised EPE and ENE for every netting set ★ · uncollateralised sets only
+- Choice (owner): **collateralised profiles for every netting set**, the ones CVA uses: a CSA
+  with zero thresholds leaves only the margin-period gap to fund, an uncollateralised set all of it.
+
+### 37.2 Funding spread
+- Options: a setting ★ · a simulated market factor
+- Choice (owner): **a setting**, `funding_spread_bp`, flat, 80bp by default like the own credit
+  spread behind DVA; FVA moves with exposure, not with the market.
+
+### 37.3 FBA and DVA
+- Options: report all four, headline XVA = CVA − DVA + FCA ★ · FCA only · fully symmetric
+- Choice (owner): **report CVA, DVA, FCA and FBA; headline XVA = CVA − DVA + FCA**. FBA and DVA
+  both come from the bank's own credit, so adding both would count that benefit twice; FBA is
+  shown and left out of the total.
+
+### 37.4 Where it shows
+- Options: Counterparty page and the CSA what-if ★ · the page only
+- Choice (owner): **both**: FCA, FBA and XVA per netting set and in total, and the change in
+  FVA when CSA terms change.
+- Choice (default): FCA and FBA weight each grid step by both parties' survival, so funding
+  stops at either default, and discount on the reporting-currency OIS curve, as CVA does.
+- Where: `counterparty_risk/cva.py` (`fva_from_profile`, `netting_set_xva`, `cva_table`, model
+  1.1.0), `Settings.funding_spread_bp`, the counterparty engine (per netting set and counterparty,
+  `notes.funding_spread_bp`), the CSA what-if (`xva_before`, `xva_after`), the Counterparty page,
+  the API schemas, CR-005 1.0.0 (new) and CR-003 1.1.0. Tests: `test_fva_formula_and_xva`, the
+  engine and API checks.
+- Result on the rebuilt demo (15th): CVA 0.42m, DVA 4.81m, FCA 0.60m, FBA 4.64m, XVA −3.80m.
+  Negative because the bank owes more uncollateralised value than it is owed, so DVA outweighs
+  CVA. The largest funding costs sit on the uncollateralised names (Northsea Energy 0.20m,
+  TransAtlantic Air 0.14m). Breaches unchanged (8 bank, 3 fund): FVA feeds no limit.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1410,6 +1449,6 @@ scope questions meant, then took every recommended option.
 25. **The cross-currency basis is simulated** (35.1, closes the collateral gap): forwards and
     collateral discounting use a simulated basis, not one stripped from basis-swap quotes or FX
     forward points; the FRTB SA weight and correlation for it are as read, to be checked.
-26. **No FVA** (35.4): uncollateralised trades discount on their own OIS curve, the clean price;
-    their funding cost and benefit belong in an FVA on the EPE and ENE profiles the exposure
-    engine already produces, with a funding-spread input. Not built.
+26. **FVA on a flat funding spread** (37.2, closes the FVA gap of 35.4): one spread for every
+    currency and tenor, set rather than observed, so FVA has no market sensitivity; no MVA for
+    initial margin posted, no ColVA.

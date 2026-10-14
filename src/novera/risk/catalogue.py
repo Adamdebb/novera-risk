@@ -195,6 +195,17 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Counterparty",
                 "CVA and DVA",
+                version="1.1.0",
+                face="bank",
+            ),
+            MeasureSpec(
+                "CR-005",
+                "Funding valuation adjustment",
+                "Cost of funding uncollateralised positive exposure (FCA) and benefit of negative "
+                "exposure (FBA) from the exposure profiles and our funding spread; XVA = CVA − DVA + FCA.",
+                "reporting currency",
+                "Counterparty",
+                "Funding valuation adjustment",
                 face="bank",
             ),
             MeasureSpec(
