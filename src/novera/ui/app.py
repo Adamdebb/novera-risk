@@ -321,6 +321,7 @@ elif page == "Drill-down":
         [
             "DV01",
             "BASIS01",
+            "XCCY01",
             "CS01",
             "FX_DELTA",
             "EQ_DELTA",

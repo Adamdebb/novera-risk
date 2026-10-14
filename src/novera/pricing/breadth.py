@@ -32,9 +32,9 @@ from novera.pricing.exotic_formulas import bachelier_price, barrier_price, cash_
 from novera.pricing.rates import projection_details
 from novera.pricing.schedule import remaining_periods, year_fraction
 
-REPO_MODEL_VERSION = "1.0.0"
+REPO_MODEL_VERSION = "1.1.0"
 IR_FUTURE_MODEL_VERSION = "1.1.0"
-SWAPTION_MODEL_VERSION = "1.2.0"
+SWAPTION_MODEL_VERSION = "1.3.0"
 COMMODITY_OPTION_MODEL_VERSION = "1.0.0"
 FUND_LOOKTHROUGH_MODEL_VERSION = "1.0.0"
 EXOTIC_MODEL_VERSION = "1.0.0"
@@ -50,7 +50,9 @@ INDEX_FREQUENCY: dict[str, Frequency] = {
 # --- Repo / reverse repo (PR-010) ----------------------------------------------------------------
 
 
-def price_repo(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
+def price_repo(
+    trade: Trade, market: MarketSnapshot, as_of: date, collateral: str | None = None
+) -> PricingResult:
     """Cash leg marked against the zero curve. BUY = reverse repo: we lent ``quantity`` of cash
     and receive it back with interest; PV is the receivable minus the principal outstanding, so
     it is zero at a fair rate and carries DV01 on the term. The collateral stays on the
@@ -61,7 +63,7 @@ def price_repo(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResu
         return PricingResult(
             trade.trade_id, ins.currency, 0.0, "repo_cash_leg", REPO_MODEL_VERSION, note="matured"
         )
-    curve = market.zero_curve(ins.currency)
+    curve = market.collateral_curve(ins.currency, collateral)
     tau = year_fraction(ins.start_date, ins.end_date, ins.day_count)
     t_end = year_fraction_act365(as_of, ins.end_date)
     t_start = max(year_fraction_act365(as_of, ins.start_date), 0.0)
@@ -134,12 +136,15 @@ def price_interest_rate_future(trade: Trade, market: MarketSnapshot, as_of: date
 # --- Swaption (PR-012) ---------------------------------------------------------------------------
 
 
-def forward_swap(market: MarketSnapshot, ins: Swaption, as_of: date) -> tuple[float, float, date]:
+def forward_swap(
+    market: MarketSnapshot, ins: Swaption, as_of: date, collateral: str | None = None
+) -> tuple[float, float, date]:
     """(forward swap rate, annuity per unit notional, swap maturity). The annuity discounts on
     the currency's IR curve; the floating leg projects the swap's index off its own curve, so a
     EURIBOR-6M swap carries the 6M basis. Without a basis the floating leg telescopes to
-    DF(start) - DF(end), the single-curve result."""
-    curve = market.zero_curve(ins.currency)
+    DF(start) - DF(end), the single-curve result. Discounting is on the CSA's collateral curve
+    (decision 35); projection stays on the index's own curve."""
+    curve = market.collateral_curve(ins.currency, collateral)
     years = int(ins.swap_tenor.rstrip("Y"))
     maturity = ins.expiry_date + relativedelta(years=years)
     annuity = 0.0
@@ -153,6 +158,14 @@ def forward_swap(market: MarketSnapshot, ins: Swaption, as_of: date) -> tuple[fl
         for start, end in remaining_periods(ins.expiry_date, maturity, INDEX_FREQUENCY[index_tenor], as_of):
             t1, t2 = year_fraction_act365(as_of, start), year_fraction_act365(as_of, end)
             float_pv += float(curve.df(t2)) * (float(projection.df(t1)) / float(projection.df(t2)) - 1.0)
+    elif collateral is not None and collateral != ins.currency:
+        # Overnight index under foreign collateral: project off the OIS curve, discount on the
+        # collateral curve, so the leg no longer telescopes.
+        ois = market.zero_curve(ins.currency)
+        float_pv = 0.0
+        for start, end in remaining_periods(ins.expiry_date, maturity, ins.fixed_frequency, as_of):
+            t1, t2 = year_fraction_act365(as_of, start), year_fraction_act365(as_of, end)
+            float_pv += float(curve.df(t2)) * (float(ois.df(t1)) / float(ois.df(t2)) - 1.0)
     else:
         df_start = float(curve.df(year_fraction_act365(as_of, ins.expiry_date)))
         float_pv = df_start - float(curve.df(year_fraction_act365(as_of, maturity)))
@@ -160,7 +173,9 @@ def forward_swap(market: MarketSnapshot, ins: Swaption, as_of: date) -> tuple[fl
     return fwd, annuity, maturity
 
 
-def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
+def price_swaption(
+    trade: Trade, market: MarketSnapshot, as_of: date, collateral: str | None = None
+) -> PricingResult:
     """European swaption under the normal (Bachelier) model on the forward swap rate, at the
     normal SABR smile vol for the strike when the snapshot carries a smile (PR-012)."""
     ins = trade.instrument
@@ -169,7 +184,7 @@ def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricing
         return PricingResult(
             trade.trade_id, ins.currency, 0.0, "swaption_bachelier", SWAPTION_MODEL_VERSION, note="expired"
         )
-    fwd, annuity, maturity = forward_swap(market, ins, as_of)
+    fwd, annuity, maturity = forward_swap(market, ins, as_of, collateral)
     t = year_fraction_act365(as_of, ins.expiry_date)
     tenor_years = int(ins.swap_tenor.rstrip("Y"))
     atm_bp = market.swaption_normal_vol_bp(ins.currency, t, tenor_years)
@@ -216,14 +231,16 @@ def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricing
 # --- Single-name CDS (PR-013) --------------------------------------------------------------------
 
 
-def price_cds_single_name(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
+def price_cds_single_name(
+    trade: Trade, market: MarketSnapshot, as_of: date, collateral: str | None = None
+) -> PricingResult:
     ins = trade.instrument
     assert isinstance(ins, CDSSingleName)
     if ins.maturity_date <= as_of:
         return PricingResult(
             trade.trade_id, ins.currency, 0.0, "cds_flat_hazard", CDS_MODEL_VERSION, note="matured"
         )
-    curve = market.zero_curve(ins.currency)
+    curve = market.collateral_curve(ins.currency, collateral)
     spread = market.cds_spread_bp(ins.reference_entity)
     periods = remaining_periods(as_of.replace(day=1), ins.maturity_date, ins.premium_frequency, as_of)
     prot, prem, annuity = cds_legs(

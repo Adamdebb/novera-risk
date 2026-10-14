@@ -20,6 +20,7 @@ import pandas as pd
 from novera.domain.enums import ProductType
 from novera.domain.trades import Trade
 from novera.market_data.snapshot import MarketSnapshot
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 from novera.risk.revaluation import Portfolio
 from novera.risk.sensitivities import BUMPS
@@ -27,7 +28,7 @@ from novera.risk.sensitivities import BUMPS
 MODEL_VERSION = "1.0.0"
 
 FACTOR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("RATES", ("IR:", "IRBASIS:")),
+    ("RATES", ("IR:", "IRBASIS:", "XCCY:")),
     ("CREDIT", ("CDS:",)),
     ("FX", ("FX:",)),
     ("EQUITY", ("EQ:", "EQIDX:")),
@@ -79,18 +80,31 @@ class PnLExplain:
         )
 
 
-def _pv_map(trades: list[Trade], market: MarketSnapshot, as_of: date, reporting: str) -> dict[str, float]:
-    return {tid: pv for tid, (pv, _) in _price_map(trades, market, as_of, reporting).items()}
+def _pv_map(
+    trades: list[Trade],
+    market: MarketSnapshot,
+    as_of: date,
+    reporting: str,
+    collateral: CollateralMap | None = None,
+) -> dict[str, float]:
+    return {
+        tid: pv for tid, (pv, _) in _price_map(trades, market, as_of, reporting, None, collateral).items()
+    }
 
 
 def _price_map(
-    trades: list[Trade], market: MarketSnapshot, as_of: date, reporting: str, cash_until: date | None = None
+    trades: list[Trade],
+    market: MarketSnapshot,
+    as_of: date,
+    reporting: str,
+    cash_until: date | None = None,
+    collateral: CollateralMap | None = None,
 ) -> dict[str, tuple[float, float]]:
     """trade_id -> (PV, cash received on pay dates in (as_of, cash_until]) in reporting currency."""
     out: dict[str, tuple[float, float]] = {}
     for t in trades:
         try:
-            r = value_trade(t, market, as_of)
+            r = value_trade(t, market, as_of, collateral)
         except Exception:  # noqa: BLE001
             continue
         fx = fx_to_reporting(market, r.currency, reporting)
@@ -113,7 +127,8 @@ def explain_pnl(
     today_ids = set(pf_today.priced_ids)
     prev_ids = {t.trade_id for t in prev_live}
 
-    priced_prev = _price_map(prev_live, prev_market, prev_date, reporting, cash_until=today)
+    coll = pf_today.collateral
+    priced_prev = _price_map(prev_live, prev_market, prev_date, reporting, cash_until=today, collateral=coll)
     pv_prev = {tid: pv for tid, (pv, _) in priced_prev.items()}
     cash_prev = {tid: cash for tid, (_, cash) in priced_prev.items()}
     # Trades that stop having value today (matured, expired, settled) get their own step.
@@ -121,7 +136,7 @@ def explain_pnl(
     for tid in prev_ids & today_ids:
         t = pf_today.by_id[tid]
         try:
-            if value_trade(t, pf_today.base, today).note:
+            if value_trade(t, pf_today.base, today, coll).note:
                 dead_ids.add(tid)
         except Exception:  # noqa: BLE001
             continue
@@ -131,7 +146,7 @@ def explain_pnl(
     # Carry: roll the valuation date on yesterday's market. Cashflows that paid between the two
     # dates leave the PV but are received, so they are added back here (P&L = dPV + cash).
     cur_pv = pv_prev
-    pv_carry = _pv_map(common, prev_market, today, reporting)
+    pv_carry = _pv_map(common, prev_market, today, reporting, coll)
     rows += [(tid, "CARRY", pv_carry[tid] - cur_pv[tid] + cash_prev.get(tid, 0.0)) for tid in pv_carry]
     cur_pv = pv_carry
 
@@ -142,7 +157,7 @@ def explain_pnl(
         changed = {f: today_values[f] for f in values if f.startswith(prefixes) and f in today_values}
         values.update(changed)
         snap = MarketSnapshot(as_of=today, values=values, source="PNL_STEP")
-        pv_g = _pv_map(common, snap, today, reporting)
+        pv_g = _pv_map(common, snap, today, reporting, coll)
         rows += [(tid, group, pv_g[tid] - cur_pv[tid]) for tid in pv_g]
         cur_pv = pv_g
 
@@ -165,7 +180,7 @@ def explain_pnl(
     # Trades that left the feed (unwound or cancelled): assumed unwound at today's close, so
     # their P&L is today's value on today's market less yesterday's PV.
     vanished = [t for t in prev_live if t.trade_id not in today_ids and t.trade_id in pv_prev]
-    pv_unwound = _pv_map(vanished, pf_today.base, today, reporting)
+    pv_unwound = _pv_map(vanished, pf_today.base, today, reporting, coll)
     for t in vanished:
         rows.append(
             (t.trade_id, "UNWOUND", pv_unwound.get(t.trade_id, pv_prev[t.trade_id]) - pv_prev[t.trade_id])
@@ -216,7 +231,7 @@ def _challenger(
             return float(np.mean([today_v[f] / prev_v[f] - 1.0 for f in members]))
         if fid not in today_v or fid not in prev_v:
             return None
-        if fid.startswith(("IR:", "IRBASIS:", "CDS:")):
+        if fid.startswith(("IR:", "IRBASIS:", "XCCY:", "CDS:")):
             return today_v[fid] - prev_v[fid]
         return today_v[fid] / prev_v[fid] - 1.0
 

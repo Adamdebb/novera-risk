@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from novera.market_data.snapshot import MarketSnapshot
+from novera.pricing.collateral import CollateralMap
 from novera.risk import Portfolio, run_stress
 from novera.risk.stress import ShockRule, StressScenario
 from novera.storage.duckdb_repository import DuckDBRepository
@@ -26,6 +27,7 @@ TARGETS: dict[str, tuple[str, ...]] = {
     "rates_eur": ("IR:EUR:",),
     "eur_basis": ("IRBASIS:EUR:",),
     "em_basis": ("IRBASIS:MXN:", "IRBASIS:ZAR:"),
+    "xccy_basis": ("XCCY:",),
     "rates_gbp": ("IR:GBP:",),
     "rates_jpy": ("IR:JPY:",),
     "credit": ("CDS:",),
@@ -108,7 +110,7 @@ def _rules(shock: Shock, base: MarketSnapshot) -> list[ShockRule]:
             )
         elif shock.unit == "bp":
             # Zero rates and basis are decimal; CDS spreads are quoted in bp.
-            size = shock.size / 1e4 if p.startswith(("IR:", "IRBASIS:")) else shock.size
+            size = shock.size / 1e4 if p.startswith(("IR:", "IRBASIS:", "XCCY:")) else shock.size
             out.append(ShockRule(p, size, tenor_filter=shock.tenors))
         else:
             out.append(ShockRule(p, shock.size / 100.0, tenor_filter=shock.tenors))
@@ -123,7 +125,8 @@ def _portfolio(db_path: str, run_id: str) -> tuple[Portfolio, pd.DataFrame]:
         market = repo.load_run_market(run.run_id)
         universe = {f.factor_id: f for f in repo.load_risk_factors()}
         val = repo.load_run_frame(run_id, "valuation")
-        pf = Portfolio(snap.trades, market, run.reporting_currency, universe=universe)
+        collateral = CollateralMap.from_reference(*repo.load_netting_sets())
+        pf = Portfolio(snap.trades, market, run.reporting_currency, universe=universe, collateral=collateral)
     return pf, val
 
 

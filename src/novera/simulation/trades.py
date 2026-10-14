@@ -29,7 +29,8 @@ from novera.domain import (
 )
 from novera.market_data.history import MarketHistory
 from novera.market_data.snapshot import MarketSnapshot
-from novera.pricing import PRICERS
+from novera.pricing.collateral import CollateralMap
+from novera.pricing.valuation import value_trade
 from novera.simulation import instruments as inst
 from novera.simulation import reference_levels as ref
 from novera.simulation.fixings import attach_fixings
@@ -252,6 +253,8 @@ class _Gen:
     def __init__(self, org: Organisation, cp: CounterpartyUniverse, cfg: TradeGeneratorConfig):
         self.t = cfg.template
         self.org, self.cp, self.cfg = org, cp, cfg
+        # Trades are struck at fair value under their own CSA's discounting (decision 35.2).
+        self.collateral = CollateralMap.from_reference(cp.netting_sets, cp.csas)
         self.rng = np.random.default_rng(cfg.seed)
         self.bd = cfg.business_date
         self.n = 0
@@ -417,7 +420,7 @@ class _Gen:
         try:
             snap = hist.snapshot_at(trade.trade_date)
             trade = self._restrike(trade, snap)
-            r = PRICERS[trade.product_type](trade, snap, snap.as_of)
+            r = value_trade(trade, snap, snap.as_of, self.collateral)
         except (KeyError, ValueError):
             return trade
         d = r.details

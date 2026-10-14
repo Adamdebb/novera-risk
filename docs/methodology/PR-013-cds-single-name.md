@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.breadth.price_cds_single_name` (legs from `novera.pricing.credit.cds_legs`) |
@@ -26,3 +26,9 @@ idiosyncratic component so index hedges leave basis.
 ## Validation tests
 `test_single_name_cds_and_index_share_the_model`: model id and spread pass-through; a
 protection buyer gains when the spread widens; PV positive at a coupon below the spread.
+
+## Collateral discounting (1.1.0, decision 35.3)
+Cash flows discount on the trade's collateral curve (`MarketSnapshot.collateral_curve`): the
+OIS curve of the single-name CDS's currency plus its cross-currency basis against USD when the netting
+set's CSA posts USD cash, the OIS curve itself when cleared or without a CSA. The collateral
+currency comes from the CSA table through `pricing.collateral.CollateralMap`.

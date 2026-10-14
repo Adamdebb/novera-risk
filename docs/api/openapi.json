@@ -8597,6 +8597,7 @@
         "enum": [
           "IR_ZERO",
           "IR_BASIS",
+          "XCCY_BASIS",
           "FX_SPOT",
           "EQUITY_SPOT",
           "EQUITY_INDEX",

@@ -205,6 +205,14 @@ _SPECS: dict[str, SourceSpec] = {
         PAID_RATES + ", ZAR JIBAR/ZARONIA basis-swap curves",
         "Zero spread of JIBAR-3M over the ZARONIA discount curve; the simulator is the only history",
     ),
+    "XCCY": SourceSpec(
+        "Cross-currency basis against USD",
+        "Partial: FX forward points (Yahoo, central-bank FX tables) and both OIS curves imply the "
+        "basis at short tenors; no free basis-swap term structure",
+        "Bloomberg and LSEG cross-currency basis-swap curves, ICE Swap Rate, Tradeweb closes",
+        "Zero spread on each OIS curve that gives the currency's cash flows under USD collateral; "
+        "the simulator is the only history",
+    ),
     "SWSMILE": SourceSpec(
         "Swaption SABR smiles",
         "None; broker risk-reversal and butterfly quotes are not public",

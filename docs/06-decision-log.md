@@ -1220,6 +1220,74 @@ resetting quarterly. One question round; collateral-currency discounting is the 
   five breaches. BRL DV01 utilisation rises from 6–18% to 31–63% (zero-coupon swaps pay at
   maturity); EUR_RATES_STRESS on the 11th and MACRO_VAR on the 14th drop below the warning line.
 
+## Round 35 — Cross-currency basis: collateral discounting and FX forwards (2026-10-14)
+
+Context: second-look item 25. All 17 CSAs in the simulated bank post USD cash, yet non-USD
+bilateral swaps discounted on their own OIS curve, and FX forwards came from covered interest
+parity on the two OIS curves. The owner asked for the difference between stamping the collateral
+on the trade and passing CSAs into pricing, and which discounting suits trades without a CSA in
+production. The owner took the recommended options for currencies and for trades
+without a CSA, and chose to pass CSAs into pricing and to include CDS and repos.
+
+### 35.1 Currencies
+- Options: all 14 non-USD ★ · G10 plus the swap-book EM · swap currencies only
+- Choice (owner): **all 14**: every FX pair in the book is basis-consistent. Factors
+  `XCCY:{CCY}:{TENOR}`, a zero spread on the currency's OIS curve that gives its cash flows under
+  USD collateral (USD has none).
+- Choice (default): assumed levels from −200bp (ARS) and −35bp (JPY) to +12bp (NZD), narrowing
+  towards 30Y, one mean-reverting path per currency, pushed down by the episode's USD rally (the
+  dollar-funding squeeze). Drawn after the tenor basis: all 1,975,770 earlier history values are
+  identical to Round 34. 70 factors, 1,584 in all.
+- Where: `simulation/market_data.py` (`_Sim.xccy_basis`), `reference_levels.XCCY_*`,
+  `MarketSnapshot.collateral_curve` (a non-USD collateral currency triangulates through USD),
+  SIM-001 1.5.0.
+
+### 35.2 How a pricer learns the collateral
+- Options: stamp it on the trade with a data-quality check ★ · pass the CSAs into pricing
+- Choice (owner): **pass the CSAs into pricing**. Valuation receives a collateral map (netting set
+  to its CSA's collateral currency, built from the CSA table) and gives each pricer its trade's
+  collateral, so the CSA table stays the one source of truth; the cost is carrying the map
+  through every pricing call site (valuation, revaluation for sensitivities and VaR, P&L explain,
+  exposure paths, SA-CCR, reconciliation, the vendor feed).
+- Where: `pricing/collateral.py` (`CollateralMap`, `COLLATERAL_AWARE`), `value_trade` and
+  `value_portfolio`, `Portfolio(collateral=...)` (bumps, VaR scenarios and what-ifs reuse it,
+  forked VaR workers inherit it), `DependencyIndex` (a trade under foreign collateral depends on
+  both currencies' basis), EOD, partial re-runs, regulatory engine, SA-CCR, exposure paths, P&L
+  explain, reconciliation, the vendor feed (so the official system differs only where planted),
+  the CLI and the generator's fair-value strike. The cash ladder stays without: it reports
+  contractual cash flows, which do not depend on discounting.
+
+### 35.3 Products
+- Options: swaps, swaptions, FX forwards and options ★ · also CDS and repos · swaps only
+- Choice (owner): **also CDS and repos**: every collateralised OTC product discounts on its
+  collateral curve. FX forwards and options take the basis-consistent market forward, which the
+  interbank market sets under USD collateral whatever the trade's own CSA, and discount on the
+  trade's collateral curve.
+- Choice (default): XCCY01 per node; FRTB SA treats the basis as one GIRR factor per currency
+  (risk weight 1.6%, no correlation with the curves, as read from MAR21 and flagged in REG-001 to
+  be checked against the text), SIMM-lite likewise; IMA gives it the IR liquidity horizon; a 14th
+  stress `usd_funding_squeeze`; an `xccy_basis` what-if target. The FX forward model is renamed
+  `fx_forward_xccy`.
+- Where: `pricing/fx.py` (PR-003 2.0.0, PR-004 2.0.0), `pricing/rates.py` (PR-002 2.2.0),
+  `pricing/breadth.py` (PR-010, PR-013 1.1.0, PR-012 1.3.0), `pricing/credit.py` (PR-008 1.1.0),
+  `risk/sensitivities.py` (MR-001 1.2.0), `risk/stress.py` (MR-005 1.3.0), `regulatory/frtb_sa.py`
+  (REG-001 1.2.0), `regulatory/simm.py` (REG-004 1.3.0; it now also charges a currency with basis
+  but no DV01). Tests: `tests/test_xccy.py`, `test_cross_currency_basis_is_its_own_girr_and_simm_factor`.
+
+### 35.5 The demo
+- Rule as in 34.3 (rebuild, compare, bring any breach change to the owner). Result: the bank keeps
+  its eight breaches and the fund its three, with no status change anywhere; the largest move is
+  about one point (CPTY_CORP_ENERGY 106.5% to 105.4% on the 15th). Small because the generator
+  strikes every trade at fair value under the new pricing, so only the basis drift since each
+  trade date shows. On the 15th the bank carries −54k per bp of EUR basis (97 trades), −25k MXN,
+  +24k INR, +16k CHF; the USD funding squeeze gains 2.1m.
+
+### 35.4 Trades without a CSA
+- Options: own-currency OIS with FVA logged ★ · a bank funding curve
+- Choice (owner): **own-currency OIS**, the clean price production desks use, with funding left to
+  a separate FVA on the exposure profiles. Discounting at a funding curve double counts DVA,
+  ignores netting and mixes funding into PV.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1298,6 +1366,9 @@ resetting quarterly. One question round; collateral-currency discounting is the 
     fixing), not from published fixings; with real data a fixings table per index should feed it.
 24. **No holiday calendars** (34.2): schedules are unadjusted and BUS/252 counts weekdays, so DI
     pre accrual and payment dates differ slightly from B3 and the other markets' calendars.
-25. **Collateral currency** (34, next round): all 17 CSAs post USD cash, yet non-USD bilateral
-    swaps discount on their own OIS curve; the cross-currency basis that would fix this also
-    fixes FX forwards priced by covered interest parity alone (MV-001).
+25. **The cross-currency basis is simulated** (35.1, closes the collateral gap): forwards and
+    collateral discounting use a simulated basis, not one stripped from basis-swap quotes or FX
+    forward points; the FRTB SA weight and correlation for it are as read, to be checked.
+26. **No FVA** (35.4): uncollateralised trades discount on their own OIS curve, the clean price;
+    their funding cost and benefit belong in an FVA on the EPE and ENE profiles the exposure
+    engine already produces, with a funding-spread input. Not built.

@@ -12,6 +12,7 @@ import pandas as pd
 
 from novera.config import Settings, get_settings
 from novera.market_data.history import MarketHistory
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting
 from novera.regulatory.cash_ladder import cash_ladder
 from novera.regulatory.cva_capital import ba_cva
@@ -117,7 +118,13 @@ def run_regulatory(
                 nmrf.append(subj)
     bt = repo.load_run_frame(run_id, "backtest_summary")
     exceptions = int(bt[bt["kind"] == "STATIC_HYPOTHETICAL"]["exceptions"].iloc[0]) if len(bt) else 0
-    pf = Portfolio(snap.trades, market, reporting, universe=universe)
+    pf = Portfolio(
+        snap.trades,
+        market,
+        reporting,
+        universe=universe,
+        collateral=CollateralMap.from_reference(netting_sets, csas),
+    )
     ima = frtb_ima(
         pf,
         sens,

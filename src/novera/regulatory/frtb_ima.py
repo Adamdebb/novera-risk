@@ -30,7 +30,7 @@ LIQUIDITY_HORIZONS = (10, 20, 40, 60, 120)
 
 def liquidity_horizon(factor_id: str) -> int:
     """Days per MAR33.12, mapped to the platform's factor ids."""
-    if factor_id.startswith(("IR:", "IRBASIS:")):
+    if factor_id.startswith(("IR:", "IRBASIS:", "XCCY:")):
         ccy = factor_id.split(":")[1]
         return 10 if ccy in ("USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "SEK") else 20
     if factor_id.startswith("FX:"):

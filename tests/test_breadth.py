@@ -709,7 +709,7 @@ def test_swaption_prices_off_the_sabr_smile(market: MarketSnapshot) -> None:
     assert smile.pv_local == pytest.approx(
         100e6 * annuity * bachelier_price(True, fwd, 0.025, expected, t), rel=1e-9
     )
-    assert smile.model_version == "1.2.0"
+    assert smile.model_version == "1.3.0"
     # At the money the smile vol is the cube quote, so the two snapshots agree.
     atm = trade(round(fwd, 8))
     a, b = (

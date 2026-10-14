@@ -129,6 +129,7 @@ def build_tools(db_path: str) -> list[Tool]:
         units = {
             "DV01": "P&L per +1bp",
             "BASIS01": "P&L per +1bp of a term rate over its overnight curve",
+            "XCCY01": "P&L per +1bp of a currency's cross-currency basis against USD",
             "CS01": "P&L per +1bp",
             "VEGA": "P&L per +1 vol point",
             "THETA": "P&L per calendar day",
@@ -664,7 +665,8 @@ def build_tools(db_path: str) -> list[Tool]:
             "Sensitivities by group and underlying. DV01 and BASIS01 rows carry a tenor bucket "
             "(curve ladder). DV01 bumps the overnight discount curve (ESTR, F-TIIE, ZARONIA) with any "
             "term-rate projection riding on it; BASIS01 bumps the term rate (EURIBOR, TIIE, JIBAR) "
-            "over it. Measures: DV01, BASIS01, "
+            "over it; XCCY01 bumps a currency's cross-currency basis against USD (FX forwards and "
+            "trades under USD collateral). Measures: DV01, BASIS01, XCCY01, "
             "CS01, FX_DELTA, EQ_DELTA, CMD_DELTA, CRYPTO_DELTA, VEGA, GAMMA, THETA.",
             _obj(
                 {
@@ -673,6 +675,7 @@ def build_tools(db_path: str) -> list[Tool]:
                         "enum": [
                             "DV01",
                             "BASIS01",
+                            "XCCY01",
                             "CS01",
                             "FX_DELTA",
                             "EQ_DELTA",

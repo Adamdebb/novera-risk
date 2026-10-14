@@ -7,6 +7,8 @@ Factor id conventions:
     IR:{CCY}:{TENOR}             continuously compounded zero rate, decimal (the discount curve:
                                  ESTR for EUR, the overnight index elsewhere)
     IRBASIS:{CCY}:{INDEX_TENOR}:{TENOR}   term-rate index minus the IR curve, zero spread, decimal
+    XCCY:{CCY}:{TENOR}           cross-currency basis against USD: zero spread on the IR curve
+                                 that gives the currency's cash flows under USD collateral
     FX:{BASE}{QUOTE}             spot, quote per base
     EQ:{TICKER}                  share price in the share currency
     EQIDX:{INDEX}                index level
@@ -27,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RiskFactorType(StrEnum):
     IR_ZERO = "IR_ZERO"
     IR_BASIS = "IR_BASIS"
+    XCCY_BASIS = "XCCY_BASIS"
     FX_SPOT = "FX_SPOT"
     EQUITY_SPOT = "EQUITY_SPOT"
     EQUITY_INDEX = "EQUITY_INDEX"
@@ -91,6 +94,10 @@ TENOR_BASIS_INDICES: dict[str, tuple[str, str]] = {
     "MXN-TIIE-28D": ("MXN", "28D"),  # over F-TIIE (decision 34.1)
     "ZAR-JIBAR-3M": ("ZAR", "3M"),  # over ZARONIA
 }
+
+
+def xccy_id(ccy: str, tenor: str) -> str:
+    return f"XCCY:{ccy}:{tenor}"
 
 
 def fx_id(pair: str) -> str:

@@ -20,6 +20,7 @@ from novera.domain.counterparties import CSA, Counterparty, NettingSet
 from novera.domain.enums import ClearingType, ProductType, Venue
 from novera.domain.trades import Trade
 from novera.market_data.snapshot import MarketSnapshot
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 from novera.simulation import reference_levels as _ref
 
@@ -90,13 +91,18 @@ class TradeAddOn:
 
 
 def _trade_addon(
-    t: Trade, market: MarketSnapshot, as_of: date, reporting: str, margined: bool
+    t: Trade,
+    market: MarketSnapshot,
+    as_of: date,
+    reporting: str,
+    margined: bool,
+    collateral: CollateralMap | None = None,
 ) -> TradeAddOn | None:
     ins = t.instrument
     pt = t.product_type
     sign = 1.0 if t.direction.value == "BUY" else -1.0
     try:
-        r = value_trade(t, market, as_of)
+        r = value_trade(t, market, as_of, collateral)
     except Exception:  # noqa: BLE001
         return None
     if r.note:
@@ -244,6 +250,7 @@ def saccr(
     ns_map = {n.netting_set_id: n for n in netting_sets}
     csa_map = {c.csa_id: c for c in csas}
     coll = collateral_by_set or {}
+    discounting = CollateralMap.from_reference(netting_sets, csas)  # the PV the RC is built on
     rows, trade_rows = [], []
     by_set: dict[str, list[Trade]] = {}
     for t in trades:
@@ -262,11 +269,11 @@ def saccr(
         addons: list[TradeAddOn] = []
         for t in ts:
             try:
-                r = value_trade(t, market, as_of)
+                r = value_trade(t, market, as_of, discounting)
                 v += r.pv_local * fx_to_reporting(market, r.currency, reporting)
             except Exception:  # noqa: BLE001
                 continue
-            a = _trade_addon(t, market, as_of, reporting, margined)
+            a = _trade_addon(t, market, as_of, reporting, margined, discounting)
             if a is not None:
                 a.effective = a.delta * a.adjusted_notional * a.maturity_factor
                 addons.append(a)

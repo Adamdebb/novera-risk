@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.risk.stress`, `novera.risk.stress_catalogue` |
@@ -15,7 +15,8 @@ every factor across a named episode window in the history).
 
 ## Library
 USD rates +100bp; global rates +100bp; USD steepener and flattener; EURIBOR basis +20bp
-(6M over ESTR +20bp, 3M +15bp, ESTR unchanged: interbank stress); EUR/USD −10%;
+(6M over ESTR +20bp, 3M +15bp, ESTR unchanged: interbank stress); USD funding squeeze (every
+cross-currency basis −25bp, EUR, JPY and CHF −40bp); EUR/USD −10%;
 equity −20% with vol +15; credit +150bp; oil −30%; BTC −50%; vol +10 points; global
 risk-off (composite); inflation shock (composite). Historical: the simulator's stylised
 risk-off crash and rates shock.
@@ -24,7 +25,7 @@ risk-off crash and rates shock.
 `GET /reference/stress-library` and the dashboard page list every scenario in three
 categories with the shocks it applies:
 
-1. **Hypothetical** (13, in the daily run): the rules above, shown in bp for rates and
+1. **Hypothetical** (14, in the daily run): the rules above, shown in bp for rates and
    spreads, vol points for surfaces and per cent for everything else, with the curve nodes a
    rule is limited to. Sizes are assumptions in the range regulators and desks use; none is
    measured from a real market move.
@@ -58,3 +59,4 @@ schema in `tests/test_api.py`, the page in `tests/test_ui.py`.
 | 1.0.0 | 2026-09-14 | Hypothetical library and stylised episodes | Novera |
 | 1.1.0 | 2026-09-15 | Stress library catalogue: categories, shocks and crisis-window status (decision 22.1); scenario results unchanged | Novera |
 | 1.2.0 | 2026-10-14 | EURIBOR basis +20bp scenario (decision 33) | Novera |
+| 1.3.0 | 2026-10-14 | USD funding squeeze scenario on the cross-currency basis (decision 35) | Novera |

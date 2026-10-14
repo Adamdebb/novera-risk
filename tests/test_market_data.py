@@ -28,6 +28,7 @@ def test_universe_shape() -> None:
     assert types == {
         "IR_ZERO",
         "IR_BASIS",
+        "XCCY_BASIS",
         "FX_SPOT",
         "EQUITY_SPOT",
         "EQUITY_INDEX",
@@ -50,7 +51,9 @@ def test_history_is_reproducible_and_clean(md) -> None:
     assert h["as_of"].nunique() == 261
     assert h["as_of"].max().date() == BD
     assert not h["value"].isna().any()
-    prices = h[~h["factor_id"].str.startswith(("IR:", "SWRHO:"))]  # rates and SABR rho may be negative
+    prices = h[
+        ~h["factor_id"].str.startswith(("IR:", "SWRHO:", "XCCY:"))
+    ]  # rates, SABR rho and the cross-currency basis may be negative
     assert (prices["value"] > 0).all()
     vols = h[h["factor_id"].str.startswith("VOL:")]
     assert vols["value"].between(0.02, 3.0).all()
@@ -139,7 +142,9 @@ def test_extension_keeps_the_core_history_identical_and_joins_continuously() -> 
     pd.testing.assert_frame_equal(b.loc[a.index], a)  # the last year is bit-identical
     assert b.index.max() == a.index.max() and b.index.min() < a.index.min()
     assert not b.isna().any().any()
-    signed = [c for c in b.columns if c.startswith(("IR:", "SWRHO:"))]  # rates and SABR rho may be negative
+    signed = [
+        c for c in b.columns if c.startswith(("IR:", "SWRHO:", "XCCY:"))
+    ]  # rates, SABR rho and the cross-currency basis may be negative
     assert (b.drop(columns=signed) > 0).all().all()
     # The junction is an ordinary daily move: no factor jumps more than it ever moves elsewhere.
     change = b.diff().abs()
@@ -189,10 +194,19 @@ def test_tenor_basis_is_drawn_last_and_widens_in_a_crisis() -> None:
     from novera.simulation.market_data import _Sim
 
     cfg = MarketSimConfig(end_date=BD, years=3.0)
-    with_basis, without = _Sim(cfg), _Sim(cfg)
-    without.tenor_basis = lambda: None  # type: ignore[method-assign]
-    with_basis.simulate()
-    without.simulate()
-    assert set(with_basis.series) - set(without.series) == set(basis)
-    for fid, path in without.series.items():
-        np.testing.assert_array_equal(with_basis.series[fid], path, err_msg=fid)
+    full = _Sim(cfg)
+    full.simulate()
+    # Switching off a family and everything drawn after it leaves the earlier families as they
+    # were: the tenor basis (33.4, 34.1), then the cross-currency basis (35.1).
+    for last in ("tenor_basis", "xccy_basis"):
+        cut = _Sim(cfg)
+        cut.xccy_basis = lambda: None  # type: ignore[method-assign]
+        if last == "tenor_basis":
+            cut.tenor_basis = lambda: None  # type: ignore[method-assign]
+        cut.simulate()
+        added = {f for f in full.series if f.startswith("XCCY:")}
+        if last == "tenor_basis":
+            added |= set(basis)
+        assert set(full.series) - set(cut.series) == added
+        for fid, path in cut.series.items():
+            np.testing.assert_array_equal(full.series[fid], path, err_msg=fid)

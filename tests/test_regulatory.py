@@ -122,6 +122,30 @@ def test_tenor_basis_is_a_second_curve_in_girr_and_simm():
     assert liquidity_horizon("IRBASIS:EUR:6M:5Y") == liquidity_horizon("IR:EUR:5Y") == 10
 
 
+def test_cross_currency_basis_is_its_own_girr_and_simm_factor():
+    """Decision 35: XCCY01 summed per currency is one GIRR factor (no term structure) weighted
+    at GIRR_XCCY_RW and uncorrelated with the curve factors; SIMM-lite likewise at 20%. A pure
+    basis position is charged on its own; added to a curve position it adds in quadrature."""
+    from novera.regulatory.frtb_sa import GIRR_XCCY_RW, XCCY_KEY
+
+    def sens(dv01: float, xccy: float) -> pd.DataFrame:
+        rows = [("DV01", "IR:EUR:5Y", "5Y", dv01), ("XCCY01", "XCCY:EUR:5Y", "5Y", xccy / 2),
+                ("XCCY01", "XCCY:EUR:10Y", "10Y", xccy / 2)]  # fmt: skip
+        return pd.DataFrame(
+            [{"trade_id": "a", "measure": m, "factor_id": f, "bucket": b, "underlying": "EUR", "value": v}
+             for m, f, b, v in rows if v]
+        )  # fmt: skip
+
+    ws = _girr_ws(sens(0.0, 100.0))["EUR"]
+    assert ws == {XCCY_KEY: pytest.approx(100.0 / 1e-4 * GIRR_XCCY_RW)}
+    curve_only = _aggregate(_girr_ws(sens(100.0, 0.0)), _girr_rho, GIRR_GAMMA, 1.0)
+    basis_only = _aggregate(_girr_ws(sens(0.0, 100.0)), _girr_rho, GIRR_GAMMA, 1.0)
+    both = _aggregate(_girr_ws(sens(100.0, 100.0)), _girr_rho, GIRR_GAMMA, 1.0)
+    assert both == pytest.approx(np.hypot(curve_only, basis_only))
+    assert simm_for_sensitivities(sens(0.0, 100.0), {})["IR"] > 0
+    assert liquidity_horizon("XCCY:EUR:5Y") == 10
+
+
 def test_frtb_sa_scales_with_sensitivities():
     sens = pd.DataFrame(
         [

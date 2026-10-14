@@ -114,6 +114,19 @@ HYPOTHETICAL_LIBRARY: tuple[StressScenario, ...] = (
         (ShockRule("IRBASIS:EUR:6M:", 0.0020), ShockRule("IRBASIS:EUR:3M:", 0.0015)),
     ),
     StressScenario(
+        "usd_funding_squeeze",
+        "USD funding squeeze",
+        "Cross-currency basis against USD -25bp everywhere, -40bp for EUR, JPY and CHF: dollars "
+        "borrowed through FX swaps cost more",
+        "HYPOTHETICAL",
+        (
+            ShockRule("XCCY:", -0.0025),
+            ShockRule("XCCY:EUR:", -0.0015),
+            ShockRule("XCCY:JPY:", -0.0015),
+            ShockRule("XCCY:CHF:", -0.0015),
+        ),
+    ),
+    StressScenario(
         "eurusd_down_10",
         "EUR/USD -10%",
         "Euro devaluation against the dollar",

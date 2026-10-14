@@ -23,6 +23,7 @@ import pandas as pd
 from novera.domain.enums import ProductType
 from novera.market_data.history import MarketHistory
 from novera.market_data.snapshot import MarketSnapshot
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 from novera.risk import Portfolio, VaRConfig, historical_var
 from novera.storage.duckdb_repository import DuckDBRepository
@@ -75,6 +76,8 @@ def generate_vendor_feed(
     hist = MarketHistory.from_long(repo.load_market_history())
     org = repo.load_organisation("GMB")
     reporting = run.reporting_currency
+    # The official system discounts on the same CSAs, so only the planted differences show.
+    collateral = CollateralMap.from_reference(*repo.load_netting_sets())
 
     trades = [t for t in snap.trades if t.status.value == "LIVE"]
     if cfg.plant:
@@ -95,7 +98,7 @@ def generate_vendor_feed(
         elif cfg.plant and t.product_type.value in cfg.flat_vol_products:
             mkt = flat
         try:
-            r = value_trade(t, mkt, market.as_of)
+            r = value_trade(t, mkt, market.as_of, collateral)
             pv = r.pv_local * fx_to_reporting(mkt, r.currency, reporting)
         except Exception:  # noqa: BLE001
             continue
@@ -117,7 +120,7 @@ def generate_vendor_feed(
         cfg.planted.append(f"methodology: VaR window {cfg.var_window_days} days (Novera 500)")
 
     # Official VaR: same engine on the official trade set, shorter window, official market.
-    pf = Portfolio(trades, market, reporting, universe=universe)
+    pf = Portfolio(trades, market, reporting, universe=universe, collateral=collateral)
     var = historical_var(pf, hist, VaRConfig(window_days=cfg.var_window_days))
     contrib = var.contributions.set_index("trade_id")["var_contribution"]
     feed = pd.DataFrame(rows)

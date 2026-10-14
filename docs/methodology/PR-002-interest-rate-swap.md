@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 2.1.0 |
+| Version | 2.2.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.rates.price_interest_rate_swap`, `MarketSnapshot.projection_curve` |
@@ -28,6 +28,12 @@ plus the index's tenor basis `IRBASIS:{CCY}:{INDEX_TENOR}:{TENOR}` (decisions 33
 
 Conventions are set per index by the generator (`reference_levels.SWAP_CONVENTIONS`, decision
 34.2); a TIIE swap runs a whole number of 28-day periods, 13 a year.
+
+Discounting follows the collateral (decision 35): `DF` is the trade's collateral curve, the
+`IR:` OIS curve plus the currency's cross-currency basis against USD (`XCCY:`) when the netting
+set's CSA posts USD cash, the OIS curve itself when cleared or without a CSA (funding of the
+uncollateralised is left to an FVA). Projection never depends on the collateral. The CSA table
+reaches the pricer through `pricing.collateral.CollateralMap`.
 
 ## Mathematical method
 Projection curve `P`: zero rates `z_P(t) = z_D(t) + b(t)`, with `z_D` the discount zero curve
@@ -62,9 +68,8 @@ weekdays rather than Brazilian business days. Discounting on the OIS curve stand
 CSA discounting under a cash-collateral CSA in the currency of the swap.
 
 ## Limitations
-No CSA-specific discounting: every bilateral CSA in the simulated bank posts USD cash, so a
-non-USD swap under it should discount on its curve adjusted by the cross-currency basis; that is
-the next upgrade. No amortisation. The basis
+No FVA: an uncollateralised swap discounts on its own OIS curve. The cross-currency basis is
+simulated, not stripped from basis-swap quotes. No amortisation. The basis
 is a zero spread, not bootstrapped from basis-swap quotes; with real data the 6M and 3M curves
 should be stripped from ESTR/EURIBOR basis swaps. If a snapshot carries no basis for a term-rate
 index (a real-data snapshot today), the swap is projected off the discount curve and
@@ -98,3 +103,4 @@ is worth nothing and a seasoned one equals its closed form. `test_generated_swap
 | 1.0.0 | 2026-09-14 | Single curve per currency; the EUR gap measured at 0.53% of PV (decision 18.3) |
 | 2.0.0 | 2026-10-14 | Multi-curve: OIS discounting, EURIBOR projected off ESTR plus a simulated tenor basis (decision 33) |
 | 2.1.0 | 2026-10-14 | TIIE and JIBAR basis, market conventions per index, zero-coupon CDI swaps, fixings of the running period stored on the trade (decision 34) |
+| 2.2.0 | 2026-10-14 | Discounting on the CSA's collateral curve, cross-currency basis for USD collateral (decision 35); `tests/test_xccy.py::test_eur_swap_under_usd_csa_matches_quantlib` |

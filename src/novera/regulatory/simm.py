@@ -15,7 +15,7 @@ import pandas as pd
 
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.2.0"
+MODEL_VERSION = "1.3.0"
 
 # Risk weights per bp of sensitivity by tenor (regular-volatility currencies), in currency units per bp.
 IR_RW = {
@@ -35,6 +35,10 @@ IR_RW = {
 IR_RW_HIGH_VOL = 1.6  # multiplier for MXN, BRL, ZAR, TRY, ARS, INR
 IR_TENOR_RHO_THETA = 0.15
 IR_SUBCURVE_RHO = 0.993  # ISDA SIMM correlation between sub-curves of one currency
+# Cross-currency basis: one factor per currency, approximate published-style weight per bp
+# and correlation to the curve factors (REG-004).
+IR_XCCY_RW = 21.0
+IR_XCCY_RHO = 0.2
 IR_CCY_GAMMA = 0.27
 CS_RW = {"IG": 75, "HY": 240}  # per bp
 CS_RHO = 0.5
@@ -67,7 +71,10 @@ TENOR_YEARS = {
 
 
 def _ir_rho(a: str, b: str) -> float:
-    """Keys are ``"5Y"`` on the discount curve and ``"6M:5Y"`` on a term-rate sub-curve."""
+    """Keys are ``"5Y"`` on the discount curve, ``"6M:5Y"`` on a term-rate sub-curve and
+    ``"XCCY"`` for the cross-currency basis."""
+    if "XCCY" in (a, b):
+        return 1.0 if a == b else IR_XCCY_RHO
     ca, _, a = a.rpartition(":")
     cb, _, b = b.rpartition(":")
     ta, tb = TENOR_YEARS[a], TENOR_YEARS[b]
@@ -110,10 +117,11 @@ def simm_for_sensitivities(sens: pd.DataFrame, base_vols: dict[str, float]) -> d
     # discount curve's is DV01 less BASIS01, as in FRTB SA (REG-004).
     dv = sens[sens["measure"] == "DV01"]
     basis = sens[sens["measure"] == "BASIS01"]
+    xccy = sens[sens["measure"] == "XCCY01"]
     kb, sb = {}, {}
-    for ccy, g in dv.groupby("underlying"):
+    for ccy in sorted(set(dv["underlying"]) | set(xccy["underlying"])):
         mult = IR_RW_HIGH_VOL if ccy in ("MXN", "BRL", "ZAR", "TRY", "ARS", "INR") else 1.0
-        delta = g.groupby("bucket")["value"].sum().to_dict()
+        delta = dv[dv["underlying"] == ccy].groupby("bucket")["value"].sum().to_dict()
         bg = basis[basis["underlying"] == ccy]
         curve_of = bg["factor_id"].str.split(":").str[2]
         for (curve, b), v in bg.groupby([curve_of, "bucket"])["value"].sum().items():
@@ -121,6 +129,9 @@ def simm_for_sensitivities(sens: pd.DataFrame, base_vols: dict[str, float]) -> d
             delta[b] = delta.get(b, 0.0) - v
         # v is P&L per bp; RW is per bp, so WS = v(per bp) x RW(bp) in currency units.
         ws = {k: v * IR_RW.get(k.rpartition(":")[2], 51) * mult for k, v in delta.items()}
+        xg = xccy[xccy["underlying"] == ccy]["value"].sum()
+        if xg:
+            ws["XCCY"] = xg * IR_XCCY_RW * mult
         kb[ccy] = _k(ws, _ir_rho)
         sb[ccy] = sum(ws.values())
     if kb:

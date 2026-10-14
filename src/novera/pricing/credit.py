@@ -12,7 +12,7 @@ from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing.base import PricingResult, year_fraction_act365
 from novera.pricing.schedule import remaining_periods, year_fraction
 
-CDS_MODEL_VERSION = "1.0.0"
+CDS_MODEL_VERSION = "1.1.0"
 
 
 def cds_legs(
@@ -44,14 +44,17 @@ def cds_legs(
     return notional * protection, notional * premium, annuity
 
 
-def price_cds_index(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
+def price_cds_index(
+    trade: Trade, market: MarketSnapshot, as_of: date, collateral: str | None = None
+) -> PricingResult:
     ins = trade.instrument
     assert isinstance(ins, CDSIndex)
     if ins.maturity_date <= as_of:
         return PricingResult(
             trade.trade_id, ins.currency, 0.0, "cds_flat_hazard", CDS_MODEL_VERSION, note="matured"
         )
-    curve = market.zero_curve(ins.currency)
+    # Premium and protection discount on the CSA's collateral curve (decision 35.3).
+    curve = market.collateral_curve(ins.currency, collateral)
     spread = market.cds_spread_bp(ins.index_family)
     periods = remaining_periods(as_of.replace(day=1), ins.maturity_date, ins.premium_frequency, as_of)
     prot, prem, annuity = cds_legs(

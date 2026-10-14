@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.credit.price_cds_index` |
@@ -20,3 +20,9 @@ the first of the current month rather than IMM dates. Suitable for risk, not for
 ## Validation tests
 `test_cds_index_matches_quantlib_within_tolerance`: within 5% of `ql.MidPointCdsEngine`
 with a flat hazard rate; PV increases with spread for a protection buyer.
+
+## Collateral discounting (1.1.0, decision 35.3)
+Cash flows discount on the trade's collateral curve (`MarketSnapshot.collateral_curve`): the
+OIS curve of the CDS index's currency plus its cross-currency basis against USD when the netting
+set's CSA posts USD cash, the OIS curve itself when cleared or without a CSA. The collateral
+currency comes from the CSA table through `pricing.collateral.CollateralMap`.

@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from novera.market_data.history import MarketHistory
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 from novera.risk import Portfolio, VaRConfig, historical_var
 from novera.storage.duckdb_repository import DuckDBRepository
@@ -126,13 +127,14 @@ def reconcile(
     mismatched = m[(m["presence"] == "BOTH") & ~m["pv_matches"]]
     if len(mismatched) and run.previous_market_snapshot_id:
         prev = repo.load_market_snapshot(run.previous_market_snapshot_id)
+        collateral = CollateralMap.from_reference(*repo.load_netting_sets())
         stale_ids = []
         for _, r in mismatched.iterrows():
             t = by_id.get(r["trade_id"])
             if t is None:
                 continue
             try:
-                p = value_trade(t, prev, run.business_date)
+                p = value_trade(t, prev, run.business_date, collateral)
                 pv_prev = p.pv_local * fx_to_reporting(prev, p.currency, run.reporting_currency)
             except Exception:  # noqa: BLE001
                 continue
@@ -171,7 +173,11 @@ def reconcile(
         hist = MarketHistory.from_long(repo.load_market_history())
         ids = set(common_ok["trade_id"])
         pf = Portfolio(
-            [t for t in snap.trades if t.trade_id in ids], market, run.reporting_currency, universe=universe
+            [t for t in snap.trades if t.trade_id in ids],
+            market,
+            run.reporting_currency,
+            universe=universe,
+            collateral=CollateralMap.from_reference(*repo.load_netting_sets()),
         )
         ours = historical_var(pf, hist, VaRConfig(window_days=our_window))
         theirs = historical_var(pf, hist, VaRConfig(window_days=window))

@@ -12,6 +12,7 @@ from novera.domain.snapshots import PortfolioSnapshot
 from novera.domain.trades import Trade
 from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing import PRICERS, PricingResult
+from novera.pricing.collateral import COLLATERAL_AWARE, CollateralMap
 
 VALUATION_VERSION = "1.0.0"
 
@@ -54,8 +55,14 @@ def fx_to_reporting(market: MarketSnapshot, currency: str, reporting_currency: s
     return 1.0 if currency == reporting_currency else market.fx_spot(f"{currency}/{reporting_currency}")
 
 
-def value_trade(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
+def value_trade(
+    trade: Trade, market: MarketSnapshot, as_of: date, collateral: CollateralMap | None = None
+) -> PricingResult:
+    """Price one trade; a collateral-aware product discounts on its CSA's collateral curve when
+    ``collateral`` is given (decision 35.2), else on its own currency's OIS curve."""
     pricer = PRICERS[trade.product_type]
+    if collateral is not None and trade.product_type in COLLATERAL_AWARE:
+        return pricer(trade, market, as_of, collateral=collateral.for_trade(trade))  # type: ignore[call-arg]
     return pricer(trade, market, as_of)
 
 
@@ -65,6 +72,7 @@ def value_portfolio(
     org: Organisation | None,
     reporting_currency: str,
     as_of: date | None = None,
+    collateral: CollateralMap | None = None,
 ) -> ValuationOutput:
     """Price every LIVE trade. Trades that fail are kept with ``error`` set and PV NaN, so
     the data-quality module can report them and totals stay honest."""
@@ -108,7 +116,7 @@ def value_portfolio(
             )
             continue
         try:
-            r = value_trade(t, market, as_of)
+            r = value_trade(t, market, as_of, collateral)
             fx = fx_to_reporting(market, r.currency, reporting_currency)
             results[t.trade_id] = r
             rows.append(

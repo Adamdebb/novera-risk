@@ -38,6 +38,7 @@ from novera.market_data.history import MarketHistory
 from novera.market_data.proxies import MODEL_VERSION as PROXY_VERSION
 from novera.market_data.proxies import apply_proxies
 from novera.pricing import valuation as valuation_mod
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import value_portfolio
 from novera.regulatory import run_regulatory
 from novera.risk import (
@@ -208,7 +209,9 @@ def run_eod(
         base_amounts = {lim.limit_id: lim.amount for lim in repo.load_limits(on=market.as_of)}
         prev_snapshot = repo.load_portfolio_snapshot_before(market.as_of)
         counterparties = {c.counterparty_id for c in repo.load_counterparties()}
-        netting_sets = {n.netting_set_id for n in repo.load_netting_sets()[0]}
+        ns_list, csa_list = repo.load_netting_sets()
+        netting_sets = {n.netting_set_id for n in ns_list}
+        collateral = CollateralMap.from_reference(ns_list, csa_list)
 
     run = RunRecord(
         new_run_id(),
@@ -239,8 +242,8 @@ def run_eod(
         proxies = apply_proxies(raw_market, universe_list, prev_market)
         market = proxies.market
     with _timed(timings, "valuation"):
-        val = value_portfolio(snapshot, market, org, reporting)
-        pf = Portfolio(snapshot.trades, market, reporting, universe=universe)
+        val = value_portfolio(snapshot, market, org, reporting, collateral=collateral)
+        pf = Portfolio(snapshot.trades, market, reporting, universe=universe, collateral=collateral)
     with _timed(timings, "dq_pre"):
         dq.findings += check_market_data(raw_market, universe_list, pf.index)
         if proxies is not None:
@@ -294,7 +297,7 @@ def run_eod(
                 if prev_snapshot is not None
                 else [t for t in snapshot.trades if t.trade_date < market.as_of]
             )
-            prev_pf = Portfolio(prev_trades, prev_market, reporting, universe=universe)
+            prev_pf = Portfolio(prev_trades, prev_market, reporting, universe=universe, collateral=collateral)
             prev_sens = compute_sensitivities(prev_pf)
             pnl = explain_pnl(pf, prev_market, prev_trades, prev_sens)
             dq.findings += check_pnl_residuals(pnl.challenger, cfg.pnl_abs_tolerance)

@@ -14,7 +14,7 @@ from novera.pricing.base import Cashflow, PricingResult, year_fraction_act365
 from novera.pricing.schedule import remaining_periods, schedule, year_fraction
 
 BOND_MODEL_VERSION = "1.0.0"
-SWAP_MODEL_VERSION = "2.1.0"
+SWAP_MODEL_VERSION = "2.2.0"
 
 # Static government-to-swap spread used to discount government bonds off the zero curve.
 # In Phase 3 this becomes a market-data factor per currency.
@@ -84,16 +84,19 @@ def projection_details(market: MarketSnapshot, index: str) -> dict[str, float]:
     return {}
 
 
-def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
+def price_interest_rate_swap(
+    trade: Trade, market: MarketSnapshot, as_of: date, collateral: str | None = None
+) -> PricingResult:
     swap = trade.instrument
     assert isinstance(swap, InterestRateSwap)
     if swap.maturity_date <= as_of:
         return PricingResult(
             trade.trade_id, swap.currency, 0.0, "swap_multi_curve", SWAP_MODEL_VERSION, note="matured"
         )
-    # Discount on the currency's IR curve (the overnight index); project the floating index off
-    # its own curve, which is the same curve unless the index carries a tenor basis (PR-002).
-    curve = market.zero_curve(swap.currency)
+    # Discount on the collateral curve: the currency's OIS curve, adjusted by the cross-currency
+    # basis when the CSA posts another currency (decision 35); project the floating index off its
+    # own curve, the OIS curve plus any tenor basis (PR-002).
+    curve = market.collateral_curve(swap.currency, collateral)
     projection = market.projection_curve(swap.float_index, swap.currency)
     n = trade.quantity
     zero_coupon = swap.fixed_frequency is Frequency.ZERO_COUPON

@@ -183,10 +183,12 @@ def test_http_endpoints(client):
         "NAMED_CRISIS",
     ]
     hyp = {x["scenario_id"]: x for x in lib["categories"][0]["scenarios"]}
-    assert len(hyp) == 13 and hyp["usd_rates_up_100"]["shocks"][0]["size"] == 100.0
+    assert len(hyp) == 14 and hyp["usd_rates_up_100"]["shocks"][0]["size"] == 100.0
     basis = hyp["eur_basis_wider_20"]["shocks"][0]
     assert basis["unit"] == "bp" and basis["size"] == pytest.approx(20.0)
     assert basis["family"] == "EUR 6M tenor basis"
+    squeeze = hyp["usd_funding_squeeze"]["shocks"]
+    assert squeeze[0]["family"] == "every cross-currency basis" and squeeze[0]["size"] == pytest.approx(-25.0)
     assert hyp["usd_rates_up_100"]["shocks"][0]["unit"] == "bp" and hyp["usd_rates_up_100"]["in_daily_run"]
     steep = hyp["usd_steepener"]["shocks"]
     assert steep[0]["tenors"] == "1M, 3M, 6M, 1Y, 2Y" and steep[0]["size"] == -50.0

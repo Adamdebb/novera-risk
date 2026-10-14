@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.risk.sensitivities.compute_sensitivities` |
@@ -16,6 +16,7 @@ All values are P&L in reporting currency for the stated move.
 | Measure | Move | Scope |
 |---|---|---|
 | DV01 | +1bp on one zero-curve node | ladder per currency; parallel DV01 = sum of nodes |
+| XCCY01 | +1bp on one cross-currency basis node against USD | ladder per currency; FX forwards and options, and trades under foreign collateral |
 | BASIS01 | +1bp on one tenor-basis node (EURIBOR, TIIE or JIBAR over its overnight curve), that curve held | ladder per currency and index; term-rate products only |
 | CS01 | +1bp on a CDS index spread | per index |
 | FX_DELTA | +1% on an FX spot factor | per pair as quoted; includes translation of foreign PVs |
@@ -53,3 +54,4 @@ check in `test_stress_library_runs_and_makes_sense`;
 |---|---|---|
 | 1.0.0 | 2026-09-14 | Initial measures |
 | 1.1.0 | 2026-10-14 | BASIS01 on the EURIBOR/ESTR tenor basis (decision 33) |
+| 1.2.0 | 2026-10-14 | XCCY01 on the cross-currency basis; revaluations discount on each trade's CSA (decision 35) |

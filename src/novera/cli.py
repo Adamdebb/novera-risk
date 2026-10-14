@@ -194,6 +194,7 @@ def value(
     by: str = typer.Option("asset_class", help="Group by: asset_class, desk_id, book_id, product_type"),
 ) -> None:
     """Value the latest stored portfolio on the latest market snapshot and print PV by group."""
+    from novera.pricing.collateral import CollateralMap
     from novera.pricing.valuation import value_portfolio
     from novera.storage.duckdb_repository import DuckDBRepository
 
@@ -206,7 +207,8 @@ def value(
         snap = repo.load_portfolio_snapshot(psnaps[-1][0])
         market = repo.load_market_snapshot(msnaps[-1][0])
         org = repo.load_organisation("GMB")
-    out = value_portfolio(snap, market, org, s.reporting_currency)
+        collateral = CollateralMap.from_reference(*repo.load_netting_sets())
+    out = value_portfolio(snap, market, org, s.reporting_currency, collateral=collateral)
     t = out.table
     typer.echo(
         f"portfolio {snap.snapshot_id} on market {market.snapshot_id} ({market.as_of}), "
@@ -236,6 +238,7 @@ def risk(
 
     from novera.limits import RiskInputs, monitor
     from novera.market_data.history import MarketHistory
+    from novera.pricing.collateral import CollateralMap
     from novera.pricing.valuation import value_portfolio
     from novera.risk import (
         HYPOTHETICAL_LIBRARY,
@@ -264,9 +267,10 @@ def risk(
         universe = {f.factor_id: f for f in repo.load_risk_factors()}
         hist = MarketHistory.from_long(repo.load_market_history())
         limits = repo.load_limits(on=market.as_of)
+        collateral = CollateralMap.from_reference(*repo.load_netting_sets())
     m = 1e6
-    val = value_portfolio(snap, market, org, s.reporting_currency).table
-    pf = Portfolio(snap.trades, market, s.reporting_currency, universe=universe)
+    val = value_portfolio(snap, market, org, s.reporting_currency, collateral=collateral).table
+    pf = Portfolio(snap.trades, market, s.reporting_currency, universe=universe, collateral=collateral)
     typer.echo(
         f"{s.platform_name} risk run — {market.as_of} — portfolio {snap.snapshot_id} "
         f"market {market.snapshot_id}"

@@ -29,6 +29,7 @@ from novera.domain.trades import Trade
 from novera.market_data.history import MarketHistory
 from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 
 MODEL_VERSION = "1.1.0"
@@ -65,11 +66,13 @@ def _bilateral(trades: list[Trade]) -> list[Trade]:
     ]
 
 
-def _pv(t: Trade, snap: MarketSnapshot, as_of: date, reporting: str) -> float:
+def _pv(
+    t: Trade, snap: MarketSnapshot, as_of: date, reporting: str, collateral: CollateralMap | None = None
+) -> float:
     if t.product_type is ProductType.FX_SPOT and t.settlement_date and as_of >= t.settlement_date:
         return 0.0  # settled: no counterparty exposure remains
     try:
-        r = value_trade(t, snap, as_of)
+        r = value_trade(t, snap, as_of, collateral)
     except Exception:  # noqa: BLE001
         return 0.0
     return r.pv_local * fx_to_reporting(snap, r.currency, reporting)
@@ -107,18 +110,18 @@ def im_scales(
 _W: dict = {}
 
 
-def _init(trades, reporting):
-    _W["trades"], _W["reporting"] = trades, reporting
+def _init(trades, reporting, collateral=None):
+    _W["trades"], _W["reporting"], _W["collateral"] = trades, reporting, collateral
 
 
 def _value_paths(args):
     """(as_of, [snapshots]) -> array (paths, trades) of PVs. Runs in a worker."""
     as_of, snaps = args
-    trades, reporting = _W["trades"], _W["reporting"]
+    trades, reporting, collateral = _W["trades"], _W["reporting"], _W.get("collateral")
     out = np.zeros((len(snaps), len(trades)))
     for i, snap in enumerate(snaps):
         for j, t in enumerate(trades):
-            out[i, j] = _pv(t, snap, as_of, reporting)
+            out[i, j] = _pv(t, snap, as_of, reporting, collateral)
     return out
 
 
@@ -138,6 +141,7 @@ def simulate_exposure(
     bil = _bilateral(trades)
     ns_map = {n.netting_set_id: n for n in netting_sets}
     csa_map = {c.csa_id: c for c in csas}
+    discounting = CollateralMap.from_reference(netting_sets, csas)  # decision 35.2
     bil = [t for t in bil if t.netting_set_id in ns_map]  # dangling netting sets are a data-quality finding
     by_set: dict[str, list[int]] = {}
     for j, t in enumerate(bil):
@@ -147,10 +151,11 @@ def simulate_exposure(
         workers = int(os.environ.get("NOVERA_WORKERS", max((os.cpu_count() or 2) - 1, 1)))
     values: dict[str, list[np.ndarray]] = {k: [] for k in by_set}
     current = {
-        k: float(sum(_pv(bil[j], base, base.as_of, reporting) for j in idx)) for k, idx in by_set.items()
+        k: float(sum(_pv(bil[j], base, base.as_of, reporting, discounting) for j in idx))
+        for k, idx in by_set.items()
     }
     grid: list[tuple[str, date, float]] = []
-    _init(bil, reporting)
+    _init(bil, reporting, discounting)
     pool = None
     if (
         workers > 1

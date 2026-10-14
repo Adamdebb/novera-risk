@@ -254,6 +254,37 @@ TENOR_BASIS: dict[str, dict[str, dict[str, float]]] = {
 # tenor: interbank stress shows at the short end first (1.0 = moves one for one in log terms).
 BASIS_CRISIS_LOADING: dict[str, float] = {"1Y": 0.9, "2Y": 0.8, "5Y": 0.6, "10Y": 0.45, "30Y": 0.35}
 
+# Cross-currency basis against USD (decision 35.1): a zero spread added to the currency's OIS
+# curve gives its cash flows under USD collateral, the curve FX forwards imply. Negative where
+# borrowing dollars through FX swaps costs a premium (EUR, JPY, CHF), positive for the
+# commodity currencies that raise USD offshore. Assumed levels in decimal, not quotes; the
+# spread narrows towards the long end (XCCY_TERM).
+XCCY_TENORS: tuple[str, ...] = ("1Y", "2Y", "5Y", "10Y", "30Y")
+XCCY_BASIS: dict[str, float] = {
+    "EUR": -0.0012,
+    "GBP": -0.0006,
+    "JPY": -0.0035,
+    "CHF": -0.0020,
+    "CAD": -0.0004,
+    "AUD": 0.0010,
+    "NZD": 0.0012,
+    "SGD": -0.0008,
+    "MXN": -0.0030,
+    "BRL": -0.0060,
+    "ZAR": -0.0025,
+    "INR": -0.0040,
+    "TRY": -0.0120,
+    "ARS": -0.0200,
+}
+XCCY_TERM: dict[str, float] = {"1Y": 1.0, "2Y": 0.95, "5Y": 0.85, "10Y": 0.75, "30Y": 0.6}
+# How far a dollar-funding squeeze moves each basis, in decimal per unit of the episode's
+# cumulative log USD rally: funding-currency bases fall most, EM ones too.
+XCCY_SQUEEZE: dict[str, float] = {
+    "EUR": 0.015, "GBP": 0.010, "JPY": 0.025, "CHF": 0.015, "CAD": 0.006, "AUD": 0.008,
+    "NZD": 0.008, "SGD": 0.010, "MXN": 0.020, "BRL": 0.030, "ZAR": 0.020, "INR": 0.020,
+    "TRY": 0.040, "ARS": 0.050,
+}  # fmt: skip
+
 # Currencies with a government bond market in the simulated bank.
 BOND_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "GBP", "JPY", "MXN", "BRL", "ZAR")
 

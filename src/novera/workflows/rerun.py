@@ -26,6 +26,7 @@ from novera.counterparty_risk import ExposureSimConfig, run_counterparty
 from novera.fund import run_fund
 from novera.limits import RiskInputs, effective_limits, monitor
 from novera.market_data.history import MarketHistory
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import value_portfolio
 from novera.regulatory import run_regulatory
 from novera.risk import (
@@ -275,12 +276,24 @@ class _Inputs:
         return self.repo.load_market_snapshot(pid) if pid else None
 
     @cached_property
+    def collateral(self) -> CollateralMap:
+        return CollateralMap.from_reference(*self.repo.load_netting_sets())
+
+    @cached_property
     def val(self):
-        return value_portfolio(self.snapshot, self.market, self.org, self.reporting)
+        return value_portfolio(
+            self.snapshot, self.market, self.org, self.reporting, collateral=self.collateral
+        )
 
     @cached_property
     def pf(self) -> Portfolio:
-        return Portfolio(self.snapshot.trades, self.market, self.reporting, universe=self.universe)
+        return Portfolio(
+            self.snapshot.trades,
+            self.market,
+            self.reporting,
+            universe=self.universe,
+            collateral=self.collateral,
+        )
 
     @cached_property
     def sens(self) -> pd.DataFrame:
@@ -416,7 +429,7 @@ def _stage_pnl(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
         if prev_snapshot is not None
         else [t for t in x.snapshot.trades if t.trade_date < x.market.as_of]
     )
-    prev_pf = Portfolio(prev_trades, x.prev_market, x.reporting, universe=x.universe)
+    prev_pf = Portfolio(prev_trades, x.prev_market, x.reporting, universe=x.universe, collateral=x.collateral)
     pnl = explain_pnl(x.pf, x.prev_market, prev_trades, compute_sensitivities(prev_pf))
     persist_pnl(repo, rid, pnl)
     return {

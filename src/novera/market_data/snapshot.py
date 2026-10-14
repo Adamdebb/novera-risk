@@ -109,6 +109,33 @@ class MarketSnapshot(BaseModel):
         self._cache[key] = curve
         return curve
 
+    def collateral_curve(self, currency: str, collateral: str | None) -> ZeroCurve:
+        """Discount curve for ``currency`` cash flows under cash collateral in ``collateral``
+        (decision 35): the currency's OIS curve plus its cross-currency basis against USD, less
+        the collateral currency's (USD carries none). ``collateral`` None or equal to
+        ``currency`` is the OIS curve itself; a basis missing from the snapshot counts as zero,
+        which ``has_xccy`` lets a pricer flag."""
+        if collateral is None or collateral == currency:
+            return self.zero_curve(currency)
+        key = f"cc:{currency}:{collateral}"
+        if key in self._cache:
+            return self._cache[key]
+        ois = self.zero_curve(currency)
+        spread = self._xccy_spread(currency, ois.tenors) - self._xccy_spread(collateral, ois.tenors)
+        curve = ZeroCurve(currency, ois.tenors, ois.zeros + spread)
+        self._cache[key] = curve
+        return curve
+
+    def has_xccy(self, currency: str) -> bool:
+        return currency == "USD" or bool(self.factors_with_prefix(f"XCCY:{currency}:"))
+
+    def _xccy_spread(self, currency: str, tenors: np.ndarray) -> np.ndarray:
+        fids = [] if currency == "USD" else self.factors_with_prefix(f"XCCY:{currency}:")
+        if not fids:
+            return np.zeros_like(tenors)
+        nodes = sorted((TENOR_YEARS[f.split(":")[2]], self.values[f]) for f in fids)
+        return np.interp(tenors, [n[0] for n in nodes], [n[1] for n in nodes])
+
     def has_tenor_basis(self, index: str) -> bool:
         return self._basis_nodes(index) is not None
 

@@ -6,6 +6,8 @@ Conventions (all in reporting currency, signed as P&L for the stated move):
                   full rate risk
     BASIS01       P&L for +1bp in one tenor-basis node (EURIBOR, TIIE or JIBAR over its
                   overnight curve), the overnight curve held
+    XCCY01        P&L for +1bp in one cross-currency basis node against USD (decision 35):
+                  moves FX forwards and the discounting of trades under foreign collateral
     CS01          P&L for +1bp in a CDS index spread
     FX_DELTA      P&L for +1% in an FX spot factor (pair as quoted in the snapshot)
     EQ_DELTA      P&L for +1% in an equity or index spot
@@ -26,11 +28,12 @@ import pandas as pd
 from novera.risk.revaluation import Portfolio
 from novera.risk.scenarios import shocks_for_prefix
 
-MODEL_VERSION = "1.1.0"
+MODEL_VERSION = "1.2.0"
 
 BUMPS = {
     "DV01": 0.0001,
     "BASIS01": 0.0001,
+    "XCCY01": 0.0001,
     "CS01": 1.0,
     "FX_DELTA": 0.01,
     "EQ_DELTA": 0.01,
@@ -91,6 +94,11 @@ def compute_sensitivities(pf: Portfolio, cfg: SensitivityConfig | None = None) -
         rows += _rows(
             pf.pnl_under_shocks({fid: BUMPS["BASIS01"]}), "BASIS01", fid, tenor, ccy, BUMPS["BASIS01"]
         )
+
+    # Cross-currency basis: one row per node, bucket = tenor, underlying = currency.
+    for fid in base.factors_with_prefix("XCCY:"):
+        ccy, tenor = fid.split(":")[1], fid.split(":")[2]
+        rows += _rows(pf.pnl_under_shocks({fid: BUMPS["XCCY01"]}), "XCCY01", fid, tenor, ccy, BUMPS["XCCY01"])
 
     for fid in base.factors_with_prefix("CDS:"):
         rows += _rows(

@@ -20,7 +20,7 @@ import pandas as pd
 
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.1.0"
+MODEL_VERSION = "1.2.0"
 
 # --- GIRR ----------------------------------------------------------------------------------
 GIRR_VERTICES = np.array([0.25, 0.5, 1, 2, 3, 5, 10, 15, 20, 30])
@@ -39,6 +39,12 @@ GIRR_RW = {
 GIRR_THETA = 0.03
 GIRR_GAMMA = 0.5  # across currencies
 GIRR_CROSS_CURVE_RHO = 0.999  # two curves of one currency (MAR21.46), e.g. ESTR and EURIBOR-6M
+# Cross-currency basis against USD: one GIRR risk factor per currency with no term structure,
+# risk weight and correlation to the curve factors as read from MAR21 (REG-001: to be checked
+# against the text before relying on them).
+GIRR_XCCY_RW = 0.016
+GIRR_XCCY_RHO = 0.0
+XCCY_KEY = "XCCY"
 NODE_TO_VERTEX = {
     "1M": 0.25,
     "3M": 0.25,
@@ -205,6 +211,8 @@ def _aggregate(ws: dict[str, dict[str, float]], rho_within, gamma: float, scale:
 def _girr_rho(_b: str, f1: str, f2: str) -> float:
     """Factor keys are ``"5.0"`` on the discount curve and ``"6M:5.0"`` on a term-rate curve.
     Tenor correlation as MAR21.46; two different curves of one currency multiply it by 0.999."""
+    if XCCY_KEY in (f1, f2):
+        return 1.0 if f1 == f2 else GIRR_XCCY_RHO
     c1, _, v1 = f1.rpartition(":")
     c2, _, v2 = f2.rpartition(":")
     t1, t2 = float(v1), float(v2)
@@ -237,10 +245,14 @@ def _girr_ws(sens: pd.DataFrame) -> dict[str, dict[str, float]]:
         ):
             add(ccy, index_tenor, bucket, v, 1.0)
             add(ccy, "", bucket, v, -1.0)
-    return {
+    out = {
         ccy: {k: s * GIRR_RW[float(k.rpartition(":")[2])] for k, s in items.items()}
         for ccy, items in raw.items()
     }
+    xccy = sens[sens["measure"] == "XCCY01"]
+    for ccy, v in xccy.groupby("underlying")["value"].sum().items():
+        out.setdefault(ccy, {})[XCCY_KEY] = v / 1e-4 * GIRR_XCCY_RW  # parallel basis, per unit
+    return out
 
 
 def _class_charge(

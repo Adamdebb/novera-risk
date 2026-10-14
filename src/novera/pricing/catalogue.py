@@ -119,11 +119,11 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             "projected off the index's own curve; CSA discounting for bilateral trades.",
             simplifications="Term rates (EURIBOR, TIIE-28D, JIBAR-3M) project off the overnight curve "
             "plus a simulated zero-spread basis rather than curves stripped from basis-swap quotes; "
-            "OIS discounting stands for a cash CSA in the swap's own currency, so the USD collateral "
-            "of most bilateral CSAs is not reflected. Market conventions per index, but no holiday "
-            "calendars (BUS/252 counts weekdays). Running-period fixings are stored on the trade but "
-            "read off the simulated curves, not published fixings. No amortisation. A snapshot without the basis "
-            "falls back to one curve and flags it (tenor_basis_applied = 0).",
+            "cash flows discount on the CSA's collateral curve (OIS plus a simulated cross-currency "
+            "basis for USD collateral), with no FVA for uncollateralised trades. Market conventions "
+            "per index, but no holiday calendars (BUS/252 counts weekdays). Running-period fixings "
+            "are stored on the trade but read off the simulated curves. No amortisation. A snapshot "
+            "without the basis falls back to one curve and flags it (tenor_basis_applied = 0).",
             appropriateness=Appropriateness.ACCEPTABLE_SIMPLIFICATION,
             validation="QuantLib benchmark: ql.VanillaSwap NPV within 2,000 on 100m and fair "
             "rate within 0.2bp, single curve (test_par_swap_has_zero_pv_and_matches_quantlib) "
@@ -137,13 +137,14 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             ProductType.REPO,
             "Repo and reverse repo",
             "repo_cash_leg",
-            "Cash leg off the zero curve",
+            "Cash leg off the collateral curve",
             REPO_MODEL_VERSION,
             "PR-010",
             "Repo and reverse repo valuation",
             market_standard="Cash leg discounted off a repo curve (general collateral, with "
             "specials); collateral repriced with its haircut.",
-            simplifications="Cash leg off the currency zero curve, no GC/special spread. "
+            simplifications="Cash leg off the CSA's collateral curve (the currency's OIS curve, plus "
+            "the cross-currency basis under USD collateral), no GC/special spread. "
             "Collateral is not repriced inside the market-risk PV; its requirement is "
             "recorded for the counterparty and liquidity views.",
             appropriateness=Appropriateness.ACCEPTABLE_SIMPLIFICATION,
@@ -207,18 +208,20 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
         ProductSpec(
             ProductType.FX_FORWARD,
             "FX forward",
-            "fx_forward_cip",
-            "Covered interest parity",
+            "fx_forward_xccy",
+            "Basis-consistent forward under USD collateral",
             FX_FORWARD_MODEL_VERSION,
             "PR-003",
             "FX spot and forward valuation",
             market_standard="Forward from spot and quoted forward points, which embed the "
             "cross-currency basis; discounted at the collateral currency curve.",
-            simplifications="Covered interest parity on the two zero curves; no cross-currency "
-            "basis, so forwards sit on the interest differential alone.",
+            simplifications="Forward from the two currencies' USD-collateral curves (OIS plus a "
+            "simulated cross-currency basis) rather than quoted forward points; settlement discounts "
+            "on the trade's CSA collateral curve, own OIS without a CSA (no FVA).",
             appropriateness=Appropriateness.ACCEPTABLE_SIMPLIFICATION,
-            validation="Analytic identities: CIP reproduced, sign of the forward points matches "
-            "the rate differential (test_fx_forward_cip_and_spot).",
+            validation="Analytic identities: parity reproduced without basis, sign of the forward "
+            "points (test_fx_forward_cip_and_spot); the basis-consistent forward and collateral "
+            "discounting (test_fx_forward_carries_the_basis_and_collateral_only_discounts).",
         ),
         ProductSpec(
             ProductType.FX_OPTION,
@@ -231,7 +234,8 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             market_standard="Garman-Kohlhagen on a delta-quoted smile (at-the-money, risk "
             "reversal, butterfly) with premium-currency delta conventions.",
             simplifications="Smile read at moneyness K/F rather than at delta; no "
-            "premium-adjusted delta convention; forward from CIP without cross-currency basis.",
+            "premium-adjusted delta convention; forward from simulated cross-currency basis rather "
+            "than quoted forward points.",
             appropriateness=Appropriateness.MARKET_STANDARD,
             validation="QuantLib benchmark: ql.blackFormula to 1e-10; put-call parity "
             "(test_fx_option_matches_quantlib_black_and_parity).",

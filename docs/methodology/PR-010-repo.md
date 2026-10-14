@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.breadth.price_repo` |
@@ -30,3 +30,9 @@ transactions.
 ## Validation tests
 `test_repo_zero_at_fair_rate_and_dv01_sign`: PV vanishes at the fair rate; a reverse repo
 loses when short rates rise; collateral requirement equals `N/(1−h)`.
+
+## Collateral discounting (1.1.0, decision 35.3)
+Cash flows discount on the trade's collateral curve (`MarketSnapshot.collateral_curve`): the
+OIS curve of the repo's currency plus its cross-currency basis against USD when the netting
+set's CSA posts USD cash, the OIS curve itself when cleared or without a CSA. The collateral
+currency comes from the CSA table through `pricing.collateral.CollateralMap`.

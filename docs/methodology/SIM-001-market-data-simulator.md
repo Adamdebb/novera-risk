@@ -2,7 +2,7 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.4.0 |
+| Version          | 1.5.0 |
 | Owner            | Market Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.simulation.market_data` |
@@ -39,6 +39,13 @@ not a forecast and makes no claim about real markets.
   doubles the short end and the basis relaxes with credit afterwards. Drawn after the swaption
   smile, EUR first and then MXN and ZAR, so every other family is bit-identical to the history
   before each basis existed.
+- Cross-currency basis against USD (decision 35.1): node `x_t = (level(ccy) + c_t) · term(tenor)
+  − squeeze(ccy) · term(tenor) · U_t`, with `c_t` one mean-reverting path per currency (long-run
+  standard deviation 4bp, about 1bp a day), `U_t` the cumulative episode USD rally and `term`
+  from 1.0 at 1Y to 0.6 at 30Y. Assumed levels from −200bp (ARS) and −35bp (JPY) to +12bp (NZD);
+  the funding squeeze pushes the funding currencies' basis down (EUR from −12bp to about −33bp).
+  Drawn after the tenor basis, so every earlier family is bit-identical. Absolute and possibly
+  negative, so the extension segment is re-levelled by a shift, like the zero rates.
 
 ## Inputs
 Base levels and vols in `simulation/reference_levels.py`; episodes in
@@ -82,3 +89,4 @@ that the extension leaves the core bit-identical and joins without a jump, and
 | 1.2.0 | 2026-09-15 | Swaption SABR smile parameters, drawn after every earlier family (decision 21.1) | Novera |
 | 1.3.0 | 2026-10-14 | EURIBOR-3M and -6M tenor basis over ESTR, widening with credit in a crisis (decision 33.4) | Novera |
 | 1.4.0 | 2026-10-14 | TIIE-28D and JIBAR-3M tenor basis over F-TIIE and ZARONIA (decision 34.1) | Novera |
+| 1.5.0 | 2026-10-14 | Cross-currency basis against USD for 14 currencies, falling in a dollar-funding squeeze (decision 35.1) | Novera |

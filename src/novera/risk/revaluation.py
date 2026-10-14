@@ -14,6 +14,7 @@ import pandas as pd
 from novera.domain.trades import Trade
 from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
+from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 from novera.risk.factor_mapping import DependencyIndex
 from novera.risk.scenarios import apply_shocks
@@ -29,6 +30,7 @@ class Portfolio:
         reporting_currency: str,
         as_of: date | None = None,
         universe: dict[str, RiskFactor] | None = None,
+        collateral: CollateralMap | None = None,
     ) -> None:
         self.trades: list[Trade] = [t for t in trades if t.status.value == "LIVE"]
         self.by_id = {t.trade_id: t for t in self.trades}
@@ -36,13 +38,16 @@ class Portfolio:
         self.as_of = as_of or base.as_of
         self.reporting_currency = reporting_currency
         self.universe = universe
-        self.index = DependencyIndex.build(self.trades, reporting_currency)
+        # Every revaluation (bumps, VaR scenarios, what-ifs) discounts on each trade's CSA
+        # collateral curve, the same as the base valuation (decision 35.2).
+        self.collateral = collateral
+        self.index = DependencyIndex.build(self.trades, reporting_currency, collateral)
         self.base_pv: dict[str, float] = {}
         self.base_pv_local: dict[str, float] = {}
         self.errors: dict[str, str] = {}
         for t in self.trades:
             try:
-                r = value_trade(t, base, self.as_of)
+                r = value_trade(t, base, self.as_of, collateral)
                 self.base_pv_local[t.trade_id] = r.pv_local
                 self.base_pv[t.trade_id] = r.pv_local * fx_to_reporting(base, r.currency, reporting_currency)
             except Exception as e:  # noqa: BLE001
@@ -65,7 +70,7 @@ class Portfolio:
                 continue
             t = self.by_id[tid]
             try:
-                r = value_trade(t, snapshot, as_of)
+                r = value_trade(t, snapshot, as_of, self.collateral)
                 out[tid] = r.pv_local * fx_to_reporting(snapshot, r.currency, self.reporting_currency)
             except Exception:  # noqa: BLE001 - a scenario that breaks a pricer counts as no change
                 out[tid] = self.base_pv[tid]

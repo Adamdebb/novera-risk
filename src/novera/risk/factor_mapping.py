@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from novera.domain.enums import ProductType
 from novera.domain.trades import Trade
 from novera.market_data.risk_factors import TENOR_BASIS_INDICES
+from novera.pricing.collateral import COLLATERAL_AWARE, CollateralMap
 
 
 def _fx_prefixes(ccy: str, reporting: str) -> list[str]:
@@ -41,7 +42,15 @@ def _basis_prefixes(index: str) -> list[str]:
     return [f"IRBASIS:{hit[0]}:{hit[1]}:"] if hit else []
 
 
-def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
+def _xccy_prefixes(*currencies: str | None) -> list[str]:
+    """Cross-currency basis families (decision 35) for the non-USD currencies given."""
+    return [f"XCCY:{c}:" for c in currencies if c and c != "USD"]
+
+
+def factor_prefixes(trade: Trade, reporting_currency: str, collateral: str | None = None) -> tuple[str, ...]:
+    """Factor families the trade's PV depends on. ``collateral`` is its CSA's collateral currency:
+    a trade discounted under foreign collateral also depends on both currencies' cross-currency
+    basis; FX forwards and options always do, through the market forward."""
     ins = trade.instrument
     pt = trade.product_type
     ccy = trade.currency
@@ -54,6 +63,7 @@ def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
         out += _pair_prefixes(ins.pair)  # type: ignore[attr-defined]
     elif pt is ProductType.FX_FORWARD:
         out += _pair_prefixes(ins.pair) + [f"IR:{ins.base_currency}:", f"IR:{ins.quote_currency}:"]  # type: ignore[attr-defined]
+        out += _xccy_prefixes(ins.base_currency, ins.quote_currency, collateral)  # type: ignore[attr-defined]
     elif pt is ProductType.FX_OPTION:
         key = ins.pair.replace("/", "")  # type: ignore[attr-defined]
         out += _pair_prefixes(ins.pair) + [
@@ -61,6 +71,7 @@ def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
             f"IR:{ins.quote_currency}:",
             f"VOL:{key}:",
         ]  # type: ignore[attr-defined]
+        out += _xccy_prefixes(ins.base_currency, ins.quote_currency, collateral)  # type: ignore[attr-defined]
     elif pt is ProductType.CASH_EQUITY:
         out.append(f"EQ:{ins.ticker}")  # type: ignore[attr-defined]
     elif pt is ProductType.EQUITY_INDEX_FUTURE:
@@ -92,6 +103,8 @@ def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
     elif pt is ProductType.EQUITY_EXOTIC:
         u = ins.underlying  # type: ignore[attr-defined]
         out += [f"EQ:{u}", f"EQIDX:{u}", f"IR:{ccy}:", f"VOL:{u}:"]
+    if collateral is not None and collateral != ccy and pt in COLLATERAL_AWARE:
+        out += _xccy_prefixes(ccy, collateral)
     return tuple(dict.fromkeys(out))
 
 
@@ -121,10 +134,12 @@ class DependencyIndex:
     prefixes_by_trade: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
-    def build(cls, trades: Iterable[Trade], reporting_currency: str) -> DependencyIndex:
+    def build(
+        cls, trades: Iterable[Trade], reporting_currency: str, collateral: CollateralMap | None = None
+    ) -> DependencyIndex:
         idx = cls(reporting_currency)
         for t in trades:
-            p = factor_prefixes(t, reporting_currency)
+            p = factor_prefixes(t, reporting_currency, collateral.for_trade(t) if collateral else None)
             idx.prefixes_by_trade[t.trade_id] = p
             for prefix in p:
                 idx.by_prefix[prefix].add(t.trade_id)

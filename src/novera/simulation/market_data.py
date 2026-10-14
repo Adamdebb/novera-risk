@@ -45,6 +45,7 @@ from novera.market_data.risk_factors import (
     swsmile_id,
     swvol_id,
     vol_id,
+    xccy_id,
 )
 from novera.market_data.snapshot import MarketSnapshot
 from novera.simulation import reference_levels as ref
@@ -225,6 +226,21 @@ def build_risk_factor_universe() -> list[RiskFactor]:
                         shock_type="ABSOLUTE",
                     )
                 )
+    for ccy in ref.XCCY_BASIS:
+        for tenor in ref.XCCY_TENORS:
+            out.append(
+                RiskFactor(
+                    factor_id=xccy_id(ccy, tenor),
+                    factor_type=RiskFactorType.XCCY_BASIS,
+                    asset_class="RATES",
+                    currency=ccy,
+                    underlying=f"{ccy}/USD",
+                    tenor=tenor,
+                    tenor_years=TENOR_YEARS[tenor],
+                    unit="rate",
+                    shock_type="ABSOLUTE",
+                )
+            )
     return out
 
 
@@ -648,6 +664,19 @@ class _Sim:
                     log_move = common + own + ref.BASIS_CRISIS_LOADING[tenor] * credit
                     self.series[irbasis_id(ccy, index_tenor, tenor)] = levels[tenor] * np.exp(log_move)
 
+    def xccy_basis(self) -> None:
+        """Cross-currency basis against USD per currency and tenor. One mean-reverting path per
+        currency (long-run standard deviation 4bp) moves every node; in a dollar-funding squeeze
+        the basis falls with the episode's cumulative USD rally (XCCY_SQUEEZE), more at the
+        short end, and recovers as the dollar does."""
+        usd = np.cumsum(self.drift["usd"])
+        for ccy, level in ref.XCCY_BASIS.items():
+            common = self._ou(0.0004)
+            for tenor in ref.XCCY_TENORS:
+                term = ref.XCCY_TERM[tenor]
+                path = level * term + common * term - ref.XCCY_SQUEEZE[ccy] * term * usd
+                self.series[xccy_id(ccy, tenor)] = path
+
     def simulate(self) -> None:
         """Draw every family for this segment, in an order fixed so earlier phases reproduce."""
         self.rates()
@@ -665,6 +694,8 @@ class _Sim:
         # The tenor basis (decisions 33.4, 34.1) likewise comes after the smile; within it EUR is
         # drawn first, then MXN and ZAR, so adding a currency never moves an earlier one.
         self.tenor_basis()
+        # The cross-currency basis (decision 35.1) comes after every earlier family.
+        self.xccy_basis()
 
     def prepend(self, earlier: _Sim) -> None:
         """Join an earlier segment in front of this one. ``earlier`` overlaps this segment by one
@@ -675,7 +706,9 @@ class _Sim:
         if earlier.dates[-1] != self.dates[0]:
             raise ValueError("the earlier segment must end on this segment's first day")
         shifted = {
-            f.factor_id for f in build_risk_factor_universe() if f.factor_type == RiskFactorType.IR_ZERO
+            f.factor_id
+            for f in build_risk_factor_universe()
+            if f.factor_type in (RiskFactorType.IR_ZERO, RiskFactorType.XCCY_BASIS)
         }
         for fid, core in self.series.items():
             p = earlier.series[fid]

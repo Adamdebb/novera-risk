@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Owner | Counterparty Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.regulatory.simm` |
@@ -19,6 +19,8 @@ used for margin calls.
 Rates are by currency and sub-curve: ESTR and EURIBOR-6M and -3M for EUR, at 99.3% between
 sub-curves of one currency. As in FRTB SA (REG-001), a sub-curve's delta is BASIS01 and the
 discount curve's is DV01 less BASIS01, because the platform's DV01 moves EURIBOR with ESTR.
+The cross-currency basis is one more factor per currency (XCCY01 summed, weight 21 per bp, 20%
+correlation with the curve factors: approximate, like the other parameters).
 
 ## Use
 The margin enters the exposure engine as collateral held from the counterparty

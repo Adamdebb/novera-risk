@@ -43,13 +43,13 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
             MeasureSpec(
                 "MR-001",
                 "Sensitivities",
-                "DV01, term-rate basis (BASIS01), CS01, FX, equity and commodity delta, vega and "
-                "gamma by bump-and-reprice against the shared risk-factor universe, so every measure "
-                "keys off the same factors.",
+                "DV01, term-rate basis (BASIS01), cross-currency basis (XCCY01), CS01, FX, equity and "
+                "commodity delta, vega and gamma by bump-and-reprice against the shared risk-factor "
+                "universe, so every measure keys off the same factors.",
                 "reporting currency per unit shock",
                 "Drill-down",
                 "Sensitivities by bump-and-reprice",
-                version="1.1.0",
+                version="1.2.0",
             ),
             MeasureSpec(
                 "MR-002",
@@ -124,7 +124,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Stress",
                 "Stress testing",
-                version="1.2.0",
+                version="1.3.0",
             ),
             MeasureSpec(
                 "MR-007",
@@ -220,7 +220,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "FRTB standardised approach",
-                version="1.1.0",
+                version="1.2.0",
                 face="bank",
             ),
             MeasureSpec(
@@ -251,7 +251,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "SIMM-lite initial margin",
-                version="1.2.0",
+                version="1.3.0",
                 face="bank",
             ),
             MeasureSpec(

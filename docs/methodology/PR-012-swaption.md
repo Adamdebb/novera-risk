@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.breadth.price_swaption`, `novera.pricing.exotic_formulas.bachelier_price`, `novera.market_data.sabr` |
@@ -77,3 +77,4 @@ projection within 0.02bp; the basis lifts the forward by about itself and leaves
 | 1.0.0 | 2026-09-14 | Bachelier on the ATM cube | Novera |
 | 1.1.0 | 2026-09-15 | Normal SABR smile in strike (decision 21.1) | Novera |
 | 1.2.0 | 2026-10-14 | Forward swap rate projected off the index's own curve, EURIBOR-6M over ESTR (decision 33.2) | Novera |
+| 1.3.0 | 2026-10-14 | Annuity and floating leg discount on the CSA's collateral curve (decision 35) | Novera |
