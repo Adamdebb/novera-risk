@@ -245,6 +245,10 @@ TENOR_BASIS: dict[str, dict[str, dict[str, float]]] = {
         "6M": {"1Y": 0.0015, "2Y": 0.0017, "5Y": 0.0020, "10Y": 0.0023, "30Y": 0.0025},
         "3M": {"1Y": 0.0009, "2Y": 0.0010, "5Y": 0.0012, "10Y": 0.0014, "30Y": 0.0015},
     },
+    # TIIE-28D over F-TIIE and JIBAR-3M over ZARONIA (decision 34.1): assumed levels, not quotes.
+    # Both term rates carry a bank-credit and term premium of a few tens of basis points.
+    "MXN": {"28D": {"1Y": 0.0025, "2Y": 0.0026, "5Y": 0.0028, "10Y": 0.0030, "30Y": 0.0030}},
+    "ZAR": {"3M": {"1Y": 0.0040, "2Y": 0.0042, "5Y": 0.0045, "10Y": 0.0048, "30Y": 0.0050}},
 }
 # How far a crisis widens the basis relative to how far it widens credit spreads, by curve
 # tenor: interbank stress shows at the short end first (1.0 = moves one for one in log terms).
@@ -314,6 +318,20 @@ FLOAT_INDEX: dict[str, str] = {
     "MXN": "MXN-TIIE-28D",
     "BRL": "BRL-CDI",
     "ZAR": "ZAR-JIBAR-3M",
+}
+
+# Market swap conventions per floating index (decision 34.2): (fixed frequency, fixed day count,
+# floating frequency, floating day count). Overnight-index swaps pay annually on both legs;
+# EURIBOR-6M pays annual 30/360 against semi-annual ACT/360; TIIE pays every 28 days on both
+# legs; JIBAR quarterly ACT/365 on both; the CDI swap (DI pre) is zero-coupon BUS/252.
+SWAP_CONVENTIONS: dict[str, tuple[str, str, str, str]] = {
+    "USD-SOFR": ("ANNUAL", "ACT/360", "ANNUAL", "ACT/360"),
+    "EUR-EURIBOR-6M": ("ANNUAL", "30/360", "SEMI_ANNUAL", "ACT/360"),
+    "GBP-SONIA": ("ANNUAL", "ACT/365", "ANNUAL", "ACT/365"),
+    "JPY-TONA": ("ANNUAL", "ACT/365", "ANNUAL", "ACT/365"),
+    "MXN-TIIE-28D": ("28D", "ACT/360", "28D", "ACT/360"),
+    "BRL-CDI": ("TERM", "BUS/252", "TERM", "BUS/252"),
+    "ZAR-JIBAR-3M": ("QUARTERLY", "ACT/365", "QUARTERLY", "ACT/365"),
 }
 
 # FX spot, quote per base. Pair -> (spot, annualised vol)

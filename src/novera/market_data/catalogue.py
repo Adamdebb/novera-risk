@@ -85,7 +85,12 @@ _SPECS: dict[str, SourceSpec] = {
         "NZD rates", "RBNZ table B2: wholesale interest rates, government bond yields", PAID_RATES
     ),
     "IR:SGD": SourceSpec("SGD rates", "MAS API: SORA, Singapore Government Securities yields", PAID_RATES),
-    "IR:MXN": SourceSpec("MXN rates", "Banxico SIE API: TIIE, government bond yields", PAID_RATES),
+    "IR:MXN": SourceSpec(
+        "MXN rates",
+        "Banxico SIE API: TIIE, TIIE de Fondeo, government bond yields",
+        PAID_RATES,
+        "IR:MXN is read as F-TIIE (the discount curve); TIIE-28D projects off it plus IRBASIS:MXN",
+    ),
     "IR:BRL": SourceSpec(
         "BRL rates", "Banco Central do Brasil SGS API: Selic; B3 DI futures settlements", PAID_RATES
     ),
@@ -95,7 +100,12 @@ _SPECS: dict[str, SourceSpec] = {
     "IR:TRY": SourceSpec(
         "TRY rates", "CBRT EVDS data system: policy rate, government bond yields", PAID_RATES
     ),
-    "IR:ZAR": SourceSpec("ZAR rates", "SARB statistical tables: government bond yields, JIBAR", PAID_RATES),
+    "IR:ZAR": SourceSpec(
+        "ZAR rates",
+        "SARB statistical tables: government bond yields, JIBAR, ZARONIA",
+        PAID_RATES,
+        "IR:ZAR is read as ZARONIA (the discount curve); JIBAR-3M projects off it plus IRBASIS:ZAR",
+    ),
     "IR:ARS": SourceSpec(
         "ARS rates", "BCRA API: policy rate, BADLAR", PAID_RATES, "Thin market; curve beyond 1Y is notional"
     ),
@@ -174,13 +184,26 @@ _SPECS: dict[str, SourceSpec] = {
         "Bloomberg VCUB, LSEG, TP ICAP and Tradition broker cubes",
         "Normal vol cube is broker data; the simulator is the only history",
     ),
-    "IRBASIS": SourceSpec(
+    "IRBASIS:EUR": SourceSpec(
         "EURIBOR/ESTR tenor basis",
         "Short end only: EMMI publishes EURIBOR fixings and the ECB publishes ESTR, so the "
         "fixing-over-ESTR spread can be derived; no free basis-swap term structure",
         "Bloomberg and LSEG ESTR/EURIBOR basis-swap curves, ICE Swap Rate, Tradeweb closes, "
         "EMMI EURIBOR licence",
         "Zero spread of EURIBOR-3M and -6M over the ESTR discount curve; the simulator is the only history",
+    ),
+    "IRBASIS:MXN": SourceSpec(
+        "TIIE/F-TIIE tenor basis",
+        "Short end only: Banxico SIE API publishes TIIE-28 and TIIE de Fondeo daily; no free basis "
+        "term structure",
+        PAID_RATES + ", MXN TIIE/F-TIIE basis-swap curves",
+        "Zero spread of TIIE-28D over the F-TIIE discount curve; the simulator is the only history",
+    ),
+    "IRBASIS:ZAR": SourceSpec(
+        "JIBAR/ZARONIA tenor basis",
+        "Short end only: SARB publishes ZARONIA and JIBAR fixings; no free basis term structure",
+        PAID_RATES + ", ZAR JIBAR/ZARONIA basis-swap curves",
+        "Zero spread of JIBAR-3M over the ZARONIA discount curve; the simulator is the only history",
     ),
     "SWSMILE": SourceSpec(
         "Swaption SABR smiles",
@@ -206,8 +229,8 @@ def family_of(factor_id: str) -> str:
 
 def _spec_key(f: RiskFactor, underlying_kind: dict[str, str]) -> str:
     kind = f.factor_id.split(":")[0]
-    if kind == "IR":
-        return f"IR:{f.currency}"
+    if kind in ("IR", "IRBASIS"):
+        return f"{kind}:{f.currency}"
     if kind == "CMD":
         return "CMD:ENERGY" if f.underlying in ENERGY else "CMD:METAL"
     if kind == "CDS":

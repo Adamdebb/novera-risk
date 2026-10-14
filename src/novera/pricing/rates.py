@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date
 
-from novera.domain.enums import SwapSide
+from novera.domain.enums import Frequency, SwapSide
 from novera.domain.instruments import GovernmentBond, InterestRateSwap
 from novera.domain.trades import Trade
 from novera.market_data.risk_factors import TENOR_BASIS_INDICES
@@ -13,7 +14,7 @@ from novera.pricing.base import Cashflow, PricingResult, year_fraction_act365
 from novera.pricing.schedule import remaining_periods, schedule, year_fraction
 
 BOND_MODEL_VERSION = "1.0.0"
-SWAP_MODEL_VERSION = "2.0.0"
+SWAP_MODEL_VERSION = "2.1.0"
 
 # Static government-to-swap spread used to discount government bonds off the zero curve.
 # In Phase 3 this becomes a market-data factor per currency.
@@ -95,6 +96,7 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
     curve = market.zero_curve(swap.currency)
     projection = market.projection_curve(swap.float_index, swap.currency)
     n = trade.quantity
+    zero_coupon = swap.fixed_frequency is Frequency.ZERO_COUPON
     fixed_pv = 0.0
     annuity = 0.0
     flows: list[Cashflow] = []
@@ -102,28 +104,53 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
         tau = year_fraction(start, end, swap.fixed_day_count)
         df = float(curve.df(year_fraction_act365(as_of, end)))
         annuity += tau * df
-        amt = n * swap.fixed_rate * tau
+        # A zero-coupon fixed leg compounds annually over its single period (DI pre).
+        amt = n * ((1.0 + swap.fixed_rate) ** tau - 1.0) if zero_coupon else n * swap.fixed_rate * tau
         fixed_pv += amt * df
         flows.append(Cashflow(end, amt, "FIXED"))
+    # The running floating period uses the trade's stored fixing (decision 34.4): a term index
+    # fixed at the period start pays that rate for the whole period; an overnight index compounds
+    # the realised rate to the fixing date and projects the rest. Without a fixing for the period
+    # (a later period on an exposure path) the elapsed part accrues at today's short rate.
+    term_index = swap.float_index in TENOR_BASIS_INDICES
+    short_rate = float(projection.zero(0.0))
+    fixing = swap.fixing
     float_pv = 0.0
     for start, end in remaining_periods(swap.effective_date, swap.maturity_date, swap.float_frequency, as_of):
         t1 = max(year_fraction_act365(as_of, start), 0.0)
         t2 = year_fraction_act365(as_of, end)
-        tau = (
-            year_fraction(max(start, as_of), end, swap.float_day_count)
-            if start < as_of
-            else year_fraction(start, end, swap.float_day_count)
-        )
-        # Simple forward in the leg's own day count off the projection curve:
-        # (P(t1)/P(t2) - 1) / tau, discounted at DF(t2).
-        fwd = (float(projection.df(t1)) / float(projection.df(t2)) - 1.0) / tau if tau > 0 else 0.0
         df = float(curve.df(t2))
-        amt = n * (fwd + swap.float_spread) * tau
+        # Projected growth from max(start, today) to the payment date: P(t1)/P(t2).
+        growth = float(projection.df(t1)) / float(projection.df(t2))
+        tau = year_fraction(start, end, swap.float_day_count)
+        if start >= as_of:
+            accrual = growth - 1.0
+        elif fixing is not None and fixing.period_start == start and term_index:
+            accrual = fixing.rate * tau
+        elif fixing is not None and fixing.period_start == start:
+            realised = math.exp(fixing.rate * year_fraction_act365(start, min(fixing.through, as_of)))
+            gap = (
+                math.exp(short_rate * year_fraction_act365(fixing.through, as_of))
+                if as_of > fixing.through
+                else 1.0
+            )
+            accrual = realised * gap * growth - 1.0
+        elif term_index or swap.float_frequency is not Frequency.ZERO_COUPON:
+            accrual = short_rate * year_fraction(start, as_of, swap.float_day_count) + (growth - 1.0)
+        else:
+            accrual = math.exp(short_rate * year_fraction_act365(start, as_of)) * growth - 1.0
+        amt = n * (accrual + swap.float_spread * tau)
         float_pv += amt * df
         flows.append(Cashflow(end, -amt, "FLOAT"))
     sign = 1.0 if trade.swap_side is SwapSide.RECEIVE_FIXED else -1.0
     pv = sign * (fixed_pv - float_pv)
-    par_rate = (float_pv / n) / annuity if annuity > 0 else 0.0
+    if zero_coupon and annuity > 0:
+        # (1 + K)^tau - 1 = float PV / (N DF(T)), with tau and DF(T) from the one fixed period.
+        df_end = float(curve.df(year_fraction_act365(as_of, swap.maturity_date)))
+        tau_total = annuity / df_end
+        par_rate = (1.0 + float_pv / (n * df_end)) ** (1.0 / tau_total) - 1.0
+    else:
+        par_rate = (float_pv / n) / annuity if annuity > 0 else 0.0
     return PricingResult(
         trade_id=trade.trade_id,
         currency=swap.currency,

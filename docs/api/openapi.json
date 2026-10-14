@@ -2940,7 +2940,8 @@
           "ACT/360",
           "ACT/365",
           "30/360",
-          "ACT/ACT"
+          "ACT/ACT",
+          "BUS/252"
         ],
         "title": "DayCount",
         "type": "string"
@@ -3794,12 +3795,41 @@
         "title": "Firm",
         "type": "object"
       },
+      "FloatingFixing": {
+        "additionalProperties": false,
+        "description": "What a trade system knows about the floating period running on its business date\n(decision 34.4). For a term index (EURIBOR, TIIE, JIBAR) ``rate`` is the fixing set at\n``period_start``, simple in the leg's day count, and covers the whole period. For an\novernight index (SOFR, SONIA, TONA, CDI) it is the realised overnight rate, continuously\ncompounded, from ``period_start`` to ``through``; the rest of the period is projected.",
+        "properties": {
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "through": {
+            "format": "date",
+            "title": "Through",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period_start",
+          "rate",
+          "through"
+        ],
+        "title": "FloatingFixing",
+        "type": "object"
+      },
       "Frequency": {
         "enum": [
           "ANNUAL",
           "SEMI_ANNUAL",
           "QUARTERLY",
-          "MONTHLY"
+          "MONTHLY",
+          "28D",
+          "TERM"
         ],
         "title": "Frequency",
         "type": "string"
@@ -4547,6 +4577,17 @@
             "description": "Annual fixed rate as a decimal",
             "title": "Fixed Rate",
             "type": "number"
+          },
+          "fixing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FloatingFixing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fixing of the running floating period, set from the market history"
           },
           "float_day_count": {
             "$ref": "#/components/schemas/DayCount",

@@ -40,7 +40,11 @@ FUND_LOOKTHROUGH_MODEL_VERSION = "1.0.0"
 EXOTIC_MODEL_VERSION = "1.0.0"
 
 # Fixing frequency of a term-rate index, by its tenor.
-INDEX_FREQUENCY: dict[str, Frequency] = {"3M": Frequency.QUARTERLY, "6M": Frequency.SEMI_ANNUAL}
+INDEX_FREQUENCY: dict[str, Frequency] = {
+    "28D": Frequency.EVERY_28_DAYS,
+    "3M": Frequency.QUARTERLY,
+    "6M": Frequency.SEMI_ANNUAL,
+}
 
 
 # --- Repo / reverse repo (PR-010) ----------------------------------------------------------------

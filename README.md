@@ -65,7 +65,7 @@ cd novera-risk
 uv sync --all-extras
 
 uv run novera simulate                                     # build the bank, portfolio and market data (~10s)
-uv run novera run eod --business-date 2026-09-11           # day 1: four planted breaches (~2 minutes)
+uv run novera run eod --business-date 2026-09-11           # day 1: four planted breaches plus TransAtlantic Air's PFE (~2 minutes)
 uv run novera run eod --business-date 2026-09-14           # day 2: unacknowledged breaches auto-escalate
 uv run novera breach list
 uv run novera ask "Why did VaR change since yesterday?"

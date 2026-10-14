@@ -13,8 +13,10 @@ Audience: head of market risk, CRO, or hedge-fund CIO. One coherent story.
    the proxies panel: the run re-levelled the stale surface with GBP/USD and interpolated
    the 7Y node before pricing, every touched factor listed with its source (MD-002); the raw
    snapshot is untouched.
-4b. **Breach workflow** (1 min). Day 1 shows exactly the four planted breaches (USD 10Y
-   DV01 and concentration, Brent concentration, digital-asset stress). Day 2 adds two: the
+4b. **Breach workflow** (1 min). Day 1 shows the four planted breaches (USD 10Y
+   DV01 and concentration, Brent concentration, digital-asset stress) and a fifth on
+   TransAtlantic Air's PFE limit: the BB+ watchlist airline that also sold the bank the
+   wrong-way CDX protection, carrying a 495m pay-fixed swap (decision 34.3). Day 2 adds two: the
    single-name equity vega limit after new options were booked, and Northsea Energy's PFE
    limit. Day 3: the unacknowledged breaches are auto-escalated to Head of Market Risk; the
    Brent breach was acknowledged and escalates only after three breaching runs. Request a

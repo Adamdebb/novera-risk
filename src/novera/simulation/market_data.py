@@ -662,7 +662,8 @@ class _Sim:
         self.swaption_vols()
         # The SABR smile (decision 21.1) is drawn after everything above for the same reason.
         self.swaption_smiles()
-        # The EURIBOR/ESTR tenor basis (decision 33.4) likewise comes after the smile.
+        # The tenor basis (decisions 33.4, 34.1) likewise comes after the smile; within it EUR is
+        # drawn first, then MXN and ZAR, so adding a currency never moves an earlier one.
         self.tenor_basis()
 
     def prepend(self, earlier: _Sim) -> None:

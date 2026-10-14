@@ -16,7 +16,7 @@ All values are P&L in reporting currency for the stated move.
 | Measure | Move | Scope |
 |---|---|---|
 | DV01 | +1bp on one zero-curve node | ladder per currency; parallel DV01 = sum of nodes |
-| BASIS01 | +1bp on one tenor-basis node (EURIBOR over ESTR), ESTR held | ladder per currency and index; EURIBOR products only |
+| BASIS01 | +1bp on one tenor-basis node (EURIBOR, TIIE or JIBAR over its overnight curve), that curve held | ladder per currency and index; term-rate products only |
 | CS01 | +1bp on a CDS index spread | per index |
 | FX_DELTA | +1% on an FX spot factor | per pair as quoted; includes translation of foreign PVs |
 | EQ_DELTA | +1% on an equity or index spot | per name |

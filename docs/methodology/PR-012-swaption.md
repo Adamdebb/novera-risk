@@ -43,7 +43,8 @@ fixing periods (semi-annual for EURIBOR-6M). For an overnight index `P = DF` and
 telescopes to the single-curve `(DF(T_0) − DF(T_n)) / A`, which is what the code computes.
 
 ## Inputs
-Discount curve of the currency and, for a EURIBOR swaption, the `IRBASIS:EUR:6M:` basis;
+Fixed-leg frequency and day count follow the currency's swap conventions (PR-002: SOFR annual
+ACT/360, EURIBOR annual 30/360, SONIA annual ACT/365). Discount curve of the currency and, for a EURIBOR swaption, the `IRBASIS:EUR:6M:` basis;
 swaption vol cube and, when stored, the SABR rho and nu cubes; expiry, tenor, strike and
 payer/receiver from the instrument.
 

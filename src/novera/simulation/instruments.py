@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
@@ -31,6 +31,7 @@ from novera.domain import (
     Repo,
     Swaption,
 )
+from novera.domain.enums import DayCount, Frequency
 from novera.simulation import reference_levels as ref
 
 BOND_TENORS = ("2Y", "5Y", "10Y", "30Y")
@@ -84,14 +85,26 @@ def government_bonds(currency: str, business_date: date) -> list[GovernmentBond]
 
 
 def swap(currency: str, tenor: str, effective: date, fixed_rate: float) -> InterestRateSwap:
-    mat = _add_tenor(effective, tenor)
+    """Vanilla swap on the currency's floating index with that index's market conventions
+    (``ref.SWAP_CONVENTIONS``). A TIIE swap runs a whole number of 28-day periods, 13 a year."""
+    index = ref.FLOAT_INDEX[currency]
+    fixed_f, fixed_dc, float_f, float_dc = ref.SWAP_CONVENTIONS[index]
+    if fixed_f == Frequency.EVERY_28_DAYS:
+        months = int(tenor[:-1]) * (12 if tenor[-1] == "Y" else 1)
+        mat = effective + timedelta(days=28 * round(months * 13 / 12))
+    else:
+        mat = _add_tenor(effective, tenor)
     return InterestRateSwap(
         instrument_id=f"{currency}_IRS_{tenor}_{effective:%Y%m%d}_{fixed_rate * 1e4:.0f}",
         currency=currency,
         effective_date=effective,
         maturity_date=mat,
         fixed_rate=fixed_rate,
-        float_index=ref.FLOAT_INDEX[currency],
+        float_index=index,
+        fixed_frequency=Frequency(fixed_f),
+        fixed_day_count=DayCount(fixed_dc),
+        float_frequency=Frequency(float_f),
+        float_day_count=DayCount(float_dc),
         description=f"{tenor} {currency} IRS {fixed_rate:.3%}",
     )
 
@@ -240,6 +253,9 @@ def ir_futures(currency: str, business_date: date, count: int = 8) -> list[Inter
 
 
 def swaption(currency: str, expiry: date, tenor: str, strike: float, payer: bool) -> Swaption:
+    """European swaption on the currency's vanilla swap; the fixed leg follows that swap's
+    conventions."""
+    fixed_f, fixed_dc, _, _ = ref.SWAP_CONVENTIONS[ref.FLOAT_INDEX[currency]]
     return Swaption(
         instrument_id=f"SWPT_{currency}_{'P' if payer else 'R'}_{expiry:%Y%m%d}_{tenor}_{strike * 1e4:.0f}",
         currency=currency,
@@ -247,6 +263,8 @@ def swaption(currency: str, expiry: date, tenor: str, strike: float, payer: bool
         swap_tenor=tenor,
         strike=strike,
         payer=payer,
+        fixed_frequency=Frequency(fixed_f),
+        fixed_day_count=DayCount(fixed_dc),
         float_index=ref.FLOAT_INDEX[currency],
     )
 

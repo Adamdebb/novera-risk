@@ -4,7 +4,8 @@ Conventions (all in reporting currency, signed as P&L for the stated move):
     DV01          P&L for +1bp in one zero-curve node (ladder) or the whole curve (parallel);
                   a EURIBOR trade's projection curve rides on the ESTR curve, so this is its
                   full rate risk
-    BASIS01       P&L for +1bp in one tenor-basis node (EURIBOR over ESTR), ESTR held
+    BASIS01       P&L for +1bp in one tenor-basis node (EURIBOR, TIIE or JIBAR over its
+                  overnight curve), the overnight curve held
     CS01          P&L for +1bp in a CDS index spread
     FX_DELTA      P&L for +1% in an FX spot factor (pair as quoted in the snapshot)
     EQ_DELTA      P&L for +1% in an equity or index spot

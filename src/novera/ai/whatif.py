@@ -25,6 +25,7 @@ TARGETS: dict[str, tuple[str, ...]] = {
     "rates_usd": ("IR:USD:",),
     "rates_eur": ("IR:EUR:",),
     "eur_basis": ("IRBASIS:EUR:",),
+    "em_basis": ("IRBASIS:MXN:", "IRBASIS:ZAR:"),
     "rates_gbp": ("IR:GBP:",),
     "rates_jpy": ("IR:JPY:",),
     "credit": ("CDS:",),

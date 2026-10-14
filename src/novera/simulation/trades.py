@@ -32,6 +32,7 @@ from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing import PRICERS
 from novera.simulation import instruments as inst
 from novera.simulation import reference_levels as ref
+from novera.simulation.fixings import attach_fixings
 from novera.simulation.organisation import CounterpartyUniverse
 
 BANK_PROBLEMS: tuple[str, ...] = (
@@ -1216,6 +1217,7 @@ class _Gen:
             extra, injections = self.inject(*args) if self.t.injector == "bank" else self.inject_fund(*args)
             conc = {tid for i in injections if i.name == "usd_10y_concentration" for tid in i.trade_ids}
             trades += [t if t.trade_id in conc else self._fair(t) for t in extra]
+        trades = attach_fixings(trades, self.cfg.market_history, self.bd)
         snap = PortfolioSnapshot(business_date=self.bd, trades=tuple(trades), source="SIM")
         return GeneratedPortfolio(snapshot=snap, injections=injections)
 
@@ -1264,4 +1266,5 @@ def evolve_portfolio(
             new.append(gen._fair(getattr(gen, str(r))(desk_id)))
     trades += new
     changes.append(f"{len(new)} new trades booked on {new_date}")
+    trades = attach_fixings(trades, market_history, new_date)  # the period running today, fixed
     return PortfolioSnapshot(business_date=new_date, trades=tuple(trades), source="SIM"), changes

@@ -1146,6 +1146,80 @@ recommended option.
 - Revisit: the composite stresses (global risk-off) leave the basis where it is, which
   understates an interbank widening; only the basis scenario and the historical episodes move it.
 
+## Round 34 — MXN and ZAR tenor basis, market swap conventions (2026-10-14)
+
+Context: after Round 33 the owner asked about the other currencies. USD SOFR, GBP SONIA, JPY
+TONA and BRL CDI are overnight indices, so one curve is exact for them; MXN TIIE-28D and ZAR
+JIBAR-3M are term rates like EURIBOR. Reading the generated book also showed every swap on one
+generic convention (floating quarterly, fixed semi-annual 30/360), including EURIBOR-6M swaps
+resetting quarterly. One question round; collateral-currency discounting is the next round.
+
+### 34.1 How MXN and ZAR are read
+- Options: same as EUR ★ · keep IR as the term curve and subtract the basis
+- Choice (owner): **same as EUR**. `IR:MXN` is the F-TIIE overnight discount curve and `IR:ZAR`
+  the ZARONIA curve, history unchanged; `IRBASIS:MXN:28D:*` and `IRBASIS:ZAR:3M:*` project TIIE
+  and JIBAR over them. One model for every term-rate index.
+- Choice (default): assumed levels of 25 to 30bp (TIIE over F-TIIE) and 40 to 50bp (JIBAR over
+  ZARONIA), not quotes; drawn after the EUR basis so EUR and every earlier family stay
+  bit-identical (checked against the Round 33 code: all 1,962,720 earlier values equal); an
+  `em_basis` what-if target. The basis stress stays EUR-only.
+- Where: `TENOR_BASIS_INDICES`, `reference_levels.TENOR_BASIS`, `market_data/catalogue.py`
+  (`IRBASIS:{CCY}` source rows), SIM-001 1.4.0, PR-002 2.1.0. 1,514 factors.
+
+### 34.2 Swap conventions
+- Options: reset frequency only ★ · full market conventions · leave them
+- Choice (owner): **full market conventions** per index: fixed and floating frequency and day
+  count, 28-day periods for TIIE, and zero-coupon business/252 for the CDI swap.
+- Where: `reference_levels.SWAP_CONVENTIONS`, `simulation/instruments.py` (`swap`, `swaption`:
+  a TIIE swap runs 13 periods of 28 days a year), `Frequency.EVERY_28_DAYS` and `ZERO_COUPON`,
+  `DayCount.BUS_252` (weekdays, no Brazilian calendar) in `domain/enums.py` and
+  `pricing/schedule.py`; the CDI fixed leg compounds `(1 + K)^τ − 1` and its par rate solves
+  that (`pricing/rates.py`, `swap_multi_curve` 2.1.0). Swaption fixed legs follow the same
+  conventions. Tests: `test_generated_swaps_follow_market_conventions`,
+  `test_brl_cdi_zero_coupon_swap`, `test_mxn_tiie_swap_is_dual_curve_on_28_day_periods`.
+
+### 34.4 The floating period already running
+- Found: with no stored fixings the pricer projected only the part of the current floating
+  period from today and counted the interest already accrued since its start as zero, while the
+  fixed leg paid its full coupon: a bias of up to one period's floating interest on every
+  seasoned swap, and the whole life of a zero-coupon CDI swap.
+- Options: estimate the elapsed accrual for all swaps ★ · zero-coupon only · compound the
+  stored history (needs the history in the pricer)
+- Choice (owner, first): **estimate it for all swaps** at today's shortest rate on the
+  projection curve.
+- Found on the demo rebuild: the estimate made interest that is already fixed move with today's
+  curve. GBP DV01 at the 1M node went from −1.4k to −64k (SONIA swaps now pay annually, so up to
+  a year is elapsed), breaching GBP_RATES_DV01_GBP, and the BRL 1M node moved the same way;
+  CPTY_CORP_AIR breached through a 495m USD swap's PV. False risk, so no limit was moved.
+- Options: store the fixing on the trade ★ · take past fixings at the fixed rate · revert
+- Choice (owner, revised): **store the fixing on the trade**, as a trade system does.
+  `InterestRateSwap.fixing` (`FloatingFixing`: period start, rate, through) is set from the
+  simulated history whenever a dated portfolio snapshot is built (`simulation/fixings.py`, in
+  `generate_portfolio` and `evolve_portfolio`): a term index's rate off that day's projection
+  curve at the period start, which then pays for the whole period; an overnight index's realised
+  rate (the shortest node of each day's curve, compounded) through the business date, with the
+  rest projected. The short-rate estimate remains only for a period with no stored fixing (a
+  later period on an exposure path).
+- Where: `pricing/rates.py`; tests `test_stored_fixings_remove_false_short_rate_risk`,
+  `test_generator_attaches_the_running_fixing`, and
+  `test_running_period_accrues_at_the_short_rate` for the fallback against QuantLib.
+
+### 34.3 The demo
+- Options: rebuild, check, swap ★ · rebuild and report only
+- Choice (owner): **rebuild, check, swap** as in 33.3: the same seven bank and three fund
+  breaches are required, a limit moves only if a breach does, the current databases are backed up.
+- Result: the fund keeps its three breaches. The first rebuild added GBP_RATES_DV01_GBP and
+  CPTY_CORP_AIR; the GBP one was false risk from the accrual estimate and went with the stored
+  fixings (34.4). CPTY_CORP_AIR stayed: with its fixing stored, the 495m USD pay-fixed swap
+  IRS_000021 is worth +1.6m instead of −8.6m, the old figure being the bias 34.4 removes, and the
+  New York netting set's peak PFE95 goes from 18.0m to 32.3m against a 30m limit (107.5% on the
+  11th, 104.5% on the 14th, 105.8% on the 15th).
+- Choice (owner): **keep it as an eighth bank breach** rather than raise the limit as the rule
+  said: TransAtlantic Air is BB+ and on the watchlist, already the wrong-way-credit counterparty,
+  and raising its limit to quieten the demo is what a risk function would not do. Day 1 now shows
+  five breaches. BRL DV01 utilisation rises from 6–18% to 31–63% (zero-coupon swaps pay at
+  maturity); EUR_RATES_STRESS on the 11th and MACRO_VAR on the 14th drop below the warning line.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1219,3 +1293,11 @@ recommended option.
 22. **A RUNNING run left by a killed process stays RUNNING** (32.3): it is never the latest
     and the next job re-runs the day, but nothing marks it abandoned; a start-up sweep that
     turns RUNNING runs older than a threshold into FAILED would tidy the run list.
+23. **Fixings come from the simulated curves** (34.4): a trade's running-period fixing is read
+    off the history (the 1M node stands for the overnight rate, the projection curve for the term
+    fixing), not from published fixings; with real data a fixings table per index should feed it.
+24. **No holiday calendars** (34.2): schedules are unadjusted and BUS/252 counts weekdays, so DI
+    pre accrual and payment dates differ slightly from B3 and the other markets' calendars.
+25. **Collateral currency** (34, next round): all 17 CSAs post USD cash, yet non-USD bilateral
+    swaps discount on their own OIS curve; the cross-currency basis that would fix this also
+    fixes FX forwards priced by covered interest parity alone (MV-001).

@@ -40,6 +40,7 @@ def test_universe_shape() -> None:
     }
     assert "IR:USD:10Y" in ids and "VOL:SPX:3M:0.90" in ids and "CMD:BRENT:3Y" in ids
     assert "IRBASIS:EUR:6M:10Y" in ids and "IRBASIS:EUR:3M:1Y" in ids
+    assert "IRBASIS:MXN:28D:5Y" in ids and "IRBASIS:ZAR:3M:30Y" in ids
 
 
 def test_history_is_reproducible_and_clean(md) -> None:
@@ -176,7 +177,8 @@ def test_tenor_basis_is_drawn_last_and_widens_in_a_crisis() -> None:
     md = generate_market_data(MarketSimConfig(end_date=BD, years=3.0))
     wide = md.history.pivot(index="as_of", columns="factor_id", values="value")
     basis = [c for c in wide.columns if c.startswith("IRBASIS:")]
-    assert len(basis) == 10 and (wide[basis] > 0).all().all()
+    assert len(basis) == 20 and (wide[basis] > 0).all().all()
+    assert {c.split(":")[1] for c in basis} == {"EUR", "MXN", "ZAR"}
     assert (wide["IRBASIS:EUR:6M:5Y"] > wide["IRBASIS:EUR:3M:5Y"]).all()
     n = len(wide)
     before, peak = wide.iloc[n - 481], wide.iloc[n - 480 + 22]

@@ -44,6 +44,7 @@ USD_ZEROS = np.array(
     [0.039, 0.0388, 0.0385, 0.038, 0.0375, 0.0372, 0.0374, 0.038, 0.039, 0.040, 0.0405, 0.0405]
 )
 EUR_ZEROS = USD_ZEROS - 0.017
+TENOR_LABELS = ["1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"]
 
 
 def _market() -> MarketSnapshot:
@@ -361,6 +362,241 @@ def test_tenor_basis_moves_only_term_rate_indices(market: MarketSnapshot) -> Non
     assert snap.projection_curve("USD-SOFR", "USD") is snap.zero_curve("USD")
     assert snap.projection_curve("EUR-EURIBOR-3M", "EUR") is disc  # no 3M nodes in this snapshot
     assert not snap.has_tenor_basis("EUR-EURIBOR-3M") and snap.has_tenor_basis("EUR-EURIBOR-6M")
+
+
+def _swap_trade(swap: InterestRateSwap, side: SwapSide = SwapSide.RECEIVE_FIXED) -> Trade:
+    return Trade(
+        trade_id="T_" + swap.instrument_id,
+        instrument=swap,
+        direction=BuySell.BUY,
+        swap_side=side,
+        quantity=100e6,
+        trade_price=swap.fixed_rate,
+        trade_date=swap.effective_date,
+        book_id="B",
+        trader_id="T",
+        **_bilateral(),
+    )
+
+
+def test_generated_swaps_follow_market_conventions() -> None:
+    """Decision 34.2: each floating index carries its market conventions, and a TIIE swap runs a
+    whole number of 28-day periods (13 a year)."""
+    from novera.simulation import instruments as inst
+
+    expected = {
+        "USD": (Frequency.ANNUAL, DayCount.ACT_360, Frequency.ANNUAL, DayCount.ACT_360),
+        "EUR": (Frequency.ANNUAL, DayCount.THIRTY_360, Frequency.SEMI_ANNUAL, DayCount.ACT_360),
+        "GBP": (Frequency.ANNUAL, DayCount.ACT_365, Frequency.ANNUAL, DayCount.ACT_365),
+        "MXN": (Frequency.EVERY_28_DAYS, DayCount.ACT_360, Frequency.EVERY_28_DAYS, DayCount.ACT_360),
+        "BRL": (Frequency.ZERO_COUPON, DayCount.BUS_252, Frequency.ZERO_COUPON, DayCount.BUS_252),
+        "ZAR": (Frequency.QUARTERLY, DayCount.ACT_365, Frequency.QUARTERLY, DayCount.ACT_365),
+    }
+    for ccy, conv in expected.items():
+        s = inst.swap(ccy, "5Y", AS_OF, 0.05)
+        assert (s.fixed_frequency, s.fixed_day_count, s.float_frequency, s.float_day_count) == conv, ccy
+    mxn = inst.swap("MXN", "10Y", AS_OF, 0.08)
+    assert (mxn.maturity_date - AS_OF).days == 28 * 130
+    assert inst.swaption("EUR", date(2027, 9, 13), "5Y", 0.025, True).fixed_frequency is Frequency.ANNUAL
+
+
+def test_running_period_accrues_at_the_short_rate(market: MarketSnapshot) -> None:
+    """Decision 34.4 fallback: with no stored fixing for the period, the floating period already
+    running pays the elapsed part at today's shortest projection rate plus the projected remainder. Benchmarked
+    against QuantLib given the fixing that pays the same coupon, so both legs, the schedule and
+    the discounting are checked on a seasoned swap."""
+    swap = InterestRateSwap(
+        instrument_id="S_RUN",
+        currency="USD",
+        effective_date=date(2024, 7, 11),
+        maturity_date=date(2029, 7, 11),
+        fixed_rate=0.04,
+        float_index="USD-SOFR",
+        fixed_frequency=Frequency.QUARTERLY,
+        fixed_day_count=DayCount.ACT_360,
+        float_frequency=Frequency.QUARTERLY,
+        float_day_count=DayCount.ACT_360,
+    )
+    res = PRICERS[swap.product_type](_swap_trade(swap), market, AS_OF)
+    handle = _ql_curve(USD_ZEROS, AS_OF)
+    index = ql.IborIndex(
+        "SIM3M", ql.Period(3, ql.Months), 0, ql.USDCurrency(), ql.NullCalendar(), ql.Unadjusted, False,
+        ql.Actual360(), handle,
+    )  # fmt: skip
+    sched = ql.Schedule(
+        ql.Date(11, 7, 2024), ql.Date(11, 7, 2029), ql.Period(ql.Quarterly), ql.NullCalendar(),
+        ql.Unadjusted, ql.Unadjusted, ql.DateGeneration.Backward, False,
+    )  # fmt: skip
+    qs = ql.VanillaSwap(
+        ql.VanillaSwap.Receiver, 100e6, sched, 0.04, ql.Actual360(), sched, index, 0.0, ql.Actual360()
+    )
+    # Running period 11 Jul to 11 Oct 2026: 62 days elapsed at the short rate, 30 projected.
+    start, end = date(2026, 7, 11), date(2026, 10, 11)
+    short = float(market.zero_curve("USD").zero(0.0))
+    coupon = short * (AS_OF - start).days / 360 + (1 / float(handle.discount(ql.Date(11, 10, 2026))) - 1)
+    index.addFixing(ql.Date(11, 7, 2026), coupon / ((end - start).days / 360))
+    qs.setPricingEngine(ql.DiscountingSwapEngine(handle))
+    assert res.pv_local == pytest.approx(qs.NPV(), abs=2_000)
+    # Without the elapsed accrual the receiver would look richer by about N x short x 62/360.
+    assert 100e6 * short * 62 / 360 > 500_000
+
+
+def test_stored_fixings_remove_false_short_rate_risk(market: MarketSnapshot) -> None:
+    """Decision 34.4: interest already fixed must not move with today's curve. A seasoned SONIA
+    swap (annual periods, 290 days into the running one) bumped at the 1M node: with the stored
+    realised rate only the 34 days still to run respond; with the fallback estimate the whole
+    elapsed accrual does. A EURIBOR-6M swap's running coupon is the stored fixing exactly."""
+    from novera.domain import FloatingFixing
+
+    mk = market.with_values({f"IR:GBP:{t}": float(z) for t, z in zip(TENOR_LABELS, USD_ZEROS, strict=True)})
+    gbp = InterestRateSwap(
+        instrument_id="SONIA",
+        currency="GBP",
+        effective_date=date(2025, 11, 25),
+        maturity_date=date(2030, 11, 25),
+        fixed_rate=0.04,
+        float_index="GBP-SONIA",
+        fixed_frequency=Frequency.ANNUAL,
+        fixed_day_count=DayCount.ACT_365,
+        float_frequency=Frequency.ANNUAL,
+        float_day_count=DayCount.ACT_365,
+    )
+    fixed = gbp.model_copy(
+        update={"fixing": FloatingFixing(period_start=date(2025, 11, 25), rate=0.0395, through=AS_OF)}
+    )
+    bumped = mk.with_values({"IR:GBP:1M": mk.values["IR:GBP:1M"] + 1e-4})
+
+    def dv01_1m(s: InterestRateSwap) -> float:
+        t = _swap_trade(s)
+        return (
+            PRICERS[s.product_type](t, bumped, AS_OF).pv_local
+            - PRICERS[s.product_type](t, mk, AS_OF).pv_local
+        )
+
+    elapsed = (AS_OF - date(2025, 11, 25)).days / 365
+    assert abs(dv01_1m(gbp)) > 0.8 * 100e6 * 1e-4 * elapsed  # the fallback moves the whole accrual
+    assert abs(dv01_1m(fixed)) < 0.15 * abs(dv01_1m(gbp))
+    # The realised part compounds the stored rate; the rest is projected off today's curve.
+    res = PRICERS[gbp.product_type](_swap_trade(fixed), mk, AS_OF)
+    flt = next(f for f in res.cashflows if f.kind == "FLOAT")
+    proj = 1 / float(mk.zero_curve("GBP").df((date(2026, 11, 25) - AS_OF).days / 365))
+    assert -flt.amount == pytest.approx(100e6 * (np.exp(0.0395 * elapsed) * proj - 1), rel=1e-9)
+
+    eur = InterestRateSwap(
+        instrument_id="E6M",
+        currency="EUR",
+        effective_date=date(2025, 6, 11),
+        maturity_date=date(2030, 6, 11),
+        fixed_rate=0.025,
+        float_index="EUR-EURIBOR-6M",
+        fixed_frequency=Frequency.ANNUAL,
+        fixed_day_count=DayCount.THIRTY_360,
+        float_frequency=Frequency.SEMI_ANNUAL,
+        float_day_count=DayCount.ACT_360,
+        fixing=FloatingFixing(period_start=date(2026, 6, 11), rate=0.0231, through=date(2026, 6, 11)),
+    )
+    r = PRICERS[eur.product_type](_swap_trade(eur), market, AS_OF)
+    first = min((f for f in r.cashflows if f.kind == "FLOAT"), key=lambda f: f.pay_date)
+    assert first.pay_date == date(2026, 12, 11)
+    assert -first.amount == pytest.approx(100e6 * 0.0231 * 183 / 360, rel=1e-12)
+
+
+def test_generator_attaches_the_running_fixing() -> None:
+    """The generated book carries, for every swap mid-period on the business date, the fixing a
+    trade system would hold: a term index's rate read off the projection curve on the period
+    start, an overnight index's realised rate through the business date."""
+    from novera.simulation.fixings import running_period
+
+    md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=3.0))
+    from novera.market_data.history import MarketHistory
+
+    hist = MarketHistory.from_long(md.history)
+    org = build_global_macro_bank()
+    cp = build_counterparty_universe(org)
+    gen = generate_portfolio(org, cp, TradeGeneratorConfig(AS_OF, 400, 7, False, hist))
+    swaps = [t for t in gen.snapshot.trades if isinstance(t.instrument, InterestRateSwap)]
+    assert swaps
+    for t in swaps:
+        ins = t.instrument
+        period = running_period(ins, AS_OF)
+        if period is None:
+            assert ins.fixing is None, t.trade_id
+            continue
+        assert ins.fixing is not None and ins.fixing.period_start == period[0], t.trade_id
+        if ins.float_index.startswith(("EUR", "MXN", "ZAR")):
+            assert ins.fixing.through == period[0]
+        else:
+            assert ins.fixing.through == AS_OF
+        assert -0.01 < ins.fixing.rate < 0.2
+
+
+def test_brl_cdi_zero_coupon_swap() -> None:
+    """DI pre (decision 34.2): one period, fixed leg N((1+K)^tau - 1) with tau in BUS/252, CDI
+    leg the compounded overnight rate N(P(start)/P(T) - 1). A new swap at the par rate is worth
+    nothing; a seasoned one adds the CDI accrued since inception at today's short rate."""
+    from novera.pricing.schedule import year_fraction
+
+    zeros = {t: 0.11 + 0.002 * i for i, t in enumerate(["1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "10Y"])}
+    mk = MarketSnapshot(as_of=AS_OF, values={f"IR:BRL:{t}": z for t, z in zeros.items()})
+    curve = mk.zero_curve("BRL")
+    mat = date(2028, 9, 11)
+    tau = year_fraction(AS_OF, mat, DayCount.BUS_252)
+    df = float(curve.df((mat - AS_OF).days / 365))
+    par = df ** (-1 / tau) - 1
+    swap = InterestRateSwap(
+        instrument_id="DI",
+        currency="BRL",
+        effective_date=AS_OF,
+        maturity_date=mat,
+        fixed_rate=par,
+        float_index="BRL-CDI",
+        fixed_frequency=Frequency.ZERO_COUPON,
+        fixed_day_count=DayCount.BUS_252,
+        float_frequency=Frequency.ZERO_COUPON,
+        float_day_count=DayCount.BUS_252,
+    )
+    res = PRICERS[swap.product_type](_swap_trade(swap), mk, AS_OF)
+    assert abs(res.pv_local) < 1.0 and res.details["par_rate"] == pytest.approx(par, abs=1e-12)
+    assert len(res.cashflows) == 2
+    seasoned = swap.model_copy(update={"effective_date": date(2025, 9, 11)})
+    r2 = PRICERS[swap.product_type](_swap_trade(seasoned), mk, AS_OF)
+    short = float(curve.zero(0.0))
+    tau_all = year_fraction(date(2025, 9, 11), mat, DayCount.BUS_252)
+    fixed = 100e6 * ((1 + par) ** tau_all - 1) * df
+    flt = 100e6 * (np.exp(short * 365 / 365) / df - 1) * df
+    assert r2.pv_local == pytest.approx(fixed - flt, rel=1e-9)
+
+
+def test_mxn_tiie_swap_is_dual_curve_on_28_day_periods(market: MarketSnapshot) -> None:
+    """Decision 34.1: a TIIE-28D swap discounts on the IR:MXN (F-TIIE) curve and projects TIIE
+    off it plus the 28D basis, on 28-day periods ACT/360. Benchmarked against QuantLib."""
+    zeros = USD_ZEROS + 0.045
+    values = {f"IR:MXN:{t}": float(z) for t, z in zip(TENOR_LABELS, zeros, strict=True)}
+    basis = 0.0028
+    values.update({f"IRBASIS:MXN:28D:{t}": basis for t in ("1Y", "2Y", "5Y", "10Y", "30Y")})
+    mk = MarketSnapshot(as_of=AS_OF, values=values)
+    from novera.simulation import instruments as inst
+
+    swap = inst.swap("MXN", "5Y", AS_OF, 0.09)
+    res = PRICERS[swap.product_type](_swap_trade(swap), mk, AS_OF)
+    assert res.details["tenor_basis_applied"] == 1.0
+    disc, proj = _ql_curve(zeros, AS_OF), _ql_curve(zeros + basis, AS_OF)
+    index = ql.IborIndex(
+        "TIIE", ql.Period(28, ql.Days), 0, ql.MXNCurrency(), ql.NullCalendar(), ql.Unadjusted, False,
+        ql.Actual360(), proj,
+    )  # fmt: skip
+    m = swap.maturity_date
+    sched = ql.Schedule(
+        ql.Date(11, 9, 2026), ql.Date(m.day, m.month, m.year), ql.Period(28, ql.Days), ql.NullCalendar(),
+        ql.Unadjusted, ql.Unadjusted, ql.DateGeneration.Backward, False,
+    )  # fmt: skip
+    qs = ql.VanillaSwap(
+        ql.VanillaSwap.Receiver, 100e6, sched, 0.09, ql.Actual360(), sched, index, 0.0, ql.Actual360()
+    )
+    qs.setPricingEngine(ql.DiscountingSwapEngine(disc))
+    assert len(res.cashflows) == 2 * 65
+    assert res.pv_local == pytest.approx(qs.NPV(), abs=2_000)
+    assert res.details["par_rate"] == pytest.approx(qs.fairRate(), abs=2e-5)
 
 
 # --- FX ------------------------------------------------------------------------------

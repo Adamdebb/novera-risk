@@ -111,21 +111,27 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             ProductType.INTEREST_RATE_SWAP,
             "Interest-rate swap",
             "swap_multi_curve",
-            "OIS discounting, forwards off the index's own curve",
+            "OIS discounting, forwards off the index's own curve, market conventions",
             SWAP_MODEL_VERSION,
             "PR-002",
             "Interest-rate swap valuation",
             market_standard="Multi-curve: OIS discounting (SOFR, ESTR, SONIA) with forwards "
             "projected off the index's own curve; CSA discounting for bilateral trades.",
-            simplifications="EURIBOR-6M projects off ESTR plus a simulated zero-spread basis "
-            "rather than a curve stripped from basis-swap quotes; OIS discounting stands for a "
-            "cash CSA in the swap's currency. No stored fixings, no amortisation. A snapshot "
-            "without the basis falls back to one curve and flags it (tenor_basis_applied = 0).",
+            simplifications="Term rates (EURIBOR, TIIE-28D, JIBAR-3M) project off the overnight curve "
+            "plus a simulated zero-spread basis rather than curves stripped from basis-swap quotes; "
+            "OIS discounting stands for a cash CSA in the swap's own currency, so the USD collateral "
+            "of most bilateral CSAs is not reflected. Market conventions per index, but no holiday "
+            "calendars (BUS/252 counts weekdays). Running-period fixings are stored on the trade but "
+            "read off the simulated curves, not published fixings. No amortisation. A snapshot without the basis "
+            "falls back to one curve and flags it (tenor_basis_applied = 0).",
             appropriateness=Appropriateness.ACCEPTABLE_SIMPLIFICATION,
             validation="QuantLib benchmark: ql.VanillaSwap NPV within 2,000 on 100m and fair "
             "rate within 0.2bp, single curve (test_par_swap_has_zero_pv_and_matches_quantlib) "
             "and for a EUR swap with ESTR discounting and EURIBOR-6M projection "
-            "(test_eur_swap_dual_curve_matches_quantlib).",
+            "(test_eur_swap_dual_curve_matches_quantlib), a TIIE swap on 28-day periods "
+            "(test_mxn_tiie_swap_is_dual_curve_on_28_day_periods) and a seasoned swap's running "
+            "period (test_running_period_accrues_at_the_short_rate); the CDI zero-coupon swap "
+            "against its closed form (test_brl_cdi_zero_coupon_swap).",
         ),
         ProductSpec(
             ProductType.REPO,

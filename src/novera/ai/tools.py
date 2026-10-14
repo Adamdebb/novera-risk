@@ -128,7 +128,7 @@ def build_tools(db_path: str) -> list[Tool]:
         out = sorted(out, key=lambda x: -abs(x["value_k"]))[:40]
         units = {
             "DV01": "P&L per +1bp",
-            "BASIS01": "P&L per +1bp of EURIBOR over ESTR",
+            "BASIS01": "P&L per +1bp of a term rate over its overnight curve",
             "CS01": "P&L per +1bp",
             "VEGA": "P&L per +1 vol point",
             "THETA": "P&L per calendar day",
@@ -662,8 +662,9 @@ def build_tools(db_path: str) -> list[Tool]:
         Tool(
             "sensitivities",
             "Sensitivities by group and underlying. DV01 and BASIS01 rows carry a tenor bucket "
-            "(curve ladder). DV01 bumps the discount curve (ESTR for EUR) with any EURIBOR "
-            "projection riding on it; BASIS01 bumps EURIBOR over ESTR. Measures: DV01, BASIS01, "
+            "(curve ladder). DV01 bumps the overnight discount curve (ESTR, F-TIIE, ZARONIA) with any "
+            "term-rate projection riding on it; BASIS01 bumps the term rate (EURIBOR, TIIE, JIBAR) "
+            "over it. Measures: DV01, BASIS01, "
             "CS01, FX_DELTA, EQ_DELTA, CMD_DELTA, CRYPTO_DELTA, VEGA, GAMMA, THETA.",
             _obj(
                 {

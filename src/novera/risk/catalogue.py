@@ -43,7 +43,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
             MeasureSpec(
                 "MR-001",
                 "Sensitivities",
-                "DV01, EURIBOR/ESTR basis (BASIS01), CS01, FX, equity and commodity delta, vega and "
+                "DV01, term-rate basis (BASIS01), CS01, FX, equity and commodity delta, vega and "
                 "gamma by bump-and-reprice against the shared risk-factor universe, so every measure "
                 "keys off the same factors.",
                 "reporting currency per unit shock",

@@ -205,10 +205,11 @@ def test_swaption_matches_quantlib_bachelier(market: MarketSnapshot) -> None:
     )
     start = ql.Date(expiry.day, expiry.month, expiry.year)
     end = ql.Date(maturity.day, maturity.month, maturity.year)
+    # SOFR swap conventions (decision 34.2): annual ACT/360 on both legs.
     fixed = ql.Schedule(
         start,
         end,
-        ql.Period(6, ql.Months),
+        ql.Period(12, ql.Months),
         ql.NullCalendar(),
         ql.Unadjusted,
         ql.Unadjusted,
@@ -216,7 +217,7 @@ def test_swaption_matches_quantlib_bachelier(market: MarketSnapshot) -> None:
         False,
     )
     swap = ql.VanillaSwap(
-        ql.Swap.Payer, 100e6, fixed, 0.038, ql.Thirty360(ql.Thirty360.USA), fixed, index, 0.0, ql.Actual360()
+        ql.Swap.Payer, 100e6, fixed, 0.038, ql.Actual360(), fixed, index, 0.0, ql.Actual360()
     )
     swaption = ql.Swaption(swap, ql.EuropeanExercise(start))
     swaption.setPricingEngine(ql.BachelierSwaptionEngine(curve, ql.QuoteHandle(ql.SimpleQuote(0.0090))))
@@ -250,12 +251,25 @@ def test_eur_swaption_forward_is_dual_curve(market: MarketSnapshot) -> None:
     )  # fmt: skip
     start = ql.Date(expiry.day, expiry.month, expiry.year)
     end = ql.Date(maturity.day, maturity.month, maturity.year)
+    # EURIBOR-6M swap conventions: annual 30/360 fixed against semi-annual ACT/360 floating.
     fixed = ql.Schedule(
+        start, end, ql.Period(12, ql.Months), ql.NullCalendar(), ql.Unadjusted, ql.Unadjusted,
+        ql.DateGeneration.Backward, False,
+    )  # fmt: skip
+    floating = ql.Schedule(
         start, end, ql.Period(6, ql.Months), ql.NullCalendar(), ql.Unadjusted, ql.Unadjusted,
         ql.DateGeneration.Backward, False,
     )  # fmt: skip
     swap = ql.VanillaSwap(
-        ql.Swap.Payer, 100e6, fixed, 0.025, ql.Thirty360(ql.Thirty360.USA), fixed, index, 0.0, ql.Actual360()
+        ql.Swap.Payer,
+        100e6,
+        fixed,
+        0.025,
+        ql.Thirty360(ql.Thirty360.USA),
+        floating,
+        index,
+        0.0,
+        ql.Actual360(),
     )
     swap.setPricingEngine(ql.DiscountingSwapEngine(discounting))
     assert fwd == pytest.approx(swap.fairRate(), abs=2e-6)
@@ -575,14 +589,19 @@ def test_sensitivities_for_new_products(sim) -> None:
     assert idx.trades_for(["SWVOL:USD:1Y:5Y"]) <= {
         tid for tid, t in by.items() if t.product_type.value == "SWAPTION"
     }
-    # Tenor basis (decision 33): BASIS01 only on EURIBOR products, 6M nodes on swaps and
-    # swaptions, 3M nodes on futures; a receiver loses when EURIBOR rises over ESTR.
+    # Tenor basis (decisions 33, 34): BASIS01 only on term-rate products, each on its own
+    # index's nodes; a EUR receiver loses when EURIBOR rises over ESTR.
+    from novera.market_data.risk_factors import TENOR_BASIS_INDICES
+
+    index_of = {v: k for k, v in TENOR_BASIS_INDICES.items()}
     basis = sens[sens.measure == "BASIS01"]
-    assert len(basis) and set(basis["underlying"]) == {"EUR"}
+    assert (
+        len(basis) and set(basis["underlying"]) <= {"EUR", "MXN", "ZAR"} and "EUR" in set(basis["underlying"])
+    )
     for tid, fid in zip(basis["trade_id"], basis["factor_id"], strict=True):
         ins = by[tid].instrument
         index = getattr(ins, "float_index", None) or getattr(ins, "index", None)
-        assert index == ("EUR-EURIBOR-3M" if ":3M:" in fid else "EUR-EURIBOR-6M"), (tid, fid)
+        assert index == index_of[(fid.split(":")[1], fid.split(":")[2])], (tid, fid)
     receivers = [
         tid
         for tid, t in by.items()

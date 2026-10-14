@@ -83,10 +83,13 @@ def irbasis_id(ccy: str, index_tenor: str, tenor: str) -> str:
 
 
 # Floating indices projected off their own curve: the discount curve plus a tenor basis
-# (decision 33.1). Indices not listed here are the discount index itself (SOFR, SONIA, ...).
+# (decisions 33.1, 34.1). Indices not listed here are the discount index itself (SOFR, SONIA,
+# TONA, CDI).
 TENOR_BASIS_INDICES: dict[str, tuple[str, str]] = {
     "EUR-EURIBOR-6M": ("EUR", "6M"),
     "EUR-EURIBOR-3M": ("EUR", "3M"),
+    "MXN-TIIE-28D": ("MXN", "28D"),  # over F-TIIE (decision 34.1)
+    "ZAR-JIBAR-3M": ("ZAR", "3M"),  # over ZARONIA
 }
 
 

@@ -64,6 +64,20 @@ class GovernmentBond(InstrumentBase):
         return self
 
 
+class FloatingFixing(BaseModel):
+    """What a trade system knows about the floating period running on its business date
+    (decision 34.4). For a term index (EURIBOR, TIIE, JIBAR) ``rate`` is the fixing set at
+    ``period_start``, simple in the leg's day count, and covers the whole period. For an
+    overnight index (SOFR, SONIA, TONA, CDI) it is the realised overnight rate, continuously
+    compounded, from ``period_start`` to ``through``; the rest of the period is projected."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    period_start: date
+    rate: float
+    through: date
+
+
 class InterestRateSwap(InstrumentBase):
     product_type: Literal[ProductType.INTEREST_RATE_SWAP] = ProductType.INTEREST_RATE_SWAP
     effective_date: date
@@ -75,6 +89,9 @@ class InterestRateSwap(InstrumentBase):
     float_frequency: Frequency = Frequency.QUARTERLY
     float_day_count: DayCount = DayCount.ACT_360
     float_spread: float = 0.0
+    fixing: FloatingFixing | None = Field(
+        default=None, description="Fixing of the running floating period, set from the market history"
+    )
 
     @model_validator(mode="after")
     def _dates(self) -> InterestRateSwap:

@@ -2,7 +2,7 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.3.0 |
+| Version          | 1.4.0 |
 | Owner            | Market Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.simulation.market_data` |
@@ -34,9 +34,11 @@ not a forecast and makes no claim about real markets.
   exp(c_t + o_t + L(tenor) · C_t)`, with `c_t` one mean-reverting path per currency (long-run
   standard deviation 0.10), `o_t` one per index (0.04), `C_t` the cumulative episode credit
   drift (log credit-spread multiplier) and `L` the crisis loading, 0.9 at 1Y down to 0.35 at
-  30Y. Base levels 15 to 25bp for 6M and 9 to 15bp for 3M; the risk-off episode roughly
+  30Y. Base levels 15 to 25bp for EURIBOR-6M and 9 to 15bp for 3M, 25 to 30bp for TIIE-28D over
+  F-TIIE and 40 to 50bp for JIBAR-3M over ZARONIA (decision 34.1, assumed levels); the risk-off episode roughly
   doubles the short end and the basis relaxes with credit afterwards. Drawn after the swaption
-  smile, so every other family is bit-identical to the history before the basis existed.
+  smile, EUR first and then MXN and ZAR, so every other family is bit-identical to the history
+  before each basis existed.
 
 ## Inputs
 Base levels and vols in `simulation/reference_levels.py`; episodes in
@@ -79,3 +81,4 @@ that the extension leaves the core bit-identical and joins without a jump, and
 | 1.1.0 | 2026-09-15 | Default horizon three to five years as core plus extension segments (decision 20.1) | Novera |
 | 1.2.0 | 2026-09-15 | Swaption SABR smile parameters, drawn after every earlier family (decision 21.1) | Novera |
 | 1.3.0 | 2026-10-14 | EURIBOR-3M and -6M tenor basis over ESTR, widening with credit in a crisis (decision 33.4) | Novera |
+| 1.4.0 | 2026-10-14 | TIIE-28D and JIBAR-3M tenor basis over F-TIIE and ZARONIA (decision 34.1) | Novera |

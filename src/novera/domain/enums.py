@@ -105,6 +105,7 @@ class DayCount(StrEnum):
     ACT_365 = "ACT/365"
     THIRTY_360 = "30/360"
     ACT_ACT = "ACT/ACT"
+    BUS_252 = "BUS/252"  # business days over 252, the Brazilian DI convention
 
 
 class Frequency(StrEnum):
@@ -112,6 +113,8 @@ class Frequency(StrEnum):
     SEMI_ANNUAL = "SEMI_ANNUAL"
     QUARTERLY = "QUARTERLY"
     MONTHLY = "MONTHLY"
+    EVERY_28_DAYS = "28D"  # the Mexican TIIE convention
+    ZERO_COUPON = "TERM"  # one period from effective date to maturity
 
 
 class TradeStatus(StrEnum):
