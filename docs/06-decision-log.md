@@ -171,6 +171,7 @@ Legend: **Choice** is what was picked. **Where** names the code or record that i
 ### 7.4 Morning commentary
 - Options: automatic at the end of each EOD run ★ · on demand only
 - Choice: **On demand only** (button on the Copilot page, `POST /copilot/commentary`)
+- Revisited in 38.1: drafted automatically after every EOD as well.
 
 ---
 
@@ -1367,6 +1368,44 @@ option.
   Negative because the bank owes more uncollateralised value than it is owed, so DVA outweighs
   CVA. The largest funding costs sit on the uncollateralised names (Northsea Energy 0.20m,
   TransAtlantic Air 0.14m). Breaches unchanged (8 bank, 3 fund): FVA feeds no limit.
+
+## Round 38 — Automatic morning commentary (2026-10-14)
+
+Context: the owner asked whether the morning commentary is drafted automatically after each EOD
+as well as on demand; decision 7.4 had made it on demand only. The Analyst opens its own
+read-only and read-write connections, and DuckDB will not let a process that holds a database
+read-write also open it read-only, so the draft cannot run inside `run_eod`. When every provider
+in the LLM chain fails the Analyst raises; it does not fall back by itself. One question round;
+the owner took every recommended option.
+
+### 38.1 Which runs
+- Options: every EOD ★ · scheduled only · every EOD and partial re-runs
+- Choice (owner): **every EOD**: scheduled, manual from the Admin page and `novera run eod`, bank
+  and fund. Revisits 7.4: on demand stays, automatic is added.
+
+### 38.2 Provider
+- Options: the configured LLM chain with the scripted provider as fallback ★ · always scripted ·
+  LLM only
+- Choice (owner): **the LLM chain, scripted when it fails**, so a commentary always exists; the
+  answer records which provider wrote it.
+
+### 38.3 Relation to the run
+- Options: a separate step after the run is final ★ · part of the run
+- Choice (owner): **a separate step** after the run's connection is closed: it never changes the
+  run's status; a failure goes to the job's notes and the audit trail; a time cap stops a slow
+  LLM holding up the scheduler. A setting switches it off.
+
+### 38.4 Where it shows
+- Options: Analyst page and an Overview banner ★ · also the risk pack · Analyst page only
+- Choice (owner): **the Analyst page and a banner on the morning Overview**, with run, time and
+  provider; the on-demand button still regenerates and earlier drafts stay in the history.
+- Where: `ai/commentary.py` (`draft_after_run`, `note_for_job`, session `auto-commentary`),
+  `Settings.commentary_auto` and `commentary_timeout_seconds`, `scheduler.comment_on_job` (the
+  `serve` loop and `novera schedule --once`), `novera run eod`, `api/service.with_commentary` (the
+  `POST /admin/run` endpoint opens and closes its own connection first, and the local client does
+  the same), `GET /runs/{run_id}/commentary`, the Analyst page and the Overview banner, AI-001
+  1.1.0, OPS-001 1.4.0. Tests: `test_auto_commentary_drafts_falls_back_and_can_be_off`,
+  `test_scheduler_job_notes_the_commentary`.
 
 ## Standing instructions given outside the question rounds
 

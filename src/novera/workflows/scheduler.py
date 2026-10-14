@@ -52,6 +52,19 @@ class JobRecord:
         }
 
 
+def comment_on_job(db_path: str, job: JobRecord) -> JobRecord:
+    """Draft the morning commentary for the run a job produced, once the job's database
+    connection is closed (decision round 38), and record the outcome in the job's notes."""
+    if not job.run_id or job.status not in ("COMPLETED", "PARTIAL"):
+        return job
+    from novera.ai.commentary import draft_after_run, note_for_job
+
+    job.notes.append(note_for_job(draft_after_run(db_path, job.run_id)))
+    with DuckDBRepository(db_path) as repo:
+        repo.save_job(job.to_dict())
+    return job
+
+
 def run_once(
     repo: DuckDBRepository,
     advance: bool,
@@ -232,5 +245,6 @@ def serve(
         at = next_fire_time(now, hhmm)
         sleep(max((at - now).total_seconds(), 0))
         with DuckDBRepository(db_path) as repo:
-            yield run_once(repo, advance, cfg)
+            job = run_once(repo, advance, cfg)
+        yield comment_on_job(db_path, job)  # after the connection closes (decision round 38)
         fired += 1

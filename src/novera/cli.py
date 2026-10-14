@@ -448,6 +448,10 @@ def run_eod_cmd(
         steps = ", ".join(f"{k} {v / m:+.2f}" for k, v in sm["pnl_steps"].items() if abs(v) > 1e3)
         typer.echo(f"  P&L {sm['pnl_total'] / m:+,.2f}m  [{steps}]")
     typer.echo("  timings: " + ", ".join(f"{k} {v:.1f}s" for k, v in r.timings.items()))
+    if r.status in ("COMPLETED", "PARTIAL"):  # the run's connection is closed by now (round 38)
+        from novera.ai.commentary import draft_after_run, note_for_job
+
+        typer.echo("  " + note_for_job(draft_after_run(str(_db(fund)), r.run_id)))
     for stage, err in r.failed_stages.items():
         typer.secho(f"  failed stage {stage}: {err}", fg=typer.colors.YELLOW)
     if r.failed_stages:
@@ -750,7 +754,7 @@ def schedule(
     One process per firm face: run it once for the bank and once with --fund for the fund."""
     from novera.storage.duckdb_repository import DuckDBRepository
     from novera.workflows.eod import EODConfig
-    from novera.workflows.scheduler import next_fire_time, run_once, serve
+    from novera.workflows.scheduler import comment_on_job, next_fire_time, run_once, serve
 
     s = get_settings()
     db_path = _db(fund)
@@ -764,6 +768,7 @@ def schedule(
     if once:
         with DuckDBRepository(db_path) as repo:
             job = run_once(repo, advance, cfg)
+        job = comment_on_job(str(db_path), job)
         typer.echo(
             f"job {job.job_id} {job.status} business date {job.business_date} run {job.run_id} "
             f"attempts {job.attempts}"

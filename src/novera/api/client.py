@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from novera.api.agents_api import AGENT_METHODS
 from novera.api.errors import ApiError, NotFoundError, error_from_problem, translate
-from novera.api.service import RiskService, RiskWriteService
+from novera.api.service import RiskService, RiskWriteService, with_commentary
 from novera.storage.duckdb_repository import DuckDBRepository
 
 
@@ -60,6 +60,7 @@ class RiskClient(Protocol):
     def run_full(
         self, actor: str, reason: str = "", business_date: str | None = None, advance: bool = False
     ) -> dict[str, Any]: ...
+    def morning_commentary(self, run_id: str | None = None) -> dict[str, Any]: ...
     def signoff_status(self, run_id: str | None = None) -> dict[str, Any]: ...
     def signoff_policy(self) -> dict[str, Any]: ...
     def signoff_queue(self, limit: int = 20) -> list[dict[str, Any]]: ...
@@ -141,7 +142,10 @@ class LocalClient:
             return getattr(AgentOps(self.db_path), name)(*a, **kw)
         if name in WRITE_METHODS:
             with DuckDBRepository(self.db_path) as repo:
-                return getattr(RiskWriteService(repo), name)(*a, **kw)
+                out = getattr(RiskWriteService(repo), name)(*a, **kw)
+            if name == "run_full":  # draft once the run's connection is closed (decision round 38)
+                out = with_commentary(str(self.db_path), out)
+            return out
         if name in PACK_METHODS:
             from novera.config import get_settings
 
@@ -257,6 +261,9 @@ class HttpClient:
         return self._post_long(
             "/admin/run", actor=actor, reason=reason, business_date=business_date, advance=advance
         )
+
+    def morning_commentary(self, run_id=None):
+        return self._get(f"/runs/{run_id or 'latest'}/commentary")
 
     def signoff_status(self, run_id=None):
         return self._get(f"/runs/{run_id or 'latest'}/signoff")

@@ -126,6 +126,13 @@ def header(title: str) -> None:
 # --- pages ------------------------------------------------------------------------------
 if page == "Overview":
     header("Global market risk")
+    mc = client.morning_commentary(run_id)
+    if mc.get("available"):
+        first = mc["answer"].strip().split("\n\n")[0][:600]
+        st.info(
+            f"**Morning commentary** ({mc['provider']}, {str(mc['at'])[:16].replace('T', ' ')}): {first} "
+            "— full text on the Analyst page."
+        )
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric(f"VaR {sm.get('var_confidence') or 0.99:.0%} 1d", money(sm["var"], digits=2))
     c2.metric(f"ES {sm.get('es_confidence') or 0.975:.1%}".replace(".0%", "%"), money(sm["es"], digits=2))
@@ -195,6 +202,15 @@ elif page == "Analyst":
             + (f" · fallback order {' → '.join(chain)}" if len(chain) > 1 else "")
             + " · answers cite run ids and are stored with their tool calls."
         )
+    mc = client.morning_commentary(run_id)
+    if mc.get("available"):
+        with st.expander(
+            f"Morning commentary for run {mc['run_id']}, drafted automatically by {mc['provider']} "
+            f"at {str(mc['at'])[:16].replace('T', ' ')} UTC",
+            expanded=True,
+        ):
+            st.markdown(mc["answer"])
+            st.caption("Drafted after the run was final; the button below drafts a fresh one on demand.")
     if "analyst_chat" not in st.session_state:
         st.session_state.analyst_chat = []
         st.session_state.analyst_session = f"ui_{run_id}"

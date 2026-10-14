@@ -455,3 +455,81 @@ def test_make_provider_builds_the_chain_from_settings(monkeypatch):
     monkeypatch.setenv("NOVERA_LLM_PROVIDER", "auto")
     monkeypatch.setenv("GROQ_API_KEY", "q")
     assert make_provider(Settings(_env_file=None)).chain == ["gemini", "groq", "openrouter"]
+
+
+# --- automatic morning commentary (decision round 38) ----------------------------------------
+
+
+class _Failing:
+    name, model = "broken", "none"
+
+    def complete(self, system, messages, tools):
+        from novera.ai.provider import ProviderError
+
+        raise ProviderError("every provider in the chain failed: quota")
+
+
+class _Slow(ScriptedProvider):
+    name, model = "slow", "slow-v1"
+
+    def complete(self, system, messages, tools):
+        import time
+
+        time.sleep(1.0)
+        return super().complete(system, messages, tools)
+
+
+def _latest_run(db_path) -> str:
+    with DuckDBRepository(db_path, read_only=True) as repo:
+        return repo.latest_run().run_id
+
+
+def test_auto_commentary_drafts_falls_back_and_can_be_off(db_path, monkeypatch) -> None:
+    """After a run the configured provider drafts the commentary and it is stored under the
+    automatic session for that run; when every provider fails, or the LLM is slower than the
+    cap, the scripted provider drafts it instead; with commentary_auto off nothing is drafted."""
+    from novera.ai import analyst as analyst_mod
+    from novera.ai.commentary import AUTO_SESSION, draft_after_run, note_for_job
+    from novera.api.service import RiskService
+    from novera.config import Settings
+
+    rid = _latest_run(db_path)
+    ok = draft_after_run(str(db_path), rid, Settings(_env_file=None))
+    assert ok["status"] == "DRAFTED" and not ok["fallback"] and ok["provider"] == "scripted"
+    assert "drafted by scripted" in note_for_job(ok)
+
+    monkeypatch.setattr(analyst_mod, "make_provider", lambda *_a, **_k: _Failing())
+    fb = draft_after_run(str(db_path), rid, Settings(_env_file=None))
+    assert fb["fallback"] and fb["provider"] == "scripted" and "quota" in fb["llm_error"]
+
+    monkeypatch.setattr(analyst_mod, "make_provider", lambda *_a, **_k: _Slow())
+    slow = draft_after_run(str(db_path), rid, Settings(_env_file=None, commentary_timeout_seconds=0.2))
+    assert slow["fallback"] and "exceeded" in slow["llm_error"]
+
+    assert draft_after_run(str(db_path), rid, Settings(_env_file=None, commentary_auto=False)) == {
+        "status": "OFF"
+    }
+
+    with DuckDBRepository(db_path, read_only=True) as repo:
+        auto = [a for a in repo.load_analyst_answers(50, session_id=AUTO_SESSION) if a["run_id"] == rid]
+        assert len(auto) == 3  # the slow LLM answer arrived late and was not stored
+        mc = RiskService(repo).morning_commentary(rid)
+        ev = repo.load_audit_events(subject=rid)
+    assert mc["available"] and mc["answer_id"] == auto[0]["answer_id"] and mc["answer"]
+    assert (ev["event_type"] == "COMMENTARY_DRAFTED").sum() == 3
+
+
+def test_scheduler_job_notes_the_commentary(db_path) -> None:
+    """A finished job gets the commentary drafted and the outcome in its notes; a failed job
+    without a run gets none."""
+    from datetime import UTC, datetime
+
+    from novera.workflows.scheduler import JobRecord, comment_on_job
+
+    rid = _latest_run(db_path)
+    job = comment_on_job(
+        str(db_path), JobRecord("job_t", datetime.now(UTC), "EOD", run_id=rid, status="COMPLETED")
+    )
+    assert any("morning commentary drafted" in n for n in job.notes)
+    failed = comment_on_job(str(db_path), JobRecord("job_f", datetime.now(UTC), "EOD", status="FAILED"))
+    assert failed.notes == []

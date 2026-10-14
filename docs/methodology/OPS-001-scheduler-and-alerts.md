@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.workflows.scheduler`, `novera.workflows.alerts`, `novera.simulation.advance`, `GET /admin/run/options`, `POST /admin/run` |
@@ -69,6 +69,11 @@ channel and prints the delivery outcome per channel; the alert is stored with it
 deliveries like any other, so the test leaves a record. The email channel uses STARTTLS
 and a login only when `NOVERA_SMTP_USER` and `NOVERA_SMTP_PASSWORD` are set; without them
 it speaks plain SMTP, which is what a local relay or a development sink expects.
+
+## Morning commentary (1.4.0, decision round 38)
+Once a scheduled or manual job's run is COMPLETED or PARTIAL and the job's database connection is
+closed, the morning commentary is drafted (AI-001) and the outcome noted on the job; a failed
+draft never changes the job or the run.
 
 ## Stuck runs (1.3.0, decision round 36)
 A run is RUNNING from its start until its final save (decision 32.3), so a process killed in

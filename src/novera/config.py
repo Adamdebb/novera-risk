@@ -52,6 +52,12 @@ class Settings(BaseSettings):
 
     # Counterparty risk.
     own_credit_spread_bp: float = Field(default=80.0, description="Firm's own CDS spread for DVA")
+    commentary_auto: bool = Field(
+        default=True, description="Draft the morning commentary after every EOD (decision round 38)"
+    )
+    commentary_timeout_seconds: float = Field(
+        default=120.0, description="Time the LLM chain gets before the scripted provider drafts it"
+    )
     funding_spread_bp: float = Field(
         default=80.0, description="Firm's unsecured funding spread over OIS for FCA and FBA (CR-005)"
     )

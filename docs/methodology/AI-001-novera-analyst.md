@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Technology |
 | Approval status | Draft |
 | Code | `novera.ai` |
@@ -58,6 +58,19 @@ model that actually produced it.
 - `scripted`: deterministic keyword planner and templated answers over the same tools.
   Used without credentials and in the test suite. Answers are marked as scripted.
 
+## Automatic morning commentary (1.1.0, decision round 38)
+After every EOD (scheduled, manual from the Admin page, `novera run eod`; bank and fund) the
+morning commentary is drafted once the run is final and its database connection closed
+(`ai/commentary.py`): the Analyst opens its own connections, which DuckDB refuses to a process
+still holding the database read-write. The configured provider chain gets
+`commentary_timeout_seconds` (120 by default); when every provider fails or time runs out the
+scripted provider drafts it from the same stored numbers, and a late LLM answer is discarded,
+never stored. The draft is stored as an Analyst answer under the session `auto-commentary` for
+that run, with a COMMENTARY_DRAFTED (or COMMENTARY_FAILED) audit event and a line in the job's
+notes; it never changes the run's status. It shows at the top of the Analyst page and as a banner
+on the morning Overview (`GET /runs/{run_id}/commentary`); the on-demand button still drafts a
+fresh one. `NOVERA_COMMENTARY_AUTO=false` switches it off.
+
 ## Limitations
 No multi-turn memory beyond the session history passed by the caller. The scripted
 provider only understands the demo question patterns. The model cannot see trade-level
@@ -70,3 +83,5 @@ Analyst loop with a mock transport, tool-call parsing, 429 handling) and provide
 from settings; loop feeds tool results back and stores the record; tool errors
 return as results, never raise; what-if reprices through the engine; scripted planner
 covers the demo questions.
+`tests/test_analyst.py::test_auto_commentary_drafts_falls_back_and_can_be_off`,
+`::test_scheduler_job_notes_the_commentary`.

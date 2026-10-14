@@ -658,10 +658,25 @@ class RunOptions(ApiModel):
     jobs: list[JobRecord] = Field(description="Manual runs so far, latest first")
 
 
+class MorningCommentary(ApiModel):
+    """The morning commentary drafted automatically after a run (decision round 38, AI-001)."""
+
+    run_id: str
+    available: bool
+    answer_id: str | None = None
+    answer: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    at: str | None = None
+
+
 class ManualRun(JobRecord):
     """The job record of a manual full run and, when it completed, the run it produced."""
 
     run: RunRecord | None = None
+    commentary: dict[str, Any] | None = Field(
+        default=None, description="The morning commentary drafted after the run (decision round 38)"
+    )
 
 
 class RerunOptions(ApiModel):

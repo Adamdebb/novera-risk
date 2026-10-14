@@ -45,6 +45,10 @@ Each step is timed and its duration stored on the run. Durations below are from 
 bank run of 2026-09-15 (1,515 trades, 1,494 risk factors, 1,305 days of history, one worker
 per core).
 
+After the last step, once the run is final and its database connection closed, the caller
+(scheduler, Admin page, `novera run eod`) drafts the morning commentary (AI-001, decision round
+38); it never changes the run.
+
 Before step 1 the run sweeps runs and jobs a killed process left RUNNING and records its own
 owner (host and process id) on its summary, so a later sweep can tell it is alive (OPS-001,
 decision round 36).

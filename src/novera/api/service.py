@@ -515,6 +515,27 @@ class RiskService:
 
         return market_data_sources(self.repo.load_risk_factors(), self.repo.load_market_provenance())
 
+    def morning_commentary(self, run_id: str | None = None) -> dict[str, Any]:
+        """The latest commentary drafted automatically after this run (decision round 38)."""
+        from novera.ai.commentary import AUTO_SESSION
+
+        r = self.resolve(run_id)
+        ans = next(
+            (
+                a
+                for a in self.repo.load_analyst_answers(500, session_id=AUTO_SESSION)
+                if a.get("run_id") == r.run_id
+            ),
+            None,
+        )
+        if ans is None:
+            return {"run_id": r.run_id, "available": False}
+        return {
+            "run_id": r.run_id,
+            "available": True,
+            **{k: ans.get(k) for k in ("answer_id", "answer", "provider", "model", "at")},
+        }
+
     def signoff_status(self, run_id: str | None = None) -> dict[str, Any]:
         """Sign-off state of every metric of the run and its release status (OPS-003)."""
         from novera.workflows import signoff
@@ -1174,3 +1195,17 @@ class RiskWriteService:
     def cancel_increase(self, increase_id: str, actor: str) -> dict[str, Any]:
         inc, _ = wf.cancel_increase(self.repo, increase_id, actor)
         return inc.model_dump(mode="json")
+
+
+def with_commentary(db_path: str, job: dict[str, Any]) -> dict[str, Any]:
+    """A manual run's job, after its connection is closed, with the morning commentary drafted
+    for the run it produced and the outcome noted on the job (decision round 38)."""
+    if not job.get("run_id") or job.get("status") not in ("COMPLETED", "PARTIAL"):
+        return job
+    from novera.ai.commentary import draft_after_run, note_for_job
+
+    outcome = draft_after_run(db_path, job["run_id"])
+    job = {**job, "notes": [*job.get("notes", []), note_for_job(outcome)], "commentary": outcome}
+    with DuckDBRepository(db_path) as repo:
+        repo.save_job({k: v for k, v in job.items() if k not in ("run", "commentary")})
+    return job

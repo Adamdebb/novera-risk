@@ -27,7 +27,7 @@ from novera.api.errors import (
     problem_from,
     translate,
 )
-from novera.api.service import RiskService, RiskWriteService
+from novera.api.service import RiskService, RiskWriteService, with_commentary
 from novera.config import get_settings
 from novera.storage.duckdb_repository import DuckDBRepository
 
@@ -380,6 +380,11 @@ def counterparty_reference(svc: RiskService = Depends(service)):
     return svc.counterparty_reference()
 
 
+@app.get("/runs/{run_id}/commentary", response_model=s.MorningCommentary)
+def morning_commentary(run_id: str, svc: RiskService = Depends(service)):
+    return svc.morning_commentary(run_id)
+
+
 # --- sign-off (OPS-003) ---------------------------------------------------------------------
 @app.get("/runs/{run_id}/signoff", response_model=s.SignoffStatus)
 def signoff_status(run_id: str, svc: RiskService = Depends(service)):
@@ -437,8 +442,11 @@ def run_options(svc: RiskService = Depends(service)):
 
 
 @app.post("/admin/run", response_model=s.ManualRun)
-def run_full(body: RunBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.run_full(body.actor, body.reason, body.business_date, body.advance)
+def run_full(body: RunBody):
+    # Own connection, closed before the morning commentary opens the Analyst's (decision round 38).
+    with DuckDBRepository(settings.db_path) as repo:
+        out = RiskWriteService(repo).run_full(body.actor, body.reason, body.business_date, body.advance)
+    return with_commentary(str(settings.db_path), out)
 
 
 @app.get("/admin/rerun/options", response_model=s.RerunOptions)
