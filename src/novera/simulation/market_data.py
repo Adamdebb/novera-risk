@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from novera.market_data.risk_factors import (
+    TENOR_BASIS_INDICES,
     TENOR_YEARS,
     RiskFactor,
     RiskFactorType,
@@ -40,6 +41,7 @@ from novera.market_data.risk_factors import (
     eqidx_id,
     fx_id,
     ir_id,
+    irbasis_id,
     swsmile_id,
     swvol_id,
     vol_id,
@@ -204,6 +206,23 @@ def build_risk_factor_universe() -> list[RiskFactor]:
                         moneyness=m,
                         unit="vol",
                         shock_type="RELATIVE",
+                    )
+                )
+    index_of = {v: k for k, v in TENOR_BASIS_INDICES.items()}
+    for ccy, by_index in ref.TENOR_BASIS.items():
+        for index_tenor in by_index:
+            for tenor in ref.BASIS_TENORS:
+                out.append(
+                    RiskFactor(
+                        factor_id=irbasis_id(ccy, index_tenor, tenor),
+                        factor_type=RiskFactorType.IR_BASIS,
+                        asset_class="RATES",
+                        currency=ccy,
+                        underlying=index_of[(ccy, index_tenor)],
+                        tenor=tenor,
+                        tenor_years=TENOR_YEARS[tenor],
+                        unit="rate",
+                        shock_type="ABSOLUTE",
                     )
                 )
     return out
@@ -615,6 +634,20 @@ class _Sim:
                     self.series[swsmile_id(ccy, e, t, "RHO")] = rho
                     self.series[swsmile_id(ccy, e, t, "NU")] = nu
 
+    def tenor_basis(self) -> None:
+        """Term-rate basis over the discount curve per index tenor and curve tenor. One
+        mean-reverting log factor per currency moves every node; the shorter index adds a small
+        idiosyncratic part. In a crisis the basis widens with credit spreads, more at the short
+        end (BASIS_CRISIS_LOADING), and relaxes with them afterwards."""
+        credit = np.cumsum(self.drift["credit"])
+        for ccy, by_index in ref.TENOR_BASIS.items():
+            common = self._ou(0.10)
+            for index_tenor, levels in by_index.items():
+                own = self._ou(0.04)
+                for tenor in ref.BASIS_TENORS:
+                    log_move = common + own + ref.BASIS_CRISIS_LOADING[tenor] * credit
+                    self.series[irbasis_id(ccy, index_tenor, tenor)] = levels[tenor] * np.exp(log_move)
+
     def simulate(self) -> None:
         """Draw every family for this segment, in an order fixed so earlier phases reproduce."""
         self.rates()
@@ -629,6 +662,8 @@ class _Sim:
         self.swaption_vols()
         # The SABR smile (decision 21.1) is drawn after everything above for the same reason.
         self.swaption_smiles()
+        # The EURIBOR/ESTR tenor basis (decision 33.4) likewise comes after the smile.
+        self.tenor_basis()
 
     def prepend(self, earlier: _Sim) -> None:
         """Join an earlier segment in front of this one. ``earlier`` overlaps this segment by one

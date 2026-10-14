@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Owner | Counterparty Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.regulatory.simm` |
-| Last validated | 2026-09-26 |
+| Last validated | 2026-10-14 |
 
 ## Definition
 Initial margin per bilateral netting set with the structure of the ISDA SIMM: weighted
@@ -15,6 +15,10 @@ equity by bucket, FX, commodity by bucket, vega), bucket aggregation with correl
 cross-bucket aggregation with gamma, and a simple sum over risk classes. Parameters are
 approximate published-style values; this is not the licensed calibration and must not be
 used for margin calls.
+
+Rates are by currency and sub-curve: ESTR and EURIBOR-6M and -3M for EUR, at 99.3% between
+sub-curves of one currency. As in FRTB SA (REG-001), a sub-curve's delta is BASIS01 and the
+discount curve's is DV01 less BASIS01, because the platform's DV01 moves EURIBOR with ESTR.
 
 ## Use
 The margin enters the exposure engine as collateral held from the counterparty
@@ -52,4 +56,6 @@ ratio within one netting set over time. `novera.counterparty_risk.exposure.im_sc
 it give exposure at least as high everywhere and strictly higher somewhere; the margin never
 exceeds its t0 value and decays by the end of the grid),
 `::test_csa_what_if_baseline_ties_to_the_reported_profile`,
-`::test_counterparty_run_warns_when_initial_margin_is_absent`.
+`::test_counterparty_run_warns_when_initial_margin_is_absent`,
+`::test_tenor_basis_is_a_second_curve_in_girr_and_simm` (an outright EURIBOR position is
+margined as before, not twice).

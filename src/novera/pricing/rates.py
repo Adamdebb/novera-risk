@@ -7,12 +7,13 @@ from datetime import date
 from novera.domain.enums import SwapSide
 from novera.domain.instruments import GovernmentBond, InterestRateSwap
 from novera.domain.trades import Trade
+from novera.market_data.risk_factors import TENOR_BASIS_INDICES
 from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing.base import Cashflow, PricingResult, year_fraction_act365
 from novera.pricing.schedule import remaining_periods, schedule, year_fraction
 
 BOND_MODEL_VERSION = "1.0.0"
-SWAP_MODEL_VERSION = "1.0.0"
+SWAP_MODEL_VERSION = "2.0.0"
 
 # Static government-to-swap spread used to discount government bonds off the zero curve.
 # In Phase 3 this becomes a market-data factor per currency.
@@ -73,14 +74,26 @@ def price_government_bond(trade: Trade, market: MarketSnapshot, as_of: date) -> 
     )
 
 
+def projection_details(market: MarketSnapshot, index: str) -> dict[str, float]:
+    """``tenor_basis_applied`` for a term-rate index: 1 when its basis was in the snapshot, 0 when
+    it was projected off the discount curve instead (a real-data snapshot without the basis), so
+    the fallback is never silent. Empty for an overnight index, which needs no basis."""
+    if index in TENOR_BASIS_INDICES:
+        return {"tenor_basis_applied": 1.0 if market.has_tenor_basis(index) else 0.0}
+    return {}
+
+
 def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) -> PricingResult:
     swap = trade.instrument
     assert isinstance(swap, InterestRateSwap)
     if swap.maturity_date <= as_of:
         return PricingResult(
-            trade.trade_id, swap.currency, 0.0, "swap_single_curve", SWAP_MODEL_VERSION, note="matured"
+            trade.trade_id, swap.currency, 0.0, "swap_multi_curve", SWAP_MODEL_VERSION, note="matured"
         )
+    # Discount on the currency's IR curve (the overnight index); project the floating index off
+    # its own curve, which is the same curve unless the index carries a tenor basis (PR-002).
     curve = market.zero_curve(swap.currency)
+    projection = market.projection_curve(swap.float_index, swap.currency)
     n = trade.quantity
     fixed_pv = 0.0
     annuity = 0.0
@@ -101,9 +114,10 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
             if start < as_of
             else year_fraction(start, end, swap.float_day_count)
         )
-        # Simple forward in the leg's own day count: (DF(t1)/DF(t2) - 1) / tau.
-        df1, df = float(curve.df(t1)), float(curve.df(t2))
-        fwd = (df1 / df - 1.0) / tau if tau > 0 else 0.0
+        # Simple forward in the leg's own day count off the projection curve:
+        # (P(t1)/P(t2) - 1) / tau, discounted at DF(t2).
+        fwd = (float(projection.df(t1)) / float(projection.df(t2)) - 1.0) / tau if tau > 0 else 0.0
+        df = float(curve.df(t2))
         amt = n * (fwd + swap.float_spread) * tau
         float_pv += amt * df
         flows.append(Cashflow(end, -amt, "FLOAT"))
@@ -114,10 +128,11 @@ def price_interest_rate_swap(trade: Trade, market: MarketSnapshot, as_of: date) 
         trade_id=trade.trade_id,
         currency=swap.currency,
         pv_local=pv,
-        model="swap_single_curve",
+        model="swap_multi_curve",
         model_version=SWAP_MODEL_VERSION,
         cashflows=tuple(Cashflow(f.pay_date, sign * f.amount, f.kind) for f in flows),
         details={
+            **projection_details(market, swap.float_index),
             "fixed_leg_pv": fixed_pv,
             "float_leg_pv": float_pv,
             "annuity": annuity,

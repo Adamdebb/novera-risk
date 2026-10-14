@@ -24,6 +24,7 @@ TARGETS: dict[str, tuple[str, ...]] = {
     "rates_all": ("IR:",),
     "rates_usd": ("IR:USD:",),
     "rates_eur": ("IR:EUR:",),
+    "eur_basis": ("IRBASIS:EUR:",),
     "rates_gbp": ("IR:GBP:",),
     "rates_jpy": ("IR:JPY:",),
     "credit": ("CDS:",),
@@ -105,7 +106,8 @@ def _rules(shock: Shock, base: MarketSnapshot) -> list[ShockRule]:
                 ShockRule(p, vol_points=shock.size / 100.0 if shock.unit == "pct" else shock.size / 100.0)
             )
         elif shock.unit == "bp":
-            size = shock.size / 1e4 if p.startswith("IR:") else shock.size  # CDS spreads are quoted in bp
+            # Zero rates and basis are decimal; CDS spreads are quoted in bp.
+            size = shock.size / 1e4 if p.startswith(("IR:", "IRBASIS:")) else shock.size
             out.append(ShockRule(p, size, tenor_filter=shock.tenors))
         else:
             out.append(ShockRule(p, shock.size / 100.0, tenor_filter=shock.tenors))

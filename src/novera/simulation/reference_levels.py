@@ -236,6 +236,20 @@ SWAP_CURVES: dict[str, dict[str, float]] = {
         "30Y": 0.3500,
     },
 }
+# Tenor basis (decision 33): term-rate index minus the IR discount curve (ESTR for EUR), as a
+# continuously compounded zero spread by index tenor and curve tenor, decimal. Six-month money
+# carries more term and bank-credit premium than three-month, and both rise gently with maturity.
+BASIS_TENORS: tuple[str, ...] = ("1Y", "2Y", "5Y", "10Y", "30Y")
+TENOR_BASIS: dict[str, dict[str, dict[str, float]]] = {
+    "EUR": {
+        "6M": {"1Y": 0.0015, "2Y": 0.0017, "5Y": 0.0020, "10Y": 0.0023, "30Y": 0.0025},
+        "3M": {"1Y": 0.0009, "2Y": 0.0010, "5Y": 0.0012, "10Y": 0.0014, "30Y": 0.0015},
+    },
+}
+# How far a crisis widens the basis relative to how far it widens credit spreads, by curve
+# tenor: interbank stress shows at the short end first (1.0 = moves one for one in log terms).
+BASIS_CRISIS_LOADING: dict[str, float] = {"1Y": 0.9, "2Y": 0.8, "5Y": 0.6, "10Y": 0.45, "30Y": 0.35}
+
 # Currencies with a government bond market in the simulated bank.
 BOND_CURRENCIES: tuple[str, ...] = ("USD", "EUR", "GBP", "JPY", "MXN", "BRL", "ZAR")
 

@@ -66,7 +66,8 @@ _SPECS: dict[str, SourceSpec] = {
         "EUR rates",
         "ECB Data Portal: euro-area AAA government zero curve and euro short-term rate",
         PAID_RATES + ", EMMI EURIBOR licence",
-        "No free daily EUR swap curve; government curve only",
+        "No free daily EUR swap curve; government curve only. The IR:EUR curve is read as ESTR "
+        "(the discount curve); EURIBOR projects off it plus the IRBASIS:EUR spread",
     ),
     "IR:GBP": SourceSpec(
         "GBP rates",
@@ -172,6 +173,14 @@ _SPECS: dict[str, SourceSpec] = {
         "None; DTCC swap data repository shows public swaption trades but not a cube",
         "Bloomberg VCUB, LSEG, TP ICAP and Tradition broker cubes",
         "Normal vol cube is broker data; the simulator is the only history",
+    ),
+    "IRBASIS": SourceSpec(
+        "EURIBOR/ESTR tenor basis",
+        "Short end only: EMMI publishes EURIBOR fixings and the ECB publishes ESTR, so the "
+        "fixing-over-ESTR spread can be derived; no free basis-swap term structure",
+        "Bloomberg and LSEG ESTR/EURIBOR basis-swap curves, ICE Swap Rate, Tradeweb closes, "
+        "EMMI EURIBOR licence",
+        "Zero spread of EURIBOR-3M and -6M over the ESTR discount curve; the simulator is the only history",
     ),
     "SWSMILE": SourceSpec(
         "Swaption SABR smiles",

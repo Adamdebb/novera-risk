@@ -107,6 +107,13 @@ HYPOTHETICAL_LIBRARY: tuple[StressScenario, ...] = (
         (ShockRule("IR:USD:", 0.0075, tenor_filter=SHORT), ShockRule("IR:USD:", -0.0025, tenor_filter=LONG)),
     ),
     StressScenario(
+        "eur_basis_wider_20",
+        "EURIBOR basis +20bp",
+        "EURIBOR-6M over ESTR +20bp, EURIBOR-3M +15bp, ESTR unchanged: interbank stress",
+        "HYPOTHETICAL",
+        (ShockRule("IRBASIS:EUR:6M:", 0.0020), ShockRule("IRBASIS:EUR:3M:", 0.0015)),
+    ),
+    StressScenario(
         "eurusd_down_10",
         "EUR/USD -10%",
         "Euro devaluation against the dollar",

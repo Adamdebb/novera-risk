@@ -9,7 +9,7 @@ from datetime import date
 
 from dateutil.relativedelta import relativedelta
 
-from novera.domain.enums import BuySell, ExoticStyle
+from novera.domain.enums import BuySell, ExoticStyle, Frequency
 from novera.domain.instruments import (
     ETF,
     BasketLeg,
@@ -22,20 +22,25 @@ from novera.domain.instruments import (
     Swaption,
 )
 from novera.domain.trades import Trade
+from novera.market_data.risk_factors import TENOR_BASIS_INDICES
 from novera.market_data.sabr import alpha_from_atm
 from novera.market_data.snapshot import MarketSnapshot
 from novera.pricing.base import Cashflow, PricingResult, year_fraction_act365
 from novera.pricing.black import black_greeks, black_price
 from novera.pricing.credit import CDS_MODEL_VERSION, cds_legs
 from novera.pricing.exotic_formulas import bachelier_price, barrier_price, cash_or_nothing
+from novera.pricing.rates import projection_details
 from novera.pricing.schedule import remaining_periods, year_fraction
 
 REPO_MODEL_VERSION = "1.0.0"
-IR_FUTURE_MODEL_VERSION = "1.0.0"
-SWAPTION_MODEL_VERSION = "1.1.0"
+IR_FUTURE_MODEL_VERSION = "1.1.0"
+SWAPTION_MODEL_VERSION = "1.2.0"
 COMMODITY_OPTION_MODEL_VERSION = "1.0.0"
 FUND_LOOKTHROUGH_MODEL_VERSION = "1.0.0"
 EXOTIC_MODEL_VERSION = "1.0.0"
+
+# Fixing frequency of a term-rate index, by its tenor.
+INDEX_FREQUENCY: dict[str, Frequency] = {"3M": Frequency.QUARTERLY, "6M": Frequency.SEMI_ANNUAL}
 
 
 # --- Repo / reverse repo (PR-010) ----------------------------------------------------------------
@@ -96,7 +101,8 @@ def price_interest_rate_future(trade: Trade, market: MarketSnapshot, as_of: date
         return PricingResult(
             trade.trade_id, ins.currency, 0.0, "ir_future_forward", IR_FUTURE_MODEL_VERSION, note="expired"
         )
-    curve = market.zero_curve(ins.currency)
+    # The contract fixes on its own index: EURIBOR-3M projects off ESTR plus the 3M basis.
+    curve = market.projection_curve(ins.index, ins.currency)
     t1 = year_fraction_act365(as_of, ins.expiry_date)
     t2 = t1 + ins.tenor_years
     fwd = (float(curve.df(t1)) / float(curve.df(t2)) - 1.0) / ins.tenor_years
@@ -110,6 +116,7 @@ def price_interest_rate_future(trade: Trade, market: MarketSnapshot, as_of: date
         "ir_future_forward",
         IR_FUTURE_MODEL_VERSION,
         details={
+            **projection_details(market, ins.index),
             "forward_rate": fwd,
             "price": price,
             "forward": price,
@@ -124,7 +131,10 @@ def price_interest_rate_future(trade: Trade, market: MarketSnapshot, as_of: date
 
 
 def forward_swap(market: MarketSnapshot, ins: Swaption, as_of: date) -> tuple[float, float, date]:
-    """(forward swap rate, annuity per unit notional, swap maturity) off the single curve."""
+    """(forward swap rate, annuity per unit notional, swap maturity). The annuity discounts on
+    the currency's IR curve; the floating leg projects the swap's index off its own curve, so a
+    EURIBOR-6M swap carries the 6M basis. Without a basis the floating leg telescopes to
+    DF(start) - DF(end), the single-curve result."""
     curve = market.zero_curve(ins.currency)
     years = int(ins.swap_tenor.rstrip("Y"))
     maturity = ins.expiry_date + relativedelta(years=years)
@@ -132,9 +142,17 @@ def forward_swap(market: MarketSnapshot, ins: Swaption, as_of: date) -> tuple[fl
     for start, end in remaining_periods(ins.expiry_date, maturity, ins.fixed_frequency, as_of):
         tau = year_fraction(start, end, ins.fixed_day_count)
         annuity += tau * float(curve.df(year_fraction_act365(as_of, end)))
-    df_start = float(curve.df(year_fraction_act365(as_of, ins.expiry_date)))
-    df_end = float(curve.df(year_fraction_act365(as_of, maturity)))
-    fwd = (df_start - df_end) / annuity if annuity > 0 else 0.0
+    if market.has_tenor_basis(ins.float_index):
+        projection = market.projection_curve(ins.float_index, ins.currency)
+        index_tenor = TENOR_BASIS_INDICES[ins.float_index][1]
+        float_pv = 0.0
+        for start, end in remaining_periods(ins.expiry_date, maturity, INDEX_FREQUENCY[index_tenor], as_of):
+            t1, t2 = year_fraction_act365(as_of, start), year_fraction_act365(as_of, end)
+            float_pv += float(curve.df(t2)) * (float(projection.df(t1)) / float(projection.df(t2)) - 1.0)
+    else:
+        df_start = float(curve.df(year_fraction_act365(as_of, ins.expiry_date)))
+        float_pv = df_start - float(curve.df(year_fraction_act365(as_of, maturity)))
+    fwd = float_pv / annuity if annuity > 0 else 0.0
     return fwd, annuity, maturity
 
 
@@ -168,6 +186,7 @@ def price_swaption(trade: Trade, market: MarketSnapshot, as_of: date) -> Pricing
         "swaption_bachelier",
         SWAPTION_MODEL_VERSION,
         details={
+            **projection_details(market, ins.float_index),
             "forward_swap_rate": fwd,
             "annuity": annuity,
             "normal_vol_bp": vol_bp,

@@ -1,7 +1,10 @@
 """Bump-and-reprice sensitivities. Methodology record MR-001.
 
 Conventions (all in reporting currency, signed as P&L for the stated move):
-    DV01          P&L for +1bp in one zero-curve node (ladder) or the whole curve (parallel)
+    DV01          P&L for +1bp in one zero-curve node (ladder) or the whole curve (parallel);
+                  a EURIBOR trade's projection curve rides on the ESTR curve, so this is its
+                  full rate risk
+    BASIS01       P&L for +1bp in one tenor-basis node (EURIBOR over ESTR), ESTR held
     CS01          P&L for +1bp in a CDS index spread
     FX_DELTA      P&L for +1% in an FX spot factor (pair as quoted in the snapshot)
     EQ_DELTA      P&L for +1% in an equity or index spot
@@ -22,10 +25,11 @@ import pandas as pd
 from novera.risk.revaluation import Portfolio
 from novera.risk.scenarios import shocks_for_prefix
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 
 BUMPS = {
     "DV01": 0.0001,
+    "BASIS01": 0.0001,
     "CS01": 1.0,
     "FX_DELTA": 0.01,
     "EQ_DELTA": 0.01,
@@ -79,6 +83,13 @@ def compute_sensitivities(pf: Portfolio, cfg: SensitivityConfig | None = None) -
                 ccy,
                 BUMPS["DV01"],
             )
+
+    # Tenor basis: one row per node, bucket = curve tenor, underlying = currency.
+    for fid in base.factors_with_prefix("IRBASIS:"):
+        ccy, tenor = fid.split(":")[1], fid.split(":")[3]
+        rows += _rows(
+            pf.pnl_under_shocks({fid: BUMPS["BASIS01"]}), "BASIS01", fid, tenor, ccy, BUMPS["BASIS01"]
+        )
 
     for fid in base.factors_with_prefix("CDS:"):
         rows += _rows(

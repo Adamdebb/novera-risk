@@ -110,24 +110,22 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
         ProductSpec(
             ProductType.INTEREST_RATE_SWAP,
             "Interest-rate swap",
-            "swap_single_curve",
-            "Single-curve discounting and forwarding",
+            "swap_multi_curve",
+            "OIS discounting, forwards off the index's own curve",
             SWAP_MODEL_VERSION,
             "PR-002",
             "Interest-rate swap valuation",
             market_standard="Multi-curve: OIS discounting (SOFR, ESTR, SONIA) with forwards "
             "projected off the index's own curve; CSA discounting for bilateral trades.",
-            simplifications="One curve per currency for discounting and projection. Exact "
-            "for the USD SOFR and GBP SONIA swaps in the simulated book, where the index is "
-            "the OIS rate. EUR swaps reference EURIBOR-6M and ignore the ESTR/EURIBOR basis; "
-            "the error is measured, not assumed (see validation). No stored fixings, no CSA "
-            "discounting, no amortisation.",
-            appropriateness=Appropriateness.KNOWN_WEAKNESS,
+            simplifications="EURIBOR-6M projects off ESTR plus a simulated zero-spread basis "
+            "rather than a curve stripped from basis-swap quotes; OIS discounting stands for a "
+            "cash CSA in the swap's currency. No stored fixings, no amortisation. A snapshot "
+            "without the basis falls back to one curve and flags it (tenor_basis_applied = 0).",
+            appropriateness=Appropriateness.ACCEPTABLE_SIMPLIFICATION,
             validation="QuantLib benchmark: ql.VanillaSwap NPV within 2,000 on 100m and fair "
-            "rate within 0.2bp (test_par_swap_has_zero_pv_and_matches_quantlib). Measured gap: "
-            "single-curve PV of an in-the-money EUR swap against QuantLib with ESTR "
-            "discounting and EURIBOR projection, bounded at 1% of PV "
-            "(test_eur_swap_single_curve_gap_is_measured).",
+            "rate within 0.2bp, single curve (test_par_swap_has_zero_pv_and_matches_quantlib) "
+            "and for a EUR swap with ESTR discounting and EURIBOR-6M projection "
+            "(test_eur_swap_dual_curve_matches_quantlib).",
         ),
         ProductSpec(
             ProductType.REPO,
@@ -150,7 +148,7 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             ProductType.INTEREST_RATE_FUTURE,
             "Interest-rate future",
             "ir_future_forward",
-            "Curve forward, no convexity adjustment",
+            "Forward off the index's own curve, no convexity adjustment",
             IR_FUTURE_MODEL_VERSION,
             "PR-011",
             "Interest-rate future valuation",
@@ -160,7 +158,8 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             "IMM dates approximated as the third Friday without a holiday calendar.",
             appropriateness=Appropriateness.ACCEPTABLE_SIMPLIFICATION,
             validation="Analytic identities: price reproduces the curve forward, tick-value "
-            "identity, sign under a rate rise (test_ir_future_price_from_curve).",
+            "identity, sign under a rate rise (test_ir_future_price_from_curve); a EURIBOR-3M "
+            "future moves with the 3M basis only (test_euribor_future_projects_off_the_3m_basis).",
         ),
         ProductSpec(
             ProductType.SWAPTION,
@@ -173,7 +172,7 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             market_standard="Bachelier (normal) on a SABR-calibrated smile cube, OIS "
             "discounting, cash-settlement annuity convention where applicable.",
             simplifications="Normal SABR with beta fixed at zero: rho and nu per expiry and "
-            "tenor, alpha implied from the at-the-money cube; single-curve forwards; cash and "
+            "tenor, alpha implied from the at-the-money cube; cash and "
             "physical settlement priced alike; the vega rows bump the at-the-money cube with "
             "rho and nu held, so smile-parameter risk appears in full-revaluation VaR only.",
             appropriateness=Appropriateness.KNOWN_WEAKNESS,
@@ -182,7 +181,8 @@ PRODUCT_CATALOGUE: dict[ProductType, ProductSpec] = {
             "test_bachelier_matches_quantlib); the smile against ql.SabrSmileSection in normal "
             "vol within 1% across strikes (test_normal_sabr_matches_quantlib); the pricer reads "
             "the smile vol at the strike (test_swaption_prices_off_the_sabr_smile); payer minus "
-            "receiver equals A(S-K).",
+            "receiver equals A(S-K); the EUR forward against QuantLib's dual-curve fair rate "
+            "(test_eur_swaption_forward_is_dual_curve).",
         ),
         ProductSpec(
             ProductType.FX_SPOT,

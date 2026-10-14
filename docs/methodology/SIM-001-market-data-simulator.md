@@ -2,11 +2,11 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.2.0 |
+| Version          | 1.3.0 |
 | Owner            | Market Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.simulation.market_data` |
-| Last validated   | 2026-09-15 |
+| Last validated   | 2026-10-14 |
 
 ## Definition
 Produces a reproducible daily history for every factor in the risk-factor universe, plus
@@ -30,6 +30,13 @@ not a forecast and makes no claim about real markets.
   expiry) · skew_mult_t + x_t, −0.9, 0.9)` and `ν_t = clip(ν_base(expiry) · tilt(tenor) ·
   √vol_mult_t · e^{y_t}, 0.05, 1.5)`, so the skew steepens in the crash and the vol of vol
   rises in both episodes. `α` is not simulated: the pricer implies it from the ATM cube.
+- Tenor basis (EURIBOR over ESTR, decision 33.4): node `b_t = b_base(index, tenor) ·
+  exp(c_t + o_t + L(tenor) · C_t)`, with `c_t` one mean-reverting path per currency (long-run
+  standard deviation 0.10), `o_t` one per index (0.04), `C_t` the cumulative episode credit
+  drift (log credit-spread multiplier) and `L` the crisis loading, 0.9 at 1Y down to 0.35 at
+  30Y. Base levels 15 to 25bp for 6M and 9 to 15bp for 3M; the risk-off episode roughly
+  doubles the short end and the basis relaxes with credit afterwards. Drawn after the swaption
+  smile, so every other family is bit-identical to the history before the basis existed.
 
 ## Inputs
 Base levels and vols in `simulation/reference_levels.py`; episodes in
@@ -61,7 +68,9 @@ through the global factor. Not suitable for any regulatory purpose.
 ## Validation tests
 `tests/test_market_data.py`: reproducibility, positivity, skew sign, triangular FX
 consistency, backwardation shape, drawdown and rates-shock visibility, storage round trip,
-and that the extension leaves the core bit-identical and joins without a jump.
+that the extension leaves the core bit-identical and joins without a jump, and
+(`test_tenor_basis_is_drawn_last_and_widens_in_a_crisis`) that the basis is positive, 6M above
+3M, widens most at the short end in the crash and leaves every other series unchanged.
 
 ## Change history
 | Version | Date | Change | Author |
@@ -69,3 +78,4 @@ and that the extension leaves the core bit-identical and joins without a jump.
 | 1.0.0 | 2026-09-14 | Initial model | Novera |
 | 1.1.0 | 2026-09-15 | Default horizon three to five years as core plus extension segments (decision 20.1) | Novera |
 | 1.2.0 | 2026-09-15 | Swaption SABR smile parameters, drawn after every earlier family (decision 21.1) | Novera |
+| 1.3.0 | 2026-10-14 | EURIBOR-3M and -6M tenor basis over ESTR, widening with credit in a crisis (decision 33.4) | Novera |

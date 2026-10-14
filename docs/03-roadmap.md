@@ -168,8 +168,10 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       served at `GET /reference/model-inventory`, shown on the Reference data page and
       rendered into the record; the EUR single-curve swap gap measured against QuantLib
       dual-curve (round 18)
-- [ ] Dual-curve EUR swaps (ESTR discounting, EURIBOR projection): the first known weakness
-      in MV-001 to close; then a strike smile on the swaption cube
+- [x] Dual-curve EUR (ESTR discounting, EURIBOR projection off ESTR plus a simulated 3M and
+      6M tenor basis) for swaps, swaptions and EURIBOR futures, with BASIS01, a basis stress and
+      EURIBOR curves as GIRR and SIMM risk factors; the swap moves to acceptable simplification
+      in MV-001 (round 33). The strike smile on the swaption cube came first (round 21)
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
       for a full phase; morning overview and limits first
 

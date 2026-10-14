@@ -96,6 +96,8 @@ def _family_label(prefix: str) -> str:
     name = parts[1] if len(parts) > 1 else ""
     if kind == "IR":
         return f"{name} zero curve"
+    if kind == "IRBASIS":
+        return f"{name} {parts[2]} tenor basis" if len(parts) > 2 else f"{name} tenor basis"
     if kind == "CMD":
         return f"{name.title()} curve"
     if kind == "FX":
@@ -113,7 +115,7 @@ def describe_rule(rule: ShockRule) -> dict[str, Any]:
     if rule.vol_points is not None:
         size, unit = rule.vol_points * 100.0, "vol points"
         text = f"{size:+.0f} vol points on every node"
-    elif prefix.startswith("IR:"):
+    elif prefix.startswith(("IR:", "IRBASIS:")):
         size, unit = rule.size * 1e4, "bp"
         text = f"{size:+.0f}bp" + (f" on {tenors}" if tenors else " parallel")
     elif prefix.startswith("CDS:"):
@@ -135,8 +137,8 @@ def describe_rule(rule: ShockRule) -> dict[str, Any]:
 
 def _realised(fid: str, shock: float) -> dict[str, Any]:
     label = dict(HEADLINE_FACTORS).get(fid, fid)
-    if fid.startswith(("IR:", "CDS:", "SWRHO:")):
-        size, unit = (shock * 1e4 if fid.startswith("IR:") else shock), "bp"
+    if fid.startswith(("IR:", "IRBASIS:", "CDS:", "SWRHO:")):
+        size, unit = (shock * 1e4 if fid.startswith(("IR:", "IRBASIS:")) else shock), "bp"
         text = f"{size:+.0f}bp"
     else:
         size, unit = shock * 100.0, "%"

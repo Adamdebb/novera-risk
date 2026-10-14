@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from novera.domain.enums import ProductType
 from novera.domain.trades import Trade
+from novera.market_data.risk_factors import TENOR_BASIS_INDICES
 
 
 def _fx_prefixes(ccy: str, reporting: str) -> list[str]:
@@ -34,13 +35,21 @@ def _pair_prefixes(pair: str) -> list[str]:
     return out
 
 
+def _basis_prefixes(index: str) -> list[str]:
+    """The tenor-basis family a term-rate index projects off (decision 33.1), if any."""
+    hit = TENOR_BASIS_INDICES.get(index)
+    return [f"IRBASIS:{hit[0]}:{hit[1]}:"] if hit else []
+
+
 def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
     ins = trade.instrument
     pt = trade.product_type
     ccy = trade.currency
     out: list[str] = _fx_prefixes(ccy, reporting_currency)
-    if pt in (ProductType.GOVERNMENT_BOND, ProductType.INTEREST_RATE_SWAP):
+    if pt is ProductType.GOVERNMENT_BOND:
         out.append(f"IR:{ccy}:")
+    elif pt is ProductType.INTEREST_RATE_SWAP:
+        out += [f"IR:{ccy}:", *_basis_prefixes(ins.float_index)]  # type: ignore[attr-defined]
     elif pt is ProductType.FX_SPOT:
         out += _pair_prefixes(ins.pair)  # type: ignore[attr-defined]
     elif pt is ProductType.FX_FORWARD:
@@ -65,10 +74,12 @@ def factor_prefixes(trade: Trade, reporting_currency: str) -> tuple[str, ...]:
         out += [f"CDS:{ins.index_family}", f"IR:{ccy}:"]  # type: ignore[attr-defined]
     elif pt is ProductType.CRYPTO_SPOT:
         out.append(f"CRYPTO:{ins.symbol}")  # type: ignore[attr-defined]
-    elif pt in (ProductType.REPO, ProductType.INTEREST_RATE_FUTURE):
+    elif pt is ProductType.REPO:
         out.append(f"IR:{ccy}:")
+    elif pt is ProductType.INTEREST_RATE_FUTURE:
+        out += [f"IR:{ccy}:", *_basis_prefixes(ins.index)]  # type: ignore[attr-defined]
     elif pt is ProductType.SWAPTION:
-        out += [f"IR:{ccy}:", f"SWVOL:{ccy}:"]
+        out += [f"IR:{ccy}:", *_basis_prefixes(ins.float_index), f"SWVOL:{ccy}:"]  # type: ignore[attr-defined]
     elif pt is ProductType.CDS_SINGLE_NAME:
         out += [f"CDS:{ins.reference_entity}", f"IR:{ccy}:"]  # type: ignore[attr-defined]
     elif pt is ProductType.COMMODITY_OPTION:

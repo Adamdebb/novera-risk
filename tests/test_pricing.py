@@ -248,12 +248,11 @@ def test_par_swap_has_zero_pv_and_matches_quantlib(market: MarketSnapshot) -> No
     assert PRICERS[swap.product_type](payer, market, AS_OF).pv_local == pytest.approx(-res.pv_local)
 
 
-def test_eur_swap_single_curve_gap_is_measured(market: MarketSnapshot) -> None:
-    """MV-001 measured gap. EUR swaps reference EURIBOR-6M but the engine discounts and
-    projects on one curve. Price the same trade in QuantLib the market way (ESTR discounting
-    with EURIBOR projection, basis 15bp) and record the error: it must be small relative
-    to the PV, and non-zero so the gap is measured rather than assumed. A USD SOFR swap
-    has no such gap because the index is the discount rate."""
+def test_eur_swap_dual_curve_matches_quantlib(market: MarketSnapshot) -> None:
+    """PR-002 dual curve. EUR swaps reference EURIBOR-6M: the engine discounts on the IR:EUR
+    (ESTR) curve and projects off ESTR plus the IRBASIS:EUR:6M spread. Benchmarked against
+    QuantLib with the same two curves. Without the basis in the snapshot the swap falls back to
+    one curve, flags it in ``tenor_basis_applied``, and misses by the gap the upgrade closed."""
     swap = InterestRateSwap(
         instrument_id="S_EUR",
         currency="EUR",
@@ -278,11 +277,15 @@ def test_eur_swap_single_curve_gap_is_measured(market: MarketSnapshot) -> None:
         trader_id="T",
         **_bilateral(),
     )
-    single = PRICERS[swap.product_type](trade, market, AS_OF).pv_local
+    basis = 0.0015  # EURIBOR-6M over ESTR, flat
+    with_basis = market.with_values({f"IRBASIS:EUR:6M:{t}": basis for t in ("1Y", "2Y", "5Y", "10Y", "30Y")})
+    dual = PRICERS[swap.product_type](trade, with_basis, AS_OF)
+    single = PRICERS[swap.product_type](trade, market, AS_OF)
+    assert dual.details["tenor_basis_applied"] == 1.0
+    assert single.details["tenor_basis_applied"] == 0.0
 
-    basis = 0.0015  # ESTR below EURIBOR-6M
-    projection = _ql_curve(EUR_ZEROS, AS_OF)
-    discounting = _ql_curve(EUR_ZEROS - basis, AS_OF)
+    discounting = _ql_curve(EUR_ZEROS, AS_OF)
+    projection = _ql_curve(EUR_ZEROS + basis, AS_OF)
     index = ql.IborIndex(
         "SIM6M",
         ql.Period(6, ql.Months),
@@ -327,21 +330,37 @@ def test_eur_swap_single_curve_gap_is_measured(market: MarketSnapshot) -> None:
     )
     # QuantLib needs the fixing of the period already running (Mar to Sep 2026). The engine
     # has no stored fixings and accrues the remaining half period at the curve forward
-    # (PR-002), a cashflow of N (1/DF(T) - 1); hand QuantLib the fixing that pays the same.
+    # (PR-002), a cashflow of N (1/P(T) - 1); hand QuantLib the fixing that pays the same.
     period_start, period_end = ql.Date(11, 3, 2026), ql.Date(11, 9, 2026)
     tau_full = ql.Actual360().yearFraction(period_start, period_end)
     index.addFixing(period_start, (1.0 / projection.discount(period_end) - 1.0) / tau_full)
-    qs.setPricingEngine(ql.DiscountingSwapEngine(projection))
-    single_ql = qs.NPV()
     qs.setPricingEngine(ql.DiscountingSwapEngine(discounting))
     dual_ql = qs.NPV()
 
-    assert single == pytest.approx(single_ql, abs=2_000), "engine must match QuantLib single-curve"
-    gap = dual_ql - single
-    rel = gap / abs(single)
-    print(f"single-curve PV {single:,.0f}; dual-curve PV {dual_ql:,.0f}; gap {gap:,.0f} ({rel:.2%})")
-    assert abs(single) > 4e6, "the test trade should be well in the money for the gap to show"
-    assert 0.0005 < abs(rel) < 0.01, f"measured single-curve gap {rel:.2%} of PV outside its bound"
+    assert dual.pv_local == pytest.approx(dual_ql, abs=2_000), "engine must match QuantLib dual-curve"
+    assert dual.details["par_rate"] == pytest.approx(qs.fairRate(), abs=2e-5)
+    # IR:EUR is ESTR, so dropping the basis lowers every EURIBOR forward by it: the receiver
+    # gains about notional x basis x annuity (the legs' day counts differ by ~1.4%).
+    gap = single.pv_local - dual.pv_local
+    print(f"dual-curve PV {dual.pv_local:,.0f}; single-curve fallback {single.pv_local:,.0f}; gap {gap:,.0f}")
+    assert gap == pytest.approx(100e6 * basis * dual.details["annuity"], rel=0.03)
+
+
+def test_tenor_basis_moves_only_term_rate_indices(market: MarketSnapshot) -> None:
+    """The projection curve is the discount curve plus the index's basis, interpolated in
+    tenor; an overnight index (SOFR) and an index without basis nodes project off the
+    discount curve itself."""
+    nodes = {"1Y": 0.0010, "2Y": 0.0012, "5Y": 0.0016, "10Y": 0.0020, "30Y": 0.0024}
+    snap = market.with_values({f"IRBASIS:EUR:6M:{t}": v for t, v in nodes.items()})
+    disc = snap.zero_curve("EUR")
+    proj = snap.projection_curve("EUR-EURIBOR-6M", "EUR")
+    spread = proj.zeros - disc.zeros
+    assert spread[list(disc.tenors).index(5.0)] == pytest.approx(0.0016)
+    assert spread[list(disc.tenors).index(7.0)] == pytest.approx(0.0016 + 0.4 * 0.0004)
+    assert spread[0] == pytest.approx(0.0010)  # flat below the first basis node
+    assert snap.projection_curve("USD-SOFR", "USD") is snap.zero_curve("USD")
+    assert snap.projection_curve("EUR-EURIBOR-3M", "EUR") is disc  # no 3M nodes in this snapshot
+    assert not snap.has_tenor_basis("EUR-EURIBOR-3M") and snap.has_tenor_basis("EUR-EURIBOR-6M")
 
 
 # --- FX ------------------------------------------------------------------------------

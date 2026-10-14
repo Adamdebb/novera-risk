@@ -1083,6 +1083,69 @@ too. One question round; the owner took every recommended option.
 - Where: `Metric.stages` and `Metric.unavailable` in `workflows/signoff.py`; test
   `test_a_failed_late_engine_leaves_a_partial_run`
 
+## Round 33 — Dual-curve EUR pricing (2026-10-14)
+
+Context: second-look item 15. EUR swaps reference EURIBOR-6M but were projected and discounted
+on one curve, a gap measured at 0.53% of PV in PR-002. One question round; the owner took every
+recommended option.
+
+### 33.1 How the projection curve is held
+- Options: basis spreads over ESTR ★ · a full second EURIBOR curve
+- Choice (owner): **basis spreads over ESTR**. The existing `IR:EUR:{tenor}` curve is read as
+  the ESTR discount curve, so its history does not move. New factors `IRBASIS:EUR:{index}:{tenor}`
+  hold the EURIBOR-minus-ESTR zero spread; projection = ESTR + basis. Basis risk then shows as
+  its own line in sensitivities and VaR, as a desk reports it, instead of hiding inside two
+  near-identical curves.
+- Where: `market_data/risk_factors.py` (`IR_BASIS`, `irbasis_id`, `TENOR_BASIS_INDICES`),
+  `MarketSnapshot.projection_curve`, `pricing/rates.py` (`swap_multi_curve` 2.0.0), PR-002 2.0.0.
+  A snapshot without the basis (real data) projects off the discount curve and says so in
+  `details.tenor_basis_applied`.
+- Found: reading `IR:EUR` as ESTR moves EURIBOR forwards up by the basis, so the old 0.53%
+  measurement (curve read as EURIBOR, decision 18.3) does not describe the fallback any more:
+  on the test swap the single-curve fallback now misses by notional × basis × annuity, 19% of
+  PV. The test was rewritten as a QuantLib dual-curve benchmark.
+
+### 33.2 Which products move
+- Options: every EURIBOR product ★ · EUR swaps only
+- Choice (owner): **every EURIBOR product**: EUR swaps (6M basis), EUR swaptions (forward swap
+  rate projected off EURIBOR-6M, annuity on ESTR) and EURIBOR-3M futures (3M basis).
+- Choice (default): **BASIS01** per basis node in the sensitivities, DV01 left as the full rate
+  risk (the projection rides on ESTR), a 13th hypothetical stress `eur_basis_wider_20`, and an
+  `eur_basis` what-if target. FRTB SA and SIMM take EURIBOR as a second curve: its delta is
+  BASIS01 and ESTR's is DV01 less BASIS01, at 0.999 (SA) and 0.993 (SIMM) across curves, so an
+  outright swap is not charged twice; IMA gives basis the IR liquidity horizon.
+- Where: `pricing/breadth.py` (PR-011 1.1.0, PR-012 1.2.0), `risk/factor_mapping.py`,
+  `risk/sensitivities.py` (MR-001 1.1.0), `risk/stress.py` (MR-005 1.2.0),
+  `regulatory/frtb_sa.py` (REG-001 1.1.0), `regulatory/simm.py` (REG-004 1.2.0),
+  `regulatory/frtb_ima.py`, `ai/whatif.py`, MV-001 1.1.0 (swap now acceptable simplification).
+
+### 33.3 The demo breaches
+- Options: keep the seven ★ · accept what comes
+- Choice (owner): **keep the seven demo breaches**. Trades are re-struck at par under the new
+  pricing, the demo is rebuilt and the same breaches are confirmed; an EUR limit moves only if a
+  breach does, and the move is logged here.
+- Result: rebuilt with the same recipe (bank simulate, EOD 11 and 14 September with the Brent
+  breach acknowledged between them, `schedule --once` for the 15th, vendor feed and
+  reconciliation; fund simulate and two EODs). The bank keeps the same seven breaches and the
+  fund the same three, so **no limit was moved**. EUR_RATES_DV01_EUR stays at 1.023 on the 15th
+  (DV01 is unchanged by design: the projection rides on ESTR); EUR_RATES_VAR falls 1 to 2 points
+  (0.952 to 0.932 on the 15th) and firm VaR rises about 2 points; the drivers were not
+  decomposed. Two warning flags cross the 80%
+  line: EUR_RATES_VAR on the 11th drops to OK (0.791) and MACRO_VAR on the 14th becomes a
+  WARNING (0.801).
+
+### 33.4 How the basis moves
+- Options: simulated with crisis widening ★ · static spread
+- Choice (owner): **simulated**: a term structure, mean-reverting, widening in the two stylised
+  crisis episodes as interbank stress does. Drawn after every existing family so the calibrated
+  history stays bit-identical.
+- Where: `_Sim.tenor_basis` in `simulation/market_data.py`, levels in
+  `simulation/reference_levels.py` (`TENOR_BASIS`, `BASIS_CRISIS_LOADING`), SIM-001 1.3.0. Ten
+  factors (1,504 in all). Checked against the committed code: all 1,949,670 earlier history
+  values identical; `test_tenor_basis_is_drawn_last_and_widens_in_a_crisis` keeps it so.
+- Revisit: the composite stresses (global risk-off) leave the basis where it is, which
+  understates an interbank widening; only the basis scenario and the historical episodes move it.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1121,9 +1184,10 @@ too. One question round; the owner took every recommended option.
     data model settles and the drift test has been quiet for a phase.
 14. **Grouped rows carry the dimension as an extra field** (14.1): a `{by, rows}` shape would
     type cleanly; deferred because it breaks every screen that reads those endpoints.
-15. **EUR swaps on a single curve** (18.3): the gap is measured at 0.53% of PV on the test
-    trade but the EUR book is still priced without the ESTR/EURIBOR basis; dual-curve is the
-    next pricing upgrade. The market standard named per product in MV-001 is sell-side
+15. **EUR tenor basis is simulated, not stripped** (33.1, closes the single-curve gap of 18.3):
+    EURIBOR projects off ESTR plus a zero-spread basis drawn by the simulator; with real data
+    the 3M and 6M curves should be bootstrapped from ESTR/EURIBOR basis swaps, and no free source
+    gives that term structure. The market standard named per product in MV-001 is sell-side
     practice; a fund marking listed products to screen would rate the ETF row differently.
 16. **Candidate market-data sources are untested text** (19.4): the free and paid sources
     per group were written from knowledge of the vendors, not from a fetch; wire one before

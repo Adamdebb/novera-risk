@@ -27,6 +27,7 @@ def test_universe_shape() -> None:
     types = {f.factor_type.value for f in u}
     assert types == {
         "IR_ZERO",
+        "IR_BASIS",
         "FX_SPOT",
         "EQUITY_SPOT",
         "EQUITY_INDEX",
@@ -38,6 +39,7 @@ def test_universe_shape() -> None:
         "SWAPTION_VOL",
     }
     assert "IR:USD:10Y" in ids and "VOL:SPX:3M:0.90" in ids and "CMD:BRENT:3Y" in ids
+    assert "IRBASIS:EUR:6M:10Y" in ids and "IRBASIS:EUR:3M:1Y" in ids
 
 
 def test_history_is_reproducible_and_clean(md) -> None:
@@ -165,3 +167,30 @@ def test_swaption_smile_factors(md) -> None:
     assert low > high  # negative rho: receivers struck low are richer
     smile = s.swaption_smile("USD", 1.0, 5.0)
     assert smile is not None and -0.9 < smile[0] < 0 < smile[1] < 1.5
+
+
+def test_tenor_basis_is_drawn_last_and_widens_in_a_crisis() -> None:
+    """Decision 33.4. The EURIBOR/ESTR basis is a positive spread, six-month above three-month,
+    drawn after every other family so the history the limits were calibrated on does not move,
+    and it widens through the risk-off episode (the first, 480 days back) at the short end most."""
+    md = generate_market_data(MarketSimConfig(end_date=BD, years=3.0))
+    wide = md.history.pivot(index="as_of", columns="factor_id", values="value")
+    basis = [c for c in wide.columns if c.startswith("IRBASIS:")]
+    assert len(basis) == 10 and (wide[basis] > 0).all().all()
+    assert (wide["IRBASIS:EUR:6M:5Y"] > wide["IRBASIS:EUR:3M:5Y"]).all()
+    n = len(wide)
+    before, peak = wide.iloc[n - 481], wide.iloc[n - 480 + 22]
+    short = peak["IRBASIS:EUR:6M:1Y"] / before["IRBASIS:EUR:6M:1Y"]
+    long_ = peak["IRBASIS:EUR:6M:30Y"] / before["IRBASIS:EUR:6M:30Y"]
+    assert short > 1.4 and short > long_ > 1.0
+    # Every other family is exactly what the simulator draws with the basis switched off.
+    from novera.simulation.market_data import _Sim
+
+    cfg = MarketSimConfig(end_date=BD, years=3.0)
+    with_basis, without = _Sim(cfg), _Sim(cfg)
+    without.tenor_basis = lambda: None  # type: ignore[method-assign]
+    with_basis.simulate()
+    without.simulate()
+    assert set(with_basis.series) - set(without.series) == set(basis)
+    for fid, path in without.series.items():
+        np.testing.assert_array_equal(with_basis.series[fid], path, err_msg=fid)

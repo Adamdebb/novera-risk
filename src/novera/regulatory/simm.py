@@ -15,7 +15,7 @@ import pandas as pd
 
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.1.0"
+MODEL_VERSION = "1.2.0"
 
 # Risk weights per bp of sensitivity by tenor (regular-volatility currencies), in currency units per bp.
 IR_RW = {
@@ -34,6 +34,7 @@ IR_RW = {
 }
 IR_RW_HIGH_VOL = 1.6  # multiplier for MXN, BRL, ZAR, TRY, ARS, INR
 IR_TENOR_RHO_THETA = 0.15
+IR_SUBCURVE_RHO = 0.993  # ISDA SIMM correlation between sub-curves of one currency
 IR_CCY_GAMMA = 0.27
 CS_RW = {"IG": 75, "HY": 240}  # per bp
 CS_RHO = 0.5
@@ -66,8 +67,12 @@ TENOR_YEARS = {
 
 
 def _ir_rho(a: str, b: str) -> float:
+    """Keys are ``"5Y"`` on the discount curve and ``"6M:5Y"`` on a term-rate sub-curve."""
+    ca, _, a = a.rpartition(":")
+    cb, _, b = b.rpartition(":")
     ta, tb = TENOR_YEARS[a], TENOR_YEARS[b]
-    return max(np.exp(-IR_TENOR_RHO_THETA * abs(ta - tb) / min(ta, tb)), 0.4)
+    rho = max(np.exp(-IR_TENOR_RHO_THETA * abs(ta - tb) / min(ta, tb)), 0.4)
+    return rho if ca == cb else rho * IR_SUBCURVE_RHO
 
 
 def _k(ws: dict[str, float], rho) -> float:
@@ -101,12 +106,21 @@ def simm_for_sensitivities(sens: pd.DataFrame, base_vols: dict[str, float]) -> d
     """Margin by risk class for one sensitivity set (already filtered to a netting set)."""
     out: dict[str, float] = {}
     # Rates.
+    # A term-rate sub-curve (EURIBOR-6M) is its own risk factor: its delta is BASIS01 and the
+    # discount curve's is DV01 less BASIS01, as in FRTB SA (REG-004).
     dv = sens[sens["measure"] == "DV01"]
+    basis = sens[sens["measure"] == "BASIS01"]
     kb, sb = {}, {}
     for ccy, g in dv.groupby("underlying"):
         mult = IR_RW_HIGH_VOL if ccy in ("MXN", "BRL", "ZAR", "TRY", "ARS", "INR") else 1.0
+        delta = g.groupby("bucket")["value"].sum().to_dict()
+        bg = basis[basis["underlying"] == ccy]
+        curve_of = bg["factor_id"].str.split(":").str[2]
+        for (curve, b), v in bg.groupby([curve_of, "bucket"])["value"].sum().items():
+            delta[f"{curve}:{b}"] = delta.get(f"{curve}:{b}", 0.0) + v
+            delta[b] = delta.get(b, 0.0) - v
         # v is P&L per bp; RW is per bp, so WS = v(per bp) x RW(bp) in currency units.
-        ws = {b: v * IR_RW.get(b, 51) * mult for b, v in g.groupby("bucket")["value"].sum().items()}
+        ws = {k: v * IR_RW.get(k.rpartition(":")[2], 51) * mult for k, v in delta.items()}
         kb[ccy] = _k(ws, _ir_rho)
         sb[ccy] = sum(ws.values())
     if kb:

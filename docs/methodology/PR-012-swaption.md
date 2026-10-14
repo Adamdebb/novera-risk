@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.breadth.price_swaption`, `novera.pricing.exotic_formulas.bachelier_price`, `novera.market_data.sabr` |
-| Last validated | 2026-09-15 |
+| Last validated | 2026-10-14 |
 
 ## Definition
 Normal (Bachelier) model on the forward swap rate `S` with annuity `A = Σ τ_i DF(t_i)` over the
@@ -36,8 +36,14 @@ A snapshot without `SWRHO:`/`SWNU:` factors prices every strike at `σ_ATM`, as 
 did. `details` carries `normal_vol_bp` (the vol used), `atm_vol_bp`, `sabr_rho`, `sabr_nu` and
 `sabr_alpha_bp`.
 
+### Forward swap rate
+The annuity discounts on the currency's `IR:` (OIS) curve. The floating leg projects the swap's
+index off its own curve (PR-002): `S = Σ DF(t_i) (P(t_{i−1})/P(t_i) − 1) / A` over the index's
+fixing periods (semi-annual for EURIBOR-6M). For an overnight index `P = DF` and the sum
+telescopes to the single-curve `(DF(T_0) − DF(T_n)) / A`, which is what the code computes.
+
 ## Inputs
-Zero curve of the currency (single curve: forwards and discounting off the same curve);
+Discount curve of the currency and, for a EURIBOR swaption, the `IRBASIS:EUR:6M:` basis;
 swaption vol cube and, when stored, the SABR rho and nu cubes; expiry, tenor, strike and
 payer/receiver from the instrument.
 
@@ -47,7 +53,8 @@ convention). The cubes are flat outside their grid. `β` is fixed at zero rather
 calibrated; `ρ` and `ν` are simulated, not calibrated to broker smile quotes. The
 sensitivities bump the ATM cube with `ρ` and `ν` held, so smile-parameter risk appears in
 full-revaluation VaR (where `SWRHO:` shocks are absolute and `SWNU:` relative) but not in the
-VEGA rows or the delta-gamma-vega challenger. Single-curve forwards (no OIS/IBOR basis).
+VEGA rows or the delta-gamma-vega challenger. The vol cube is quoted on the EURIBOR forward
+and is not re-read when the basis moves (sticky-strike in the basis).
 
 ## Validation tests
 `test_swaption_matches_quantlib_bachelier`: within 0.2% of `ql.BachelierSwaptionEngine` on the
@@ -59,10 +66,13 @@ below to 200bp above the forward, reproduces `α` from the ATM vol, is symmetric
 and skews the right way for `ρ < 0`. `test_swaption_prices_off_the_sabr_smile`: the pricer
 reads the smile vol at the strike, agrees with the flat cube at the money, and prices as
 Bachelier at that vol. `test_swaption_smile_factors`: simulated `ρ` and `ν` stay in bounds and
-produce a downward skew.
+produce a downward skew. `test_eur_swaption_forward_is_dual_curve`: a EUR swaption's forward
+equals QuantLib's fair rate of the forward-starting swap with ESTR discounting and EURIBOR
+projection within 0.02bp; the basis lifts the forward by about itself and leaves the annuity.
 
 ## Change history
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-14 | Bachelier on the ATM cube | Novera |
 | 1.1.0 | 2026-09-15 | Normal SABR smile in strike (decision 21.1) | Novera |
+| 1.2.0 | 2026-10-14 | Forward swap rate projected off the index's own curve, EURIBOR-6M over ESTR (decision 33.2) | Novera |

@@ -47,7 +47,7 @@ from novera.simulation import (
 )
 from novera.simulation import instruments as inst
 from novera.simulation.market_data import MarketSimConfig, build_risk_factor_universe, generate_market_data
-from tests.test_pricing import USD_ZEROS, _bilateral, _listed, _market, _ql_curve
+from tests.test_pricing import EUR_ZEROS, USD_ZEROS, _bilateral, _listed, _market, _ql_curve
 
 AS_OF = date(2026, 9, 11)
 
@@ -226,6 +226,73 @@ def test_swaption_matches_quantlib_bachelier(market: MarketSnapshot) -> None:
     rr = PRICERS[sw.product_type](rec, market, AS_OF)
     assert r.pv_local - rr.pv_local == pytest.approx(100e6 * annuity * (fwd - 0.038), rel=1e-9)
     assert r.details["vega_1bp"] > 0
+
+
+BASIS_TENORS = ("1Y", "2Y", "5Y", "10Y", "30Y")
+
+
+def test_eur_swaption_forward_is_dual_curve(market: MarketSnapshot) -> None:
+    """PR-012 1.2.0: a EURIBOR-6M swaption's forward swap rate projects the floating leg off
+    ESTR plus the 6M basis and discounts on ESTR. Benchmarked to QuantLib's fair rate of the
+    forward-starting swap with the same two curves; the annuity is unchanged by the basis."""
+    basis = 0.0020
+    snap = market.with_values({f"IRBASIS:EUR:6M:{t}": basis for t in BASIS_TENORS})
+    expiry = AS_OF + relativedelta(years=1)
+    sw = inst.swaption("EUR", expiry, "5Y", 0.025, payer=True)
+    fwd, annuity, maturity = forward_swap(snap, sw, AS_OF)
+    fwd_single, annuity_single, _ = forward_swap(market, sw, AS_OF)
+    assert annuity == pytest.approx(annuity_single, rel=1e-12)
+    discounting = _ql_curve(EUR_ZEROS, AS_OF)
+    projection = _ql_curve(EUR_ZEROS + basis, AS_OF)
+    index = ql.IborIndex(
+        "SIM6M", ql.Period(6, ql.Months), 0, ql.EURCurrency(), ql.NullCalendar(), ql.Unadjusted, False,
+        ql.Actual360(), projection,
+    )  # fmt: skip
+    start = ql.Date(expiry.day, expiry.month, expiry.year)
+    end = ql.Date(maturity.day, maturity.month, maturity.year)
+    fixed = ql.Schedule(
+        start, end, ql.Period(6, ql.Months), ql.NullCalendar(), ql.Unadjusted, ql.Unadjusted,
+        ql.DateGeneration.Backward, False,
+    )  # fmt: skip
+    swap = ql.VanillaSwap(
+        ql.Swap.Payer, 100e6, fixed, 0.025, ql.Thirty360(ql.Thirty360.USA), fixed, index, 0.0, ql.Actual360()
+    )
+    swap.setPricingEngine(ql.DiscountingSwapEngine(discounting))
+    assert fwd == pytest.approx(swap.fairRate(), abs=2e-6)
+    # The basis lifts the forward by about itself (the legs' day counts differ slightly).
+    assert fwd - fwd_single == pytest.approx(basis, rel=0.03)
+
+
+def test_euribor_future_projects_off_the_3m_basis(market: MarketSnapshot) -> None:
+    """PR-011 1.1.0: a EURIBOR-3M future's forward is ESTR plus the 3M basis; the 6M basis
+    does not touch it, and a SOFR future ignores both."""
+    fut = inst.ir_futures("EUR", AS_OF)[2]
+    t = Trade(
+        trade_id="F_EUR",
+        instrument=fut,
+        direction=BuySell.BUY,
+        quantity=100,
+        trade_price=98.0,
+        trade_date=AS_OF,
+        book_id="EUR_STIR",
+        trader_id="T1",
+        **_listed("EXCH_EUREX"),
+    )
+    plain = PRICERS[fut.product_type](t, market, AS_OF)
+    three = market.with_values({f"IRBASIS:EUR:3M:{x}": 0.0010 for x in BASIS_TENORS})
+    r = PRICERS[fut.product_type](t, three, AS_OF)
+    assert r.details["tenor_basis_applied"] == 1.0 and plain.details["tenor_basis_applied"] == 0.0
+    # A continuously compounded zero spread lifts the simple forward by slightly more than itself.
+    assert r.details["forward_rate"] - plain.details["forward_rate"] == pytest.approx(0.0010, rel=0.01)
+    assert r.details["price"] == pytest.approx(plain.details["price"] - 0.10, abs=1e-3)
+    six = market.with_values({f"IRBASIS:EUR:6M:{x}": 0.0010 for x in BASIS_TENORS})
+    assert PRICERS[fut.product_type](t, six, AS_OF).pv_local == pytest.approx(plain.pv_local)
+    assert (
+        "tenor_basis_applied"
+        not in PRICERS[fut.product_type](
+            t.model_copy(update={"instrument": inst.ir_futures("USD", AS_OF)[2]}), three, AS_OF
+        ).details
+    )
 
 
 def test_single_name_cds_and_index_share_the_model(market: MarketSnapshot) -> None:
@@ -508,6 +575,28 @@ def test_sensitivities_for_new_products(sim) -> None:
     assert idx.trades_for(["SWVOL:USD:1Y:5Y"]) <= {
         tid for tid, t in by.items() if t.product_type.value == "SWAPTION"
     }
+    # Tenor basis (decision 33): BASIS01 only on EURIBOR products, 6M nodes on swaps and
+    # swaptions, 3M nodes on futures; a receiver loses when EURIBOR rises over ESTR.
+    basis = sens[sens.measure == "BASIS01"]
+    assert len(basis) and set(basis["underlying"]) == {"EUR"}
+    for tid, fid in zip(basis["trade_id"], basis["factor_id"], strict=True):
+        ins = by[tid].instrument
+        index = getattr(ins, "float_index", None) or getattr(ins, "index", None)
+        assert index == ("EUR-EURIBOR-3M" if ":3M:" in fid else "EUR-EURIBOR-6M"), (tid, fid)
+    receivers = [
+        tid
+        for tid, t in by.items()
+        if t.product_type.value == "INTEREST_RATE_SWAP"
+        and t.currency == "EUR"
+        and t.swap_side.value == "RECEIVE_FIXED"
+    ]
+    assert receivers and (basis[basis.trade_id.isin(receivers)].groupby("trade_id")["value"].sum() < 0).all()
+    assert idx.trades_for(["IRBASIS:EUR:6M:5Y"]) == {
+        tid
+        for tid, t in by.items()
+        if getattr(t.instrument, "float_index", None) == "EUR-EURIBOR-6M"
+        and t.product_type.value in ("INTEREST_RATE_SWAP", "SWAPTION")
+    }
 
 
 # --- market-data proxies -----------------------------------------------------------------------
@@ -601,7 +690,7 @@ def test_swaption_prices_off_the_sabr_smile(market: MarketSnapshot) -> None:
     assert smile.pv_local == pytest.approx(
         100e6 * annuity * bachelier_price(True, fwd, 0.025, expected, t), rel=1e-9
     )
-    assert smile.model_version == "1.1.0"
+    assert smile.model_version == "1.2.0"
     # At the money the smile vol is the cube quote, so the two snapshots agree.
     atm = trade(round(fwd, 8))
     a, b = (

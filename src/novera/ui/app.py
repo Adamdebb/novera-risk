@@ -318,7 +318,18 @@ elif page == "Drill-down":
     st.subheader("DV01 ladder (per bp)")
     measure = st.selectbox(
         "Measure",
-        ["DV01", "CS01", "FX_DELTA", "EQ_DELTA", "CMD_DELTA", "CRYPTO_DELTA", "VEGA", "GAMMA", "THETA"],
+        [
+            "DV01",
+            "BASIS01",
+            "CS01",
+            "FX_DELTA",
+            "EQ_DELTA",
+            "CMD_DELTA",
+            "CRYPTO_DELTA",
+            "VEGA",
+            "GAMMA",
+            "THETA",
+        ],
     )
     sens = df(load("sensitivities", run_id, measure=measure, by=level, **filters))
     if not sens.empty:
@@ -2538,8 +2549,8 @@ elif page == "Reference data":
                 height=min(80 + 36 * len(table), 800),
             )
             st.caption(
-                "Known weaknesses: EUR swaps on a single curve (measured gap in PR-002), "
-                "swaptions without a strike smile, barrier options on one flat vol."
+                "Known weaknesses: swaptions on a simulated normal SABR smile with beta fixed at "
+                "zero, barrier options on one flat vol."
             )
     elif what == "Risk measures":
         ref = client.measure_reference()

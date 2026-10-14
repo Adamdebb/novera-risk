@@ -17,7 +17,7 @@ from novera.market_data.history import MarketHistory
 from novera.market_data.risk_factors import RiskFactor
 from novera.market_data.snapshot import MarketSnapshot
 
-ABSOLUTE_PREFIXES = ("IR:", "CDS:", "SWRHO:")
+ABSOLUTE_PREFIXES = ("IR:", "IRBASIS:", "CDS:", "SWRHO:")
 
 
 def shock_type_of(factor_id: str, universe: dict[str, RiskFactor] | None = None) -> str:

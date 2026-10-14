@@ -151,7 +151,10 @@ def test_http_endpoints(client):
     swaption = next(p for a in prods for p in a["products"] if p["product_type"] == "SWAPTION")
     assert swaption["methodology"] == "PR-012" and swaption["venue"] == "OTC"
     assert {f["name"] for f in swaption["fields"]} >= {"expiry_date", "swap_tenor", "strike", "payer"}
-    assert swaption["appropriateness"] == "known_weakness" and "single-curve" in swaption["simplifications"]
+    assert (
+        swaption["appropriateness"] == "known_weakness"
+        and "beta fixed at zero" in swaption["simplifications"]
+    )
     inv = client.get("/reference/model-inventory").json()
     assert inv["record"] == "MV-001" and len(inv["rows"]) == 19
     assert set(inv["summary"]) == {"market_standard", "acceptable_simplification", "known_weakness"}
@@ -180,7 +183,10 @@ def test_http_endpoints(client):
         "NAMED_CRISIS",
     ]
     hyp = {x["scenario_id"]: x for x in lib["categories"][0]["scenarios"]}
-    assert len(hyp) == 12 and hyp["usd_rates_up_100"]["shocks"][0]["size"] == 100.0
+    assert len(hyp) == 13 and hyp["usd_rates_up_100"]["shocks"][0]["size"] == 100.0
+    basis = hyp["eur_basis_wider_20"]["shocks"][0]
+    assert basis["unit"] == "bp" and basis["size"] == pytest.approx(20.0)
+    assert basis["family"] == "EUR 6M tenor basis"
     assert hyp["usd_rates_up_100"]["shocks"][0]["unit"] == "bp" and hyp["usd_rates_up_100"]["in_daily_run"]
     steep = hyp["usd_steepener"]["shocks"]
     assert steep[0]["tenors"] == "1M, 3M, 6M, 1Y, 2Y" and steep[0]["size"] == -50.0

@@ -17,9 +17,9 @@ from novera.counterparty_risk import (
 from novera.market_data.history import MarketHistory
 from novera.regulatory import run_regulatory
 from novera.regulatory.frtb_ima import liquidity_horizon, multiplier_from_exceptions
-from novera.regulatory.frtb_sa import _aggregate, _girr_rho, frtb_sa
+from novera.regulatory.frtb_sa import GIRR_GAMMA, _aggregate, _girr_rho, _girr_ws, frtb_sa
 from novera.regulatory.saccr import maturity_factor
-from novera.regulatory.simm import _ir_rho
+from novera.regulatory.simm import _ir_rho, simm_for_sensitivities
 from novera.risk import VaRConfig
 from novera.simulation import (
     TradeGeneratorConfig,
@@ -84,6 +84,42 @@ def test_frtb_building_blocks():
     assert maturity_factor(0.5, False) == pytest.approx(np.sqrt(0.5)) and maturity_factor(5, False) == 1.0
     assert maturity_factor(5, True) == pytest.approx(1.5 * np.sqrt(10 / 250))
     assert _ir_rho("1Y", "1Y") == 1.0 and _ir_rho("1M", "30Y") == 0.4
+
+
+def _rate_sens(dv01: float, basis01: float) -> pd.DataFrame:
+    rows = [("DV01", "IR:EUR:5Y", dv01), ("BASIS01", "IRBASIS:EUR:6M:5Y", basis01)]
+    return pd.DataFrame(
+        [
+            {"trade_id": "a", "measure": m, "factor_id": f, "bucket": "5Y", "underlying": "EUR", "value": v}
+            for m, f, v in rows
+            if v
+        ]
+    )
+
+
+def test_tenor_basis_is_a_second_curve_in_girr_and_simm():
+    """Decision 33.1. DV01 bumps ESTR with the EURIBOR projection riding on it, so a EURIBOR
+    swap's DV01 already holds its projection risk. MAR21 and SIMM bump each curve with the other
+    held: the EURIBOR curve gets BASIS01 and ESTR gets DV01 less BASIS01, correlated at 0.999
+    (SIMM 0.993). An outright swap is charged as before, not twice; a pure basis position
+    (DV01 nil) is charged on the small decorrelation only; IMA treats basis like its curve."""
+    ws = _girr_ws(_rate_sens(100.0, 60.0))["EUR"]
+    assert set(ws) == {"5.0", "6M:5.0"} and ws["5.0"] / ws["6M:5.0"] == pytest.approx(40 / 60)
+    assert _girr_rho("", "6M:5.0", "5.0") == pytest.approx(0.999)
+    assert _girr_rho("", "6M:5.0", "6M:10.0") == pytest.approx(_girr_rho("", "5.0", "10.0"))
+
+    def girr(sens):
+        return _aggregate(_girr_ws(sens), _girr_rho, GIRR_GAMMA, 1.0)
+
+    outright = girr(_rate_sens(100.0, 60.0))
+    assert outright == pytest.approx(girr(_rate_sens(100.0, 0.0)), rel=1e-3)
+    basis_only = girr(_rate_sens(0.0, 60.0))
+    assert basis_only == pytest.approx(girr(_rate_sens(60.0, 0.0)) * np.sqrt(2 * (1 - 0.999)), rel=1e-6)
+
+    simm_out = simm_for_sensitivities(_rate_sens(100.0, 60.0), {})["IR"]
+    assert simm_out == pytest.approx(simm_for_sensitivities(_rate_sens(100.0, 0.0), {})["IR"], rel=3e-3)
+    assert _ir_rho("6M:5Y", "5Y") == pytest.approx(0.993)
+    assert liquidity_horizon("IRBASIS:EUR:6M:5Y") == liquidity_horizon("IR:EUR:5Y") == 10
 
 
 def test_frtb_sa_scales_with_sensitivities():

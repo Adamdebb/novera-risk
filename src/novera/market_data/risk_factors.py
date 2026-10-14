@@ -4,7 +4,9 @@ Every instrument maps to factors in this universe. Sensitivities, VaR and stress
 off the same ``factor_id`` so results reconcile (docs/02-architecture.md).
 
 Factor id conventions:
-    IR:{CCY}:{TENOR}             continuously compounded zero rate, decimal
+    IR:{CCY}:{TENOR}             continuously compounded zero rate, decimal (the discount curve:
+                                 ESTR for EUR, the overnight index elsewhere)
+    IRBASIS:{CCY}:{INDEX_TENOR}:{TENOR}   term-rate index minus the IR curve, zero spread, decimal
     FX:{BASE}{QUOTE}             spot, quote per base
     EQ:{TICKER}                  share price in the share currency
     EQIDX:{INDEX}                index level
@@ -24,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class RiskFactorType(StrEnum):
     IR_ZERO = "IR_ZERO"
+    IR_BASIS = "IR_BASIS"
     FX_SPOT = "FX_SPOT"
     EQUITY_SPOT = "EQUITY_SPOT"
     EQUITY_INDEX = "EQUITY_INDEX"
@@ -73,6 +76,18 @@ TENOR_YEARS: dict[str, float] = {
 
 def ir_id(ccy: str, tenor: str) -> str:
     return f"IR:{ccy}:{tenor}"
+
+
+def irbasis_id(ccy: str, index_tenor: str, tenor: str) -> str:
+    return f"IRBASIS:{ccy}:{index_tenor}:{tenor}"
+
+
+# Floating indices projected off their own curve: the discount curve plus a tenor basis
+# (decision 33.1). Indices not listed here are the discount index itself (SOFR, SONIA, ...).
+TENOR_BASIS_INDICES: dict[str, tuple[str, str]] = {
+    "EUR-EURIBOR-6M": ("EUR", "6M"),
+    "EUR-EURIBOR-3M": ("EUR", "3M"),
+}
 
 
 def fx_id(pair: str) -> str:

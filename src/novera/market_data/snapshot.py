@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field
 
 from novera.domain.snapshots import content_hash
 from novera.market_data.curves import CommodityCurve, ZeroCurve
-from novera.market_data.risk_factors import TENOR_YEARS
+from novera.market_data.risk_factors import TENOR_BASIS_INDICES, TENOR_YEARS
 from novera.market_data.sabr import alpha_from_atm, normal_sabr_vol
 from novera.market_data.vol_surface import VolSurface
 
@@ -31,13 +31,16 @@ class MarketSnapshot(BaseModel):
 
     @cached_property
     def _groups(self) -> dict[str, list[str]]:
-        """Factor ids grouped by 'TYPE:' and by 'TYPE:UNDERLYING:' so family lookups are O(1)."""
+        """Factor ids grouped by 'TYPE:', 'TYPE:UNDERLYING:' and, for four-part ids such as the
+        tenor basis, 'TYPE:UNDERLYING:SUB:' so family lookups are O(1)."""
         groups: dict[str, list[str]] = {}
         for k in sorted(self.values):
             parts = k.split(":")
             groups.setdefault(parts[0] + ":", []).append(k)
             if len(parts) >= 3:
                 groups.setdefault(parts[0] + ":" + parts[1] + ":", []).append(k)
+            if len(parts) >= 4:
+                groups.setdefault(":".join(parts[:3]) + ":", []).append(k)
         return groups
 
     @computed_field  # type: ignore[prop-decorator]
@@ -87,6 +90,38 @@ class MarketSnapshot(BaseModel):
         curve = ZeroCurve(currency, np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes]))
         self._cache[key] = curve
         return curve
+
+    def projection_curve(self, index: str, currency: str) -> ZeroCurve:
+        """Curve that projects the fixings of ``index``: the discount curve plus the index's
+        tenor basis (``IRBASIS:{CCY}:{TENOR}:``) when the index has one and the snapshot carries
+        it, else the discount curve itself. ``has_tenor_basis`` tells the two apart."""
+        key = f"pc:{index}"
+        if key in self._cache:
+            return self._cache[key]
+        disc = self.zero_curve(currency)
+        nodes = self._basis_nodes(index)
+        if nodes is None:
+            curve = disc
+        else:
+            t, spread = nodes
+            # Spread interpolated linearly in tenor onto the discount nodes, flat beyond its ends.
+            curve = ZeroCurve(currency, disc.tenors, disc.zeros + np.interp(disc.tenors, t, spread))
+        self._cache[key] = curve
+        return curve
+
+    def has_tenor_basis(self, index: str) -> bool:
+        return self._basis_nodes(index) is not None
+
+    def _basis_nodes(self, index: str) -> tuple[np.ndarray, np.ndarray] | None:
+        hit = TENOR_BASIS_INDICES.get(index)
+        if hit is None:
+            return None
+        ccy, index_tenor = hit
+        fids = self.factors_with_prefix(f"IRBASIS:{ccy}:{index_tenor}:")
+        if not fids:
+            return None
+        nodes = sorted((TENOR_YEARS[f.split(":")[3]], self.values[f]) for f in fids)
+        return np.array([n[0] for n in nodes]), np.array([n[1] for n in nodes])
 
     def fx_spot(self, pair: str) -> float:
         """Spot for BASE/QUOTE, deriving crosses and inverses from USD pairs when needed."""

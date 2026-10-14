@@ -20,7 +20,7 @@ import pandas as pd
 
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 
 # --- GIRR ----------------------------------------------------------------------------------
 GIRR_VERTICES = np.array([0.25, 0.5, 1, 2, 3, 5, 10, 15, 20, 30])
@@ -38,6 +38,7 @@ GIRR_RW = {
 }
 GIRR_THETA = 0.03
 GIRR_GAMMA = 0.5  # across currencies
+GIRR_CROSS_CURVE_RHO = 0.999  # two curves of one currency (MAR21.46), e.g. ESTR and EURIBOR-6M
 NODE_TO_VERTEX = {
     "1M": 0.25,
     "3M": 0.25,
@@ -202,21 +203,44 @@ def _aggregate(ws: dict[str, dict[str, float]], rho_within, gamma: float, scale:
 
 
 def _girr_rho(_b: str, f1: str, f2: str) -> float:
-    t1, t2 = float(f1), float(f2)
-    return max(np.exp(-GIRR_THETA * abs(t1 - t2) / min(t1, t2)), 0.4)
+    """Factor keys are ``"5.0"`` on the discount curve and ``"6M:5.0"`` on a term-rate curve.
+    Tenor correlation as MAR21.46; two different curves of one currency multiply it by 0.999."""
+    c1, _, v1 = f1.rpartition(":")
+    c2, _, v2 = f2.rpartition(":")
+    t1, t2 = float(v1), float(v2)
+    rho = max(np.exp(-GIRR_THETA * abs(t1 - t2) / min(t1, t2)), 0.4)
+    return rho if c1 == c2 else rho * GIRR_CROSS_CURVE_RHO
 
 
 def _girr_ws(sens: pd.DataFrame) -> dict[str, dict[str, float]]:
-    dv = sens[sens["measure"] == "DV01"]
-    ws: dict[str, dict[str, float]] = {}
-    for (ccy, bucket), v in dv.groupby(["underlying", "bucket"])["value"].sum().items():
-        s = v / 1e-4  # P&L per 1bp -> per unit rate
+    """Weighted sensitivities per currency. The platform bumps a term-rate curve as discount
+    curve plus basis, so a DV01 bump drags the EURIBOR projection with it. MAR21 wants each
+    curve bumped with the others held: the EURIBOR curve's sensitivity is BASIS01 and the
+    discount curve's is DV01 less BASIS01, vertex by vertex."""
+    raw: dict[str, dict[str, float]] = {}
+
+    def add(ccy: str, curve: str, bucket: str, v: float, sign: float) -> None:
         targets = [(5, 0.5), (10, 0.5)] if bucket == "7Y" else [(NODE_TO_VERTEX[bucket], 1.0)]
         for vert, w in targets:
-            ws.setdefault(ccy, {})
-            key = str(float(vert))
-            ws[ccy][key] = ws[ccy].get(key, 0.0) + w * s * GIRR_RW[vert]
-    return ws
+            key = f"{curve}:{float(vert)}" if curve else str(float(vert))
+            raw.setdefault(ccy, {})
+            raw[ccy][key] = raw[ccy].get(key, 0.0) + sign * w * v / 1e-4  # per 1bp -> per unit rate
+
+    dv = sens[sens["measure"] == "DV01"]
+    for (ccy, bucket), v in dv.groupby(["underlying", "bucket"])["value"].sum().items():
+        add(ccy, "", bucket, v, 1.0)
+    basis = sens[sens["measure"] == "BASIS01"]
+    if not basis.empty:
+        curve = basis["factor_id"].str.split(":").str[2]
+        for (ccy, index_tenor, bucket), v in (
+            basis.assign(curve=curve).groupby(["underlying", "curve", "bucket"])["value"].sum().items()
+        ):
+            add(ccy, index_tenor, bucket, v, 1.0)
+            add(ccy, "", bucket, v, -1.0)
+    return {
+        ccy: {k: s * GIRR_RW[float(k.rpartition(":")[2])] for k, s in items.items()}
+        for ccy, items in raw.items()
+    }
 
 
 def _class_charge(

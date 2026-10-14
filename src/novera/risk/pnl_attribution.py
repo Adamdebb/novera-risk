@@ -27,7 +27,7 @@ from novera.risk.sensitivities import BUMPS
 MODEL_VERSION = "1.0.0"
 
 FACTOR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("RATES", ("IR:",)),
+    ("RATES", ("IR:", "IRBASIS:")),
     ("CREDIT", ("CDS:",)),
     ("FX", ("FX:",)),
     ("EQUITY", ("EQ:", "EQIDX:")),
@@ -216,7 +216,7 @@ def _challenger(
             return float(np.mean([today_v[f] / prev_v[f] - 1.0 for f in members]))
         if fid not in today_v or fid not in prev_v:
             return None
-        if fid.startswith(("IR:", "CDS:")):
+        if fid.startswith(("IR:", "IRBASIS:", "CDS:")):
             return today_v[fid] - prev_v[fid]
         return today_v[fid] / prev_v[fid] - 1.0
 

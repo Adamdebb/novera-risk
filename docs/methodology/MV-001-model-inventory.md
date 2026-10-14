@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.pricing.catalogue.PRODUCT_CATALOGUE`, `model_inventory`, `render_model_inventory` |
-| Last validated | 2026-09-15 |
+| Last validated | 2026-10-14 |
 
 ## Definition
 One row per product the platform prices, stating the model used, the model a trading desk
@@ -42,10 +42,10 @@ validation).
 | Product | Model used | Market standard | Simplifications | Rating | Validation |
 |---|---|---|---|---|---|
 | **Government bond** (Rates) | Discounting off the government curve · `bond_discounting` v1.0.0 · PR-001 | Discounting off a bootstrapped government curve per issuer, ACT/ACT day count, holiday calendars. | Government-to-swap spread is one constant per currency rather than a curve; ACT/ACT approximated as ACT/365.25; no holiday calendars; no inflation-linked or callable bonds. | Acceptable simplification | QuantLib benchmark: ql.FixedRateBond dirty price within 0.02% (tests/test_pricing.py::test_bond_matches_quantlib). |
-| **Interest-rate swap** (Rates) | Single-curve discounting and forwarding · `swap_single_curve` v1.0.0 · PR-002 | Multi-curve: OIS discounting (SOFR, ESTR, SONIA) with forwards projected off the index's own curve; CSA discounting for bilateral trades. | One curve per currency for discounting and projection. Exact for the USD SOFR and GBP SONIA swaps in the simulated book, where the index is the OIS rate. EUR swaps reference EURIBOR-6M and ignore the ESTR/EURIBOR basis; the error is measured, not assumed (see validation). No stored fixings, no CSA discounting, no amortisation. | Known weakness | QuantLib benchmark: ql.VanillaSwap NPV within 2,000 on 100m and fair rate within 0.2bp (test_par_swap_has_zero_pv_and_matches_quantlib). Measured gap: single-curve PV of an in-the-money EUR swap against QuantLib with ESTR discounting and EURIBOR projection, bounded at 1% of PV (test_eur_swap_single_curve_gap_is_measured). |
+| **Interest-rate swap** (Rates) | OIS discounting, forwards off the index's own curve · `swap_multi_curve` v2.0.0 · PR-002 | Multi-curve: OIS discounting (SOFR, ESTR, SONIA) with forwards projected off the index's own curve; CSA discounting for bilateral trades. | EURIBOR-6M projects off ESTR plus a simulated zero-spread basis rather than a curve stripped from basis-swap quotes; OIS discounting stands for a cash CSA in the swap's currency. No stored fixings, no amortisation. A snapshot without the basis falls back to one curve and flags it (tenor_basis_applied = 0). | Acceptable simplification | QuantLib benchmark: ql.VanillaSwap NPV within 2,000 on 100m and fair rate within 0.2bp, single curve (test_par_swap_has_zero_pv_and_matches_quantlib) and for a EUR swap with ESTR discounting and EURIBOR-6M projection (test_eur_swap_dual_curve_matches_quantlib). |
 | **Repo and reverse repo** (Rates) | Cash leg off the zero curve · `repo_cash_leg` v1.0.0 · PR-010 | Cash leg discounted off a repo curve (general collateral, with specials); collateral repriced with its haircut. | Cash leg off the currency zero curve, no GC/special spread. Collateral is not repriced inside the market-risk PV; its requirement is recorded for the counterparty and liquidity views. | Acceptable simplification | Analytic identities: zero PV at the curve-implied fair rate, DV01 sign, collateral requirement N/(1-h) (test_repo_zero_at_fair_rate_and_dv01_sign). |
-| **Interest-rate future** (Rates) | Curve forward, no convexity adjustment · `ir_future_forward` v1.0.0 · PR-011 | Curve forward plus a futures-to-forward convexity adjustment (Hull-White or the exchange convention), IMM calendar. | No convexity adjustment (a few basis points at long expiries); IMM dates approximated as the third Friday without a holiday calendar. | Acceptable simplification | Analytic identities: price reproduces the curve forward, tick-value identity, sign under a rate rise (test_ir_future_price_from_curve). |
-| **European swaption** (Rates) | Bachelier on a normal SABR smile cube · `swaption_bachelier` v1.1.0 · PR-012 | Bachelier (normal) on a SABR-calibrated smile cube, OIS discounting, cash-settlement annuity convention where applicable. | Normal SABR with beta fixed at zero: rho and nu per expiry and tenor, alpha implied from the at-the-money cube; single-curve forwards; cash and physical settlement priced alike; the vega rows bump the at-the-money cube with rho and nu held, so smile-parameter risk appears in full-revaluation VaR only. | Known weakness | QuantLib benchmark: ql.BachelierSwaptionEngine within 0.2% and ql.bachelierBlackFormula (test_swaption_matches_quantlib_bachelier, test_bachelier_matches_quantlib); the smile against ql.SabrSmileSection in normal vol within 1% across strikes (test_normal_sabr_matches_quantlib); the pricer reads the smile vol at the strike (test_swaption_prices_off_the_sabr_smile); payer minus receiver equals A(S-K). |
+| **Interest-rate future** (Rates) | Forward off the index's own curve, no convexity adjustment · `ir_future_forward` v1.1.0 · PR-011 | Curve forward plus a futures-to-forward convexity adjustment (Hull-White or the exchange convention), IMM calendar. | No convexity adjustment (a few basis points at long expiries); IMM dates approximated as the third Friday without a holiday calendar. | Acceptable simplification | Analytic identities: price reproduces the curve forward, tick-value identity, sign under a rate rise (test_ir_future_price_from_curve); a EURIBOR-3M future moves with the 3M basis only (test_euribor_future_projects_off_the_3m_basis). |
+| **European swaption** (Rates) | Bachelier on a normal SABR smile cube · `swaption_bachelier` v1.2.0 · PR-012 | Bachelier (normal) on a SABR-calibrated smile cube, OIS discounting, cash-settlement annuity convention where applicable. | Normal SABR with beta fixed at zero: rho and nu per expiry and tenor, alpha implied from the at-the-money cube; cash and physical settlement priced alike; the vega rows bump the at-the-money cube with rho and nu held, so smile-parameter risk appears in full-revaluation VaR only. | Known weakness | QuantLib benchmark: ql.BachelierSwaptionEngine within 0.2% and ql.bachelierBlackFormula (test_swaption_matches_quantlib_bachelier, test_bachelier_matches_quantlib); the smile against ql.SabrSmileSection in normal vol within 1% across strikes (test_normal_sabr_matches_quantlib); the pricer reads the smile vol at the strike (test_swaption_prices_off_the_sabr_smile); payer minus receiver equals A(S-K); the EUR forward against QuantLib's dual-curve fair rate (test_eur_swaption_forward_is_dual_curve). |
 | **FX spot** (FX) | Mark to market at spot · `fx_spot_mtm` v1.0.0 · PR-003 | Mark to market at spot. | Unsettled spot is not discounted to its T+2 settlement. | Market standard | Analytic identities: spot mark, settled trade returns zero (test_fx_forward_cip_and_spot). |
 | **FX forward** (FX) | Covered interest parity · `fx_forward_cip` v1.0.0 · PR-003 | Forward from spot and quoted forward points, which embed the cross-currency basis; discounted at the collateral currency curve. | Covered interest parity on the two zero curves; no cross-currency basis, so forwards sit on the interest differential alone. | Acceptable simplification | Analytic identities: CIP reproduced, sign of the forward points matches the rate differential (test_fx_forward_cip_and_spot). |
 | **FX vanilla option** (FX) | Garman-Kohlhagen · `fx_option_garman_kohlhagen` v1.0.0 · PR-004 | Garman-Kohlhagen on a delta-quoted smile (at-the-money, risk reversal, butterfly) with premium-currency delta conventions. | Smile read at moneyness K/F rather than at delta; no premium-adjusted delta convention; forward from CIP without cross-currency basis. | Market standard | QuantLib benchmark: ql.blackFormula to 1e-10; put-call parity (test_fx_option_matches_quantlib_black_and_parity). |
@@ -61,7 +61,7 @@ validation).
 | **Commodity option** (Commodities) | Black 76 on the curve price · `commodity_option_black76` v1.0.0 · PR-014 | Black 76 on the futures price with the contract's own smile; American exercise for options on futures. | European exercise; the surface is quoted on the equity moneyness grid rather than per contract. | Acceptable simplification | QuantLib benchmark: ql.blackFormula; put-call parity C - P = DF(F - K) (test_commodity_option_black76_and_parity). |
 | **Crypto spot (BTC, ETH)** (Digital assets) | Mark to market · `crypto_mtm` v1.0.0 · PR-009 | Mark to market at the venue or composite price. | One USD price per asset; no venue basis. | Market standard | Analytic identity: units times spot (test_crypto_spot). |
 
-19 products: 5 market standard, 11 acceptable simplification, 3 known weakness.
+19 products: 5 market standard, 12 acceptable simplification, 2 known weakness.
 <!-- inventory:end -->
 
 ## Measured gaps
@@ -70,11 +70,11 @@ measured by a test rather than assumed:
 
 | Product | Gap measured | Result | Test |
 |---|---|---|---|
-| Interest-rate swap (EUR) | Single-curve PV versus ESTR discounting with EURIBOR-6M projection, 15bp basis, on a 7-year 100m receiver swap 90bp in the money | Dual-curve PV 4,435,683 against single-curve 4,412,333: gap 23,350, 0.53% of PV, 2.3bp of notional | `tests/test_pricing.py::test_eur_swap_single_curve_gap_is_measured` (bound: between 0.05% and 1% of PV) |
+| Interest-rate swap (EUR), closed in 2.0.0 | Single-curve PV versus ESTR discounting with EURIBOR-6M projection, 15bp basis, on a 7-year 100m receiver swap 90bp in the money | Measured at 0.53% of PV (2.3bp of notional) with the curve read as EURIBOR (decision 18.3). Since decision 33 the engine prices dual-curve and matches QuantLib within 2,000; the single-curve fallback, with the curve read as ESTR, misses by notional × basis × annuity | `tests/test_pricing.py::test_eur_swap_dual_curve_matches_quantlib` |
 
 USD and GBP swaps in the simulated book reference SOFR and SONIA, where the index is the
-discount rate, so the single-curve model is exact for them. The gap therefore applies to
-the EUR book only.
+discount rate, so one curve is exact for them; EUR swaps, swaptions and EURIBOR futures project
+off ESTR plus the simulated tenor basis.
 
 ## Inputs
 The pricer catalogue (`PRODUCT_CATALOGUE`), each product's methodology record PR-001 to
@@ -93,9 +93,10 @@ MR, CR, REG, HF and DQ records.
 `tests/test_api.py::test_product_catalogue_matches_pricers_and_methodology`: every product
 has an inventory entry with all four columns filled, a rating from the scale above, a
 methodology record that exists, and a committed table equal to the code's rendering.
-`tests/test_pricing.py::test_eur_swap_single_curve_gap_is_measured`: the measured gap.
+`tests/test_pricing.py::test_eur_swap_dual_curve_matches_quantlib`: the dual-curve benchmark that closed the measured gap.
 
 ## Change history
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-15 | First inventory: 19 products, 5 market standard, 11 acceptable simplification, 3 known weakness | Market Risk Methodology |
+| 1.1.0 | 2026-10-14 | Swap multi-curve and rated acceptable simplification; swaption and EURIBOR future forwards off the index curve (decision 33): 5 market standard, 12 acceptable, 2 known weakness | Market Risk Methodology |
