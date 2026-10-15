@@ -264,6 +264,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "SA-CCR",
+                version="1.1.0",
                 face="bank",
             ),
             MeasureSpec(

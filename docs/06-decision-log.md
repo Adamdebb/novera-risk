@@ -1607,15 +1607,26 @@ CCP capital was not allocated. One question round; the owner took every recommen
   set's inputs (`NettingSetInputs`) so a set can be re-measured; its numbers are unchanged
   (old and new code agree within 1e-8 on every set). The regulatory stage takes about 6 s
   instead of 3.5 s.
-- Found, left as it was: re-running the regulatory stage after the counterparty stage gives a
-  different SA-CCR. The second run reads the exposure engine's collateral balance
-  (`cp_profiles`), which the EOD's own regulatory step, running first, does not have. On the
-  demo run, SA-CCR capital is 31.3m stored and 41.0m on a re-run. Listed as item 27 below.
 - Where: `regulatory/allocation.py` (new), `frtb_sa.frtb_sa`, `frtb_ima._ima_by_desk`,
   `saccr.NettingSetInputs`, `cva_capital.ba_cva_charge`, `engine.run_regulatory`
   (`reg_desk_allocation`, `reg_allocation_summary`, `reg_by_desk` now Euler); `GET /capital`
   (`desk_allocation`, `allocation_summary`); Capital page; the Analyst's capital tool.
   REG-008 1.0.0 (new), REG-001 1.3.0, REG-002 1.1.0. Tests: `tests/test_capital_allocation.py`.
+
+### 41.5 One source of collateral for SA-CCR (closes second-look item 27)
+- Found while testing the allocation: re-running the regulatory stage after the counterparty stage
+  gave a different SA-CCR. `run_regulatory` read the exposure engine's t0 collateral per netting
+  set from `cp_profiles` when it existed. The EOD's own regulatory step runs first and never has
+  it. On the demo run, SA-CCR capital was 31.3m stored and 41.0m on a re-run, and BA-CVA moved
+  with it.
+- Owner: fix it. Choice (default): **collateral always from the CSA terms on today's value**,
+  what every EOD run already used and what REG-003 states. The other way round is not possible:
+  the counterparty stage reads the initial margin the regulatory stage stores (`reg_simm`), so
+  regulatory has to run first. The override path is removed (`saccr(collateral_by_set=…)`,
+  `NettingSetInputs.collateral`), so the desk allocation's scaled sets and the reported sets use
+  the same collateral. Stored EOD results are unchanged.
+- Where: `regulatory/saccr.py` (REG-003 1.1.0), `regulatory/engine.py`; the end-to-end test
+  re-runs the stage after the counterparty run and must reproduce SA-CCR and BA-CVA.
 
 ## Standing instructions given outside the question rounds
 
@@ -1705,8 +1716,6 @@ CCP capital was not allocated. One question round; the owner took every recommen
 26. **FVA on a flat funding spread** (37.2, closes the FVA gap of 35.4): one spread for every
     currency and tenor, set rather than observed, so FVA has no market sensitivity; no MVA for
     initial margin posted, no ColVA.
-27. **A regulatory re-run reads collateral the EOD step did not have** (41): `run_regulatory` takes
-    the exposure engine's t0 collateral per netting set when `cp_profiles` exists. The EOD runs
-    regulatory before counterparty, so the stored run uses CSA-derived collateral, while a later
-    re-run of the stage uses the simulated balance. On the demo run, SA-CCR goes from 31.3m to 41.0m
-    and BA-CVA follows. One source of collateral should be chosen for both.
+27. **Closed in round 41 (41.5)**: SA-CCR collateral always comes from the CSA terms. Was: **a regulatory
+    re-run reads collateral the EOD step did not have**. A re-run after the counterparty stage used
+    the exposure engine's simulated balance, so SA-CCR went from 31.3m to 41.0m on the demo run.

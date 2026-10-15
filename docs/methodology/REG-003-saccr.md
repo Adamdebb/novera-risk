@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Regulatory Capital Methodology |
 | Approval status | Draft |
 | Code | `novera.regulatory.saccr` |
@@ -11,7 +11,8 @@
 ## Definition
 Per bilateral netting set: `EAD = 1.4 × (RC + multiplier × AddOn)`. Replacement cost
 `max(V − C, TH + MTA − NICA, 0)` for margined sets, `max(V − C, 0)` otherwise, with C
-today from the CSA rules on the current value. Add-ons per asset class from supervisory
+today from the CSA rules on the current value, on every run of the stage: the exposure
+engine's simulated collateral balance comes after this stage and is never read (decision 41.5). Add-ons per asset class from supervisory
 factors on adjusted notionals (supervisory duration for rates and credit, base-currency
 notional for FX), supervisory deltas (±1 for linear trades, the Black delta for options)
 and maturity factors (margined 1.5√(MPoR/250), unmargined √min(M,1)). Hedging sets:
@@ -29,4 +30,11 @@ maturity for BA-CVA is a proxy (1y margined, 2.5y unmargined).
 By Euler contributions, with incremental and standalone figures beside them: REG-008.
 
 ## Validation tests
-`tests/test_regulatory.py::test_regulatory_run_end_to_end`.
+`tests/test_regulatory.py::test_regulatory_run_end_to_end`, including a re-run after the
+counterparty stage that must reproduce SA-CCR.
+
+## Change history
+| Version | Date | Change |
+|---|---|---|
+| 1.0.0 | 2026-09-14 | Initial model |
+| 1.1.0 | 2026-10-15 | Collateral always from the CSA terms; a re-run after the counterparty stage no longer reads its simulated balance (decision 41.5) |

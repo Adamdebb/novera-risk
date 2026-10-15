@@ -49,9 +49,8 @@ used instead.
 
 ## Assumptions
 - Trades whose book has no desk are allocated to `UNASSIGNED` rather than dropped.
-- Scaled and reduced netting sets derive their collateral from the CSA terms. The balance held
-  today, when the exposure engine supplied one, belongs to today's set. SA-CCR is rescaled to
-  the reported EAD.
+- Scaled and reduced netting sets derive their collateral from the CSA terms, as the reported
+  sets do (REG-003 1.1.0).
 - Leaving a CCP's business frees none of the default-fund charge while the firm stays a
   clearing member. Its incremental is zero, and standalone it is the whole K_CM.
 

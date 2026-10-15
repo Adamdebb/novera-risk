@@ -86,8 +86,7 @@ def with_euler(frame: pd.DataFrame, total: float) -> pd.DataFrame:
 
 # --- SA-CCR ----------------------------------------------------------------------------------------
 def saccr_by_set(sc: SACCRResult, desk: Mapping[str, str]) -> pd.DataFrame:
-    """EAD of each netting set by desk: Euler (rescaled to the set's EAD), incremental, standalone.
-    The scaled and reduced sets take their collateral from the CSA terms (NettingSetInputs.ead)."""
+    """EAD of each netting set by desk: Euler (rescaled to the set's EAD), incremental, standalone."""
     rows = []
     for k, inp in sc.inputs.items():
         ead = inp.ead()["ead"]
@@ -96,14 +95,12 @@ def saccr_by_set(sc: SACCRResult, desk: Mapping[str, str]) -> pd.DataFrame:
             groups.setdefault(desk.get(t, UNASSIGNED), []).append(t)
         if not groups:
             continue
-        model = inp.ead({})["ead"]  # today's set, collateral from the CSA terms
 
         def charge(scales: Mapping[str, float], other: float, inp=inp, groups=groups) -> float:
             return inp.ead({t: scales.get(d, other) for d, ts in groups.items() for t in ts})["ead"]
 
-        part = by_bump(charge, sorted(groups), model)
+        part = by_bump(charge, sorted(groups), ead)
         part["euler"] = rescaled(part["euler_raw"], ead, part["standalone"])
-        part["euler_raw"] = part["euler_raw"] * (ead / model if model else 1.0)  # same scale as EAD
         rows.append(part.assign(netting_set_id=k, counterparty_id=inp.counterparty_id))
     cols = ["netting_set_id", "counterparty_id", "desk_id", "euler", "euler_raw", "incremental", "standalone"]
     return pd.concat(rows, ignore_index=True)[cols] if rows else pd.DataFrame(columns=cols)

@@ -232,6 +232,11 @@ def test_regulatory_run_end_to_end(db):
         cfg = ExposureSimConfig(paths=30, seed=1)
         cr = run_counterparty(repo, db["run_id"], cfg, runs_dir=db["runs_dir"], workers=1)
         assert cr.notes["initial_margin_sets"] > 0 and not cr.notes["warnings"]
+        # A re-run of the stage after the exposure engine reproduces SA-CCR and BA-CVA: the
+        # collateral comes from the CSA terms, never the simulated balance (decision 41.5).
+        again = run_regulatory(repo, db["run_id"], runs_dir=db["runs_dir"], persist=False)
+        assert again.saccr.total_ead == pytest.approx(rr.saccr.total_ead, rel=1e-12)
+        assert again.ba_cva_capital == pytest.approx(rr.ba_cva_capital, rel=1e-12)
         prof = cr.profiles
         coll = prof[prof["collateralised"] & ~prof["ccp"]]  # at a CCP posted margin adds exposure
         assert (coll["initial_margin"] > 0).any()

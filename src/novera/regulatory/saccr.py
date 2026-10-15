@@ -26,7 +26,7 @@ from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting, value_trade
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 ALPHA = 1.4
 SF = {
     "IR": 0.005,
@@ -189,14 +189,11 @@ class NettingSetInputs:
     csa: CSA | None
     pv: dict[str, float]  # trade id -> value in reporting currency
     addons: list[TradeAddOn]
-    collateral: float | None = None  # held today, from the exposure engine; None: from the CSA
 
     def ead(self, scale: Mapping[str, float] | None = None) -> dict[str, Any]:
         """EAD and its terms. ``scale`` multiplies each listed trade's value and notional (0
-        removes it); a scaled set derives its collateral from the CSA terms, since the balance
-        held today belongs to today's set."""
-        if scale is None:
-            return _set_ead(sum(self.pv.values()), self.addons, self.csa, self.collateral)
+        removes it)."""
+        scale = scale or {}
         v = sum(pv * scale.get(t, 1.0) for t, pv in self.pv.items())
         addons = []
         for a in self.addons:
@@ -208,21 +205,21 @@ class NettingSetInputs:
                     else replace(a, adjusted_notional=a.adjusted_notional * k, effective=a.effective * k)
                 )
         if not addons and not any(scale.get(t, 1.0) for t in self.pv):
-            return _set_ead(0.0, [], None, 0.0)  # nothing left: no value, no add-on, no exposure
-        return _set_ead(v, addons, self.csa, None)
+            return _set_ead(0.0, [], None)  # nothing left: no value, no add-on, no exposure
+        return _set_ead(v, addons, self.csa)
 
 
-def _set_ead(v: float, addons: list[TradeAddOn], csa: CSA | None, collateral: float | None) -> dict[str, Any]:
-    """EAD = 1.4 × (RC + multiplier × add-on) of one netting set worth ``v``."""
-    c = collateral
-    if c is None:
-        c = 0.0
-        if csa is not None:
-            they = max(v - csa.threshold_they_post, 0.0)
-            we = max(-v - csa.threshold_we_post, 0.0)
-            they = 0.0 if they < csa.minimum_transfer_amount else they
-            we = 0.0 if we < csa.minimum_transfer_amount else we
-            c = they * (1 - csa.haircut) + csa.independent_amount - we * (1 - csa.haircut)
+def _set_ead(v: float, addons: list[TradeAddOn], csa: CSA | None) -> dict[str, Any]:
+    """EAD = 1.4 × (RC + multiplier × add-on) of one netting set worth ``v``. Collateral is what
+    the CSA terms call for on ``v``, the same on every run of the stage (decision 41.5): the
+    exposure engine's simulated balance comes after this stage and is not read."""
+    c = 0.0
+    if csa is not None:
+        they = max(v - csa.threshold_they_post, 0.0)
+        we = max(-v - csa.threshold_we_post, 0.0)
+        they = 0.0 if they < csa.minimum_transfer_amount else they
+        we = 0.0 if we < csa.minimum_transfer_amount else we
+        c = they * (1 - csa.haircut) + csa.independent_amount - we * (1 - csa.haircut)
     if csa is not None:
         rc = max(v - c, csa.threshold_they_post + csa.minimum_transfer_amount - csa.independent_amount, 0.0)
     else:
@@ -311,7 +308,6 @@ def saccr(
     counterparties: dict[str, Counterparty],
     reporting: str,
     as_of: date | None = None,
-    collateral_by_set: dict[str, float] | None = None,
     cleared: bool = False,
 ) -> SACCRResult:
     """EAD per netting set. ``cleared`` takes the CCP netting sets (decision 39.4) instead of the
@@ -319,7 +315,6 @@ def saccr(
     as_of = as_of or market.as_of
     ns_map = {n.netting_set_id: n for n in netting_sets}
     csa_map = {c.csa_id: c for c in csas}
-    coll = collateral_by_set or {}
     discounting = CollateralMap.from_reference(netting_sets, csas)  # the PV the RC is built on
     rows, trade_rows = [], []
     by_set: dict[str, list[Trade]] = {}
@@ -349,7 +344,7 @@ def saccr(
                 a.effective = a.delta * a.adjusted_notional * a.maturity_factor
                 addons.append(a)
                 trade_rows.append({**a.__dict__, "netting_set_id": k})
-        inputs[k] = NettingSetInputs(k, ns.counterparty_id, csa, pv, addons, coll.get(k))
+        inputs[k] = NettingSetInputs(k, ns.counterparty_id, csa, pv, addons)
         e = inputs[k].ead()
         rows.append(
             {

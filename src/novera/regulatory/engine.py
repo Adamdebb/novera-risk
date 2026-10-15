@@ -162,13 +162,7 @@ def run_regulatory(
         threshold=settings.im_threshold,
         ccp_sets=ccp.ids,
     )
-    # Collateral held today per netting set (from the exposure engine's t0 balance if stored).
-    prof = repo.load_run_frame(run_id, "cp_profiles")
-    coll = {}
-    if len(prof):
-        first = prof[prof["step"] == prof["step"].iloc[0]]
-        coll = {r["netting_set_id"]: float(r["mean_collateral"]) for _, r in first.iterrows()}
-    sc = saccr(list(snap.trades), market, netting_sets, csas, counterparties, reporting, market.as_of, coll)
+    sc = saccr(list(snap.trades), market, netting_sets, csas, counterparties, reporting, market.as_of)
     # Exposure to qualifying CCPs (decision 39.4): margined SA-CCR on the CCP sets plus the margin
     # we post there, at 2%, and the default-fund charge.
     sc_ccp = saccr(
@@ -179,7 +173,6 @@ def run_regulatory(
         counterparties,
         reporting,
         market.as_of,
-        coll,
         cleared=True,
     )
     ccp_ead = (
