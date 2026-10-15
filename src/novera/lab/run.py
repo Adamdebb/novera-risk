@@ -260,6 +260,7 @@ def run_lab(spec: LabSpec, settings: Settings | None = None) -> LabResult:
         repo.save_portfolio_snapshot(gen.snapshot)
         repo.save_risk_factors(md.universe)
         repo.save_market_history(md.history)
+        repo.save_market_episodes(md.episodes)
         for snap in md.snapshots.values():
             repo.save_market_snapshot(snap)
         repo.save_lab_spec(spec.name, spec.to_dict(), [i.model_dump() for i in gen.injections], md.planted)

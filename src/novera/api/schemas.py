@@ -1310,6 +1310,10 @@ class BacktestReport(ApiModel):
     summary: list[BacktestSummaryRow]
     series: list[BacktestPoint]
     live_series: list[BacktestPoint] = Field(default_factory=list)
+    history_series: list[BacktestPoint] = Field(
+        default_factory=list,
+        description="Today's book on every daily move of the stored history, for information (MR-011)",
+    )
 
 
 class RiskPackFiles(BaseModel):

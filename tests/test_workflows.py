@@ -115,7 +115,10 @@ def test_results_persisted_and_reloadable(result, db_path):
             "delta_gamma_vega",
             "monte_carlo_delta_gamma_vega",
         }
-        assert len(repo.load_run_frame(rid, "backtest_summary")) == 2
+        bt = repo.load_run_frame(rid, "backtest_summary")
+        assert list(bt["kind"]) == ["STATIC_HYPOTHETICAL", "LIVE", "STATIC_SENSITIVITY_HISTORY"]
+        hist = repo.load_run_frame(rid, "backtest_history_series")  # every move after a 250-day lookback
+        assert int(bt.iloc[2]["days"]) == len(hist) > int(bt.iloc[0]["days"])
         assert not repo.load_run_frame(rid, "concentration").empty
         assert not repo.load_run_frame(rid, "liquidity_buckets").empty
         assert len(repo.load_run_frame(rid, "stress_summary")) == len(result.stress)

@@ -109,6 +109,36 @@ def test_crisis_episodes_visible() -> None:
     assert vol.max() / vol.median() > 1.6
 
 
+@pytest.mark.parametrize("seed", [42, 7])
+def test_episodes_end_on_their_defined_moves_whatever_the_seed(seed) -> None:
+    """The draws are bridged inside each window, so the episode, not the seed, sets its net move
+    (decision 42.1); the dates come with it, from the close before to the last day."""
+    gen = generate_market_data(MarketSimConfig(end_date=BD, seed=seed, plant_data_quality_problems=False))
+    w = gen.history.pivot(index="as_of", columns="factor_id", values="value")
+    w.index = [d.date() for d in w.index]
+    assert list(gen.episodes) == [
+        "stylised_inflation_bear",
+        "stylised_risk_off_crash",
+        "stylised_rates_shock",
+    ]
+    expected = {  # S&P 500 move, USD 10Y move in bp, tolerance on each
+        # six months of rates mean reversion keep some seed dependence: the pull depends on
+        # where rates stand when the episode starts
+        "stylised_inflation_bear": (-0.22, 200, 0.02, 30),
+        "stylised_risk_off_crash": (-0.27, -60, 0.02, 15),
+        "stylised_rates_shock": (-0.13, 100, 0.02, 25),
+    }
+    for name, (start, end) in gen.episodes.items():
+        spx, ten, tol_spx, tol_bp = expected[name]
+        assert w.loc[end, "EQIDX:SPX"] / w.loc[start, "EQIDX:SPX"] - 1 == pytest.approx(spx, abs=tol_spx), (
+            name
+        )
+        assert (w.loc[end, "IR:USD:10Y"] - w.loc[start, "IR:USD:10Y"]) * 1e4 == pytest.approx(
+            ten, abs=tol_bp
+        ), name
+    assert date(2022, 1, 1) < gen.episodes["stylised_inflation_bear"][0] < date(2022, 2, 1)
+
+
 def test_market_data_round_trip(tmp_path, md) -> None:
     with DuckDBRepository(tmp_path / "md.duckdb") as repo:
         repo.init_schema()
@@ -124,6 +154,11 @@ def test_market_data_round_trip(tmp_path, md) -> None:
         assert loaded.snapshot_id == sid and loaded.stale_factors() == md.snapshot.stale_factors()
         pid = repo.save_market_snapshot(md.previous_snapshot)
         assert [x[0] for x in repo.list_market_snapshots()] == [pid, sid]
+        assert repo.load_market_episodes() == {}
+        repo.save_market_episodes(
+            {"b": (date(2026, 5, 1), date(2026, 5, 29)), "a": (date(2026, 2, 2), date(2026, 3, 2))}
+        )
+        assert list(repo.load_market_episodes()) == ["a", "b"]
 
 
 def test_snapshot_with_values(md) -> None:

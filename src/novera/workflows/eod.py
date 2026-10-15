@@ -48,6 +48,7 @@ from novera.risk import (
     compute_sensitivities,
     concentration,
     explain_pnl,
+    history_backtest,
     liquidity,
     live_backtest,
     look_through,
@@ -64,9 +65,8 @@ from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
 from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
-from novera.risk.stress import historical_episodes_from_simulation
+from novera.risk.stress import historical_episodes
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
-from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
@@ -266,10 +266,11 @@ def run_eod(
     with _timed(timings, "backtest"):
         bt_static = static_backtest(hs.portfolio_pnl, headline.measure.confidence)
         bt_live = live_backtest(repo.list_runs(run_type="EOD", limit=1000) + [], headline.measure.confidence)
+        bt_history = history_backtest(pf, sens, history, market.as_of, headline.measure.confidence)
     with _timed(timings, "stress"):
         scenarios = list(HYPOTHETICAL_LIBRARY)
         if cfg.include_historical_stress:
-            scenarios += historical_episodes_from_simulation(history, DEFAULT_EPISODES, market.as_of)
+            scenarios += historical_episodes(history, repo.load_market_episodes())
         stress = run_stress(pf, scenarios, history)
     with _timed(timings, "limits"):
         limit_table = (
@@ -423,6 +424,7 @@ def run_eod(
                 extras={
                     "bt_static": bt_static,
                     "bt_live": bt_live,
+                    "bt_history": bt_history,
                     "conc": conc,
                     "liq": liq,
                     "proxies": proxies,
@@ -678,9 +680,12 @@ def persist_stress(repo, rid: str, stress: list) -> None:
     )
 
 
-def persist_backtest(repo, rid: str, bts, btl) -> None:
-    repo.save_run_frame(rid, "backtest_summary", pd.DataFrame([bts.summary(), btl.summary()]))
+def persist_backtest(repo, rid: str, bts, btl, bth=None) -> None:
+    rows = [bts.summary(), btl.summary()] + ([bth.summary()] if bth is not None and bth.days else [])
+    repo.save_run_frame(rid, "backtest_summary", pd.DataFrame(rows))
     repo.save_run_frame(rid, "backtest_series", bts.series.assign(kind=bts.kind))
+    if bth is not None and len(bth.series):
+        repo.save_run_frame(rid, "backtest_history_series", bth.series.assign(kind=bth.kind))
     if len(btl.series):
         repo.save_run_frame(rid, "backtest_live_series", btl.series.assign(kind=btl.kind))
 
@@ -729,7 +734,7 @@ def _persist(
     if extras:
         if extras.get("proxies") is not None:
             repo.save_run_frame(rid, "md_proxies", extras["proxies"].table())
-        persist_backtest(repo, rid, extras["bt_static"], extras["bt_live"])
+        persist_backtest(repo, rid, extras["bt_static"], extras["bt_live"], extras.get("bt_history"))
         persist_concentration(repo, rid, extras["conc"], extras["liq"], extras.get("lookthrough"))
     repo.save_run_frame(rid, "valuation", valuation)
     repo.save_run_frame(rid, "sensitivities", sens)

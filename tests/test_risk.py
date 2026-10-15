@@ -22,7 +22,7 @@ from novera.risk import (
     taylor_var,
 )
 from novera.risk.scenarios import apply_shocks, historical_shocks
-from novera.risk.stress import build_shocks, historical_episodes_from_simulation
+from novera.risk.stress import build_shocks, historical_episodes, historical_episodes_from_simulation
 from novera.simulation import (
     TradeGeneratorConfig,
     build_counterparty_universe,
@@ -180,6 +180,18 @@ def test_historical_episode_scenarios(world):
     cash_ids = set(world["val"][world["val"]["product_type"] == "CASH_EQUITY"]["trade_id"])
     net_equity_delta = sens[(sens.measure == "EQ_DELTA") & sens.trade_id.isin(cash_ids)]["value"].sum()
     assert (eq < 0) == (net_equity_delta > 0), "a net-long cash equity book must lose in a crash"
+
+
+def test_stored_episode_windows_do_not_move_as_the_history_grows(world):
+    """Scenarios read the stored windows (decision 42.4); without them they fall back to offsets
+    from the end of the history, which slide by a day for every day appended."""
+    hist = world["hist"]
+    d = hist.dates
+    stored = {"later": (d[-40], d[-20]), "earlier": (d[-100], d[-80])}
+    sc = historical_episodes(hist, stored)
+    assert [s.scenario_id for s in sc] == ["earlier", "later"] and sc[1].episode == (d[-40], d[-20])
+    fallback = historical_episodes(hist, {})
+    assert [s.scenario_id for s in fallback] == [e.name for e in DEFAULT_EPISODES]
 
 
 def test_portfolio_skips_unpriceable(world):

@@ -609,6 +609,14 @@
       "BacktestReport": {
         "additionalProperties": true,
         "properties": {
+          "history_series": {
+            "description": "Today's book on every daily move of the stored history, for information (MR-011)",
+            "items": {
+              "$ref": "#/components/schemas/BacktestPoint"
+            },
+            "title": "History Series",
+            "type": "array"
+          },
           "live_series": {
             "items": {
               "$ref": "#/components/schemas/BacktestPoint"

@@ -5,6 +5,10 @@ N daily moves (the historical-VaR scenario vector, chronological), each day comp
 the VaR estimated from the preceding lookback window of the same vector. Tests:
 Kupiec proportion-of-failures, Christoffersen independence and the conditional-coverage
 combination, Basel traffic-light zone on 250 days.
+
+History backtest, for information (decision 42.3): the same test on every daily move of the
+stored history, on the delta-gamma-vega P&L (cheap enough to run on five years each day). It
+never feeds the IMA multiplier, which reads the 250-day static result.
 """
 
 from __future__ import annotations
@@ -16,12 +20,13 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
+HISTORY_KIND = "STATIC_SENSITIVITY_HISTORY"
 
 
 @dataclass
 class BacktestResult:
-    kind: str  # STATIC_HYPOTHETICAL or LIVE
+    kind: str  # STATIC_HYPOTHETICAL, STATIC_SENSITIVITY_HISTORY or LIVE
     confidence: float
     days: int
     exceptions: int
@@ -125,7 +130,11 @@ def evaluate(series: pd.DataFrame, confidence: float, kind: str, lookback: int =
 
 
 def static_backtest(
-    portfolio_pnl: pd.Series, confidence: float = 0.99, test_days: int = 250, lookback: int = 250
+    portfolio_pnl: pd.Series,
+    confidence: float = 0.99,
+    test_days: int = 250,
+    lookback: int = 250,
+    kind: str = "STATIC_HYPOTHETICAL",
 ) -> BacktestResult:
     """``portfolio_pnl`` is the chronological scenario P&L vector of today's portfolio
     (index: scenario date). Needs at least ``lookback + test_days`` observations; otherwise
@@ -140,7 +149,23 @@ def static_backtest(
         var = float(-np.percentile(window, (1 - confidence) * 100, method="linear"))
         rows.append({"date": pnl.index[i], "pnl": float(values[i]), "var": var})
     series = pd.DataFrame(rows, columns=["date", "pnl", "var"])
-    return evaluate(series, confidence, "STATIC_HYPOTHETICAL", lookback)
+    return evaluate(series, confidence, kind, lookback)
+
+
+def history_backtest(
+    pf, sens: pd.DataFrame, history, as_of: date, confidence: float = 0.99, lookback: int = 250
+) -> BacktestResult:
+    """Today's book on every daily move of ``history`` up to ``as_of`` (delta-gamma-vega P&L),
+    each day against the VaR of the preceding ``lookback`` days."""
+    from novera.risk.scenarios import historical_shocks
+    from novera.risk.var import taylor_pnl_matrix
+
+    days = len([d for d in history.dates if d <= as_of]) - 1
+    if days <= lookback:
+        return static_backtest(pd.Series(dtype=float), confidence, 0, lookback, HISTORY_KIND)
+    scen = historical_shocks(history, as_of, days, 1, pf.universe, factor_ids=list(pf.base.values))
+    pnl = taylor_pnl_matrix(pf, sens, scen).sum(axis=1)
+    return static_backtest(pnl, confidence, len(pnl) - lookback, lookback, HISTORY_KIND)
 
 
 def live_backtest(runs: list, confidence: float = 0.99) -> BacktestResult:

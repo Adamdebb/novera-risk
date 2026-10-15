@@ -36,6 +36,7 @@ from novera.risk import (
     compute_sensitivities,
     concentration,
     explain_pnl,
+    history_backtest,
     liquidity,
     live_backtest,
     look_through,
@@ -43,9 +44,8 @@ from novera.risk import (
     static_backtest,
     stress_table,
 )
-from novera.risk.stress import historical_episodes_from_simulation
+from novera.risk.stress import historical_episodes
 from novera.risk.var_measures import DEFAULT_MEASURES, MeasureSet, VaRMeasure, compute_measures
-from novera.simulation.market_data import DEFAULT_EPISODES
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.eod import (
     MODEL_VERSIONS,
@@ -150,8 +150,9 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         "backtest",
         "Backtest",
-        "Static backtest on the scenario vector and the live backtest across stored EOD runs (MR-011).",
-        ("backtest_summary", "backtest_series", "backtest_live_series"),
+        "Static backtest on the scenario vector, the live backtest across stored EOD runs and the "
+        "history backtest for information (MR-011).",
+        ("backtest_summary", "backtest_series", "backtest_live_series", "backtest_history_series"),
         (),
         ("backtest_zone", "backtest_exceptions", "backtest_days"),
     ),
@@ -319,9 +320,7 @@ class _Inputs:
     def stress(self) -> list:
         scenarios = list(HYPOTHETICAL_LIBRARY)
         if self.cfg.include_historical_stress:
-            scenarios += historical_episodes_from_simulation(
-                self.history, DEFAULT_EPISODES, self.market.as_of
-            )
+            scenarios += historical_episodes(self.history, self.repo.load_market_episodes())
         return run_stress(self.pf, scenarios, self.history)
 
 
@@ -344,7 +343,8 @@ def _stage_backtest(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, 
     conf = x.var_set.headline.measure.confidence
     bts = static_backtest(x.hs.portfolio_pnl, conf)
     btl = live_backtest(repo.list_runs(run_type="EOD", limit=1000), conf)
-    persist_backtest(repo, rid, bts, btl)
+    bth = history_backtest(x.pf, x.sens, x.history, x.market.as_of, conf)
+    persist_backtest(repo, rid, bts, btl, bth)
     return {"backtest_zone": bts.zone, "backtest_exceptions": bts.exceptions, "backtest_days": bts.days}
 
 

@@ -8,12 +8,15 @@ Model (methodology record SIM-001):
   with level, slope and curvature components and mild mean reversion to base levels.
 - Vol surfaces: the ATM term structure evolves (negatively correlated with the underlying)
   and a static smile shape is applied around it. Skew steepens during the crash episode.
-- Two stylised episodes are overlaid as drifts and vol multipliers over fixed windows:
-  a risk-off crash and a rates shock. They are explicitly synthetic.
+- Stylised episodes are overlaid as drifts and vol multipliers over fixed windows: a risk-off
+  crash and a rates shock in the core, a 2022-style inflation bear in the extension. They are
+  explicitly synthetic. Inside a window the random draws are bridged (their mean over the
+  window is removed), so each episode ends on its defined move while its days stay as volatile
+  as the multiplier says (decision 42.1).
 - A horizon longer than ``core_years`` is built as two segments: the core (the last
   ``core_years``, drawn exactly as a run of that length would draw them, so the planted
   episodes and the limit calibration are unchanged) and an earlier extension with its own
-  seed and no episodes, re-levelled so it joins the core continuously.
+  seed and its own episode, re-levelled so it joins the core continuously.
 - Swaption smiles: a normal SABR (beta = 0) rho and nu per cube node. Rho follows one
   mean-reverting path per currency and steepens with the crash skew multiplier; nu follows
   one log path per currency and rises with the episode vol multiplier.
@@ -311,6 +314,30 @@ DEFAULT_EPISODES: tuple[Episode, ...] = (
 )
 
 
+EXTENSION_EPISODES: tuple[Episode, ...] = (
+    Episode(
+        "stylised_inflation_bear",
+        start_offset_days=440,  # early January of the year after the extension starts (2022)
+        length=125,
+        # Inputs set so the realised window moves land on the agreed ones (S&P 500 -22%, USD 10Y
+        # +200bp, 2Y +250bp): over six months the equity drift and the rates mean reversion take
+        # back part of a move that a 22-day episode keeps whole.
+        equity=-0.25,
+        credit_mult=1.6,
+        vol_mult=1.35,
+        crypto=-0.65,
+        usd=0.12,
+        rates_short_bp=365,
+        rates_long_bp=215,
+        energy=0.35,
+        gold=-0.05,
+        skew_mult=1.15,
+        daily_vol_mult=1.3,
+    ),
+)
+"""Overlaid on the extension segment, counted back from its end (decision 42.2): stocks and
+bonds fall together over six months, unlike the two core episodes."""
+
 EXTENSION_SEED_OFFSET = 101
 """Added to ``seed`` for the extension segment so its draws never overlap the core's."""
 
@@ -345,6 +372,9 @@ class GeneratedMarketData:
     previous_snapshot: MarketSnapshot  # the day before the problem date, clean
     snapshots: dict[date, MarketSnapshot] = field(default_factory=dict)  # trailing days, oldest first
     planted: list[str] = field(default_factory=list)
+    episodes: dict[str, tuple[date, date]] = field(default_factory=dict)
+    """Each episode from the close before its first day to its last day: the window a stress
+    scenario measures, fixed in dates so a history that grows does not move it."""
 
 
 # --- Simulator -----------------------------------------------------------------------
@@ -395,12 +425,16 @@ class _Sim:
                 "gold",
             )
         }
+        self.windows: list[tuple[int, int]] = []  # episode index ranges, for the bridge
+        self.episode_dates: dict[str, tuple[date, date]] = {}
         for ep in cfg.episodes:
             s = max(self.n - ep.start_offset_days, 0)
             e = min(s + ep.length, self.n)
             n_days = e - s
             if n_days <= 0:
                 continue
+            self.windows.append((s, e))
+            self.episode_dates[ep.name] = (self.dates[max(s - 1, 0)], self.dates[e - 1])
             sl = slice(s, e)
             self.vol_mult[sl] = ep.daily_vol_mult
             self.skew_mult[sl] = ep.skew_mult
@@ -419,11 +453,20 @@ class _Sim:
             if tl > 0:
                 self.drift["vol"][tail] -= np.log(ep.vol_mult) * 0.8 / tl
                 self.drift["credit"][tail] -= np.log(ep.credit_mult) * 0.6 / tl
+        self.g = self._bridge(self.g)
         self.series: dict[str, np.ndarray] = {}
+
+    def _bridge(self, z: np.ndarray) -> np.ndarray:
+        """Remove the draws' mean inside each episode window: the window's net move is then the
+        episode's drift alone, while each day keeps its noise."""
+        for s, e in self.windows:
+            if e - s > 1:
+                z[s:e] -= z[s:e].mean(axis=0)
+        return z
 
     def _noise(self, k: int = 1) -> np.ndarray:
         z = self.rng.standard_normal((self.n, k)) if k > 1 else self.rng.standard_normal(self.n)
-        return z
+        return self._bridge(z)
 
     def _lognormal_path(
         self,
@@ -721,6 +764,7 @@ class _Sim:
             self.series[fid] = np.concatenate([adj[:-1], core])
         self.dates = earlier.dates[:-1] + self.dates
         self.n = len(self.dates)
+        self.episode_dates = {**earlier.episode_dates, **self.episode_dates}
 
     def assemble(self) -> GeneratedMarketData:
         universe = build_risk_factor_universe()
@@ -766,7 +810,9 @@ class _Sim:
             snapshots[self.dates[k]] = MarketSnapshot(as_of=self.dates[k], values=vals, observed_at=observed)
         snapshot = snapshots[problem_date]
         previous = snapshots[self.dates[pi - 1]]
-        return GeneratedMarketData(universe, history, snapshot, previous, snapshots, planted)
+        return GeneratedMarketData(
+            universe, history, snapshot, previous, snapshots, planted, dict(self.episode_dates)
+        )
 
 
 def generate_market_data(cfg: MarketSimConfig) -> GeneratedMarketData:
@@ -775,7 +821,7 @@ def generate_market_data(cfg: MarketSimConfig) -> GeneratedMarketData:
     The core segment (the last ``core_years``) is drawn exactly as a run of that length would
     draw it, so lengthening the history never moves the levels, the episodes or the VaR window
     that the limits were calibrated on. Any horizon beyond the core is an extension segment
-    drawn with ``seed + EXTENSION_SEED_OFFSET`` and no episodes, joined in front."""
+    drawn with ``seed + EXTENSION_SEED_OFFSET`` and ``EXTENSION_EPISODES``, joined in front."""
     core = _Sim(cfg if cfg.years <= cfg.core_years else replace(cfg, years=cfg.core_years))
     core.simulate()
     extra = int(round(cfg.years * 261)) - core.n
@@ -785,7 +831,7 @@ def generate_market_data(cfg: MarketSimConfig) -> GeneratedMarketData:
                 cfg,
                 years=(extra + 1) / 261,
                 seed=cfg.seed + EXTENSION_SEED_OFFSET,
-                episodes=(),
+                episodes=EXTENSION_EPISODES if cfg.episodes else (),
                 end_date=core.dates[0],
             )
         )

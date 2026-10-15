@@ -612,7 +612,9 @@ class RiskService:
         universe = self.repo.load_risk_factors()
         rows = self.repo.load_market_history(factor_ids=[fid for fid, _ in HEADLINE_FACTORS])
         history = MarketHistory.from_long(rows) if len(rows) else None
-        return stress_library(history, universe, self.repo.load_market_provenance())
+        return stress_library(
+            history, universe, self.repo.load_market_provenance(), self.repo.load_market_episodes()
+        )
 
     def counterparty_reference(self) -> dict[str, Any]:
         """Static counterparty reference data: counterparties, netting sets and CSA terms,
@@ -851,6 +853,7 @@ class RiskService:
             "summary": _records(self.repo.load_run_frame(r.run_id, "backtest_summary")),
             "series": _records(self.repo.load_run_frame(r.run_id, "backtest_series")),
             "live_series": _records(self.repo.load_run_frame(r.run_id, "backtest_live_series")),
+            "history_series": _records(self.repo.load_run_frame(r.run_id, "backtest_history_series")),
         }
 
     def risk_pack(self, run_id: str | None, out_dir: str, pdf: bool = True) -> dict[str, Any]:

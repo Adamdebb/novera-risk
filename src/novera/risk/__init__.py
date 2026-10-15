@@ -25,7 +25,12 @@ __all__ = [
 from novera.risk.pnl_attribution import PnLExplain, explain_pnl  # noqa: E402
 
 __all__ += ["PnLExplain", "explain_pnl"]
-from novera.risk.backtest import BacktestResult, live_backtest, static_backtest  # noqa: E402
+from novera.risk.backtest import (  # noqa: E402
+    BacktestResult,
+    history_backtest,
+    live_backtest,
+    static_backtest,
+)
 from novera.risk.concentration import ConcentrationReport, concentration  # noqa: E402
 from novera.risk.liquidity import LiquidityReport, liquidity  # noqa: E402
 from novera.risk.lookthrough import LookThrough, look_through  # noqa: E402
@@ -47,6 +52,7 @@ __all__ += [
     "compute_measures",
     "validate_measures",
     "BacktestResult",
+    "history_backtest",
     "live_backtest",
     "static_backtest",
     "ConcentrationReport",

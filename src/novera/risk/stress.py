@@ -270,8 +270,32 @@ def stress_table(
     return pd.DataFrame(rows).sort_values("total")
 
 
+def historical_episodes(
+    history: MarketHistory, windows: dict[str, tuple[date, date]] | None
+) -> list[StressScenario]:
+    """The simulator's stylised episodes as HISTORICAL stress scenarios, oldest first, on the
+    windows stored with the history (``repo.load_market_episodes``). A database built before
+    they were stored falls back to the core episodes counted back from the end of the history,
+    which drifts by a day for each day appended since (decision 42.4)."""
+    if not windows:
+        from novera.simulation.market_data import DEFAULT_EPISODES
+
+        return historical_episodes_from_simulation(history, DEFAULT_EPISODES, history.dates[-1])
+    return [
+        StressScenario(
+            name,
+            name.replace("_", " ").title(),
+            f"Observed moves from {start} to {end} in the simulated history",
+            "HISTORICAL",
+            episode=(start, end),
+        )
+        for name, (start, end) in sorted(windows.items(), key=lambda kv: kv[1][0])
+    ]
+
+
 def historical_episodes_from_simulation(history: MarketHistory, episodes, end: date) -> list[StressScenario]:
-    """Turn the simulator's stylised episodes into HISTORICAL stress scenarios."""
+    """Turn the simulator's stylised episodes into HISTORICAL stress scenarios by their offsets
+    from the end of ``history`` (databases without stored episode windows)."""
     dates = history.dates
     n = len(dates)
     out = []

@@ -18,9 +18,8 @@ from novera.risk.stress import (
     HYPOTHETICAL_LIBRARY,
     ShockRule,
     StressScenario,
-    historical_episodes_from_simulation,
+    historical_episodes,
 )
-from novera.simulation.market_data import DEFAULT_EPISODES
 
 RECORD = "MR-005"
 
@@ -198,6 +197,7 @@ def stress_library(
     history: MarketHistory | None,
     universe: list[RiskFactor],
     provenance: pd.DataFrame | None = None,
+    episodes: dict[str, tuple[date, date]] | None = None,
 ) -> dict[str, Any]:
     """The library by category. ``history`` may hold only the headline factors; its dates
     decide which historical windows are covered."""
@@ -215,7 +215,7 @@ def stress_library(
 
     stylised = []
     if history is not None and dates:
-        for sc in historical_episodes_from_simulation(history, DEFAULT_EPISODES, dates[-1]):
+        for sc in historical_episodes(history, episodes):
             assert sc.episode is not None
             stylised.append(
                 _scenario_row(

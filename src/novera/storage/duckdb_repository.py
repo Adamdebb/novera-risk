@@ -256,6 +256,11 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     attempts INTEGER NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS market_episode (
+    episode_id VARCHAR PRIMARY KEY,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL
+);
 CREATE TABLE IF NOT EXISTS market_provenance (
     factor_id VARCHAR NOT NULL,
     source VARCHAR NOT NULL,
@@ -1221,6 +1226,24 @@ class DuckDBRepository:
         return [json.loads(r[0]) for r in rows]
 
     # --- market data provenance ---------------------------------------------------------
+    def save_market_episodes(self, episodes: dict[str, tuple[date, date]]) -> None:
+        """The simulator's stylised episodes, from the close before each to its last day."""
+        self._conn.execute("DELETE FROM market_episode")
+        self._conn.executemany(
+            "INSERT INTO market_episode VALUES (?, ?, ?)", [(k, s, e) for k, (s, e) in episodes.items()]
+        )
+
+    def load_market_episodes(self) -> dict[str, tuple[date, date]]:
+        """Episode windows by id, oldest first; empty for a database built before they were stored."""
+        if not self._conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'market_episode'"
+        ).fetchone():
+            return {}
+        rows = self._conn.execute(
+            "SELECT episode_id, start_date, end_date FROM market_episode ORDER BY start_date"
+        ).fetchall()
+        return {r[0]: (r[1], r[2]) for r in rows}
+
     def save_market_provenance(self, rows: list[dict]) -> None:
         self._conn.executemany(
             "INSERT OR REPLACE INTO market_provenance VALUES (?, ?, ?, ?, ?, ?)",

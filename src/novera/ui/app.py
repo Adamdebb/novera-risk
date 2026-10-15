@@ -551,8 +551,22 @@ elif page == "VaR":
                 st.caption("Exceptions on: " + ", ".join(exc["date"].dt.strftime("%Y-%m-%d")))
         st.caption(
             "Static-portfolio hypothetical backtest: today's book against the last 250 daily moves, VaR "
-            "from the preceding 250 (MR-011). The live series grows one point per stored run."
+            "from the preceding 250 (MR-011); its zone sets the FRTB IMA multiplier. The live series "
+            "grows one point per stored run."
         )
+        hist_ = df(bt.get("history_series", []))
+        if not hist_.empty:
+            st.subheader("History backtest (information)")
+            hist_["date"] = pd.to_datetime(hist_["date"])
+            chart = hist_.set_index("date")[["pnl", "var"]] / M
+            chart["-var"] = -chart["var"]
+            st.line_chart(chart[["pnl", "-var"]])
+            st.caption(
+                f"Today's book on every daily move of the stored history ({len(hist_)} days, "
+                f"{int(hist_['exception'].sum())} exceptions), delta-gamma-vega P&L against the VaR of the "
+                "preceding 250 days. For judging the model over the stress episodes; it does not feed "
+                "the IMA multiplier."
+            )
 
 elif page == "Stress":
     header("Stress testing")

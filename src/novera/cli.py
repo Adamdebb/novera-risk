@@ -167,6 +167,7 @@ def simulate(
         if md is not None:
             repo.save_risk_factors(md.universe)
             n_rows = repo.save_market_history(md.history)
+            repo.save_market_episodes(md.episodes)
             md_ids = {d: repo.save_market_snapshot(m) for d, m in md.snapshots.items()}
     snap = gen.snapshot
     typer.echo(
@@ -265,8 +266,7 @@ def risk(
         stress_table,
         taylor_var,
     )
-    from novera.risk.stress import historical_episodes_from_simulation
-    from novera.simulation.market_data import DEFAULT_EPISODES
+    from novera.risk.stress import historical_episodes
     from novera.storage.duckdb_repository import DuckDBRepository
 
     if workers:
@@ -281,6 +281,7 @@ def risk(
         org = repo.load_organisation("GMB")
         universe = {f.factor_id: f for f in repo.load_risk_factors()}
         hist = MarketHistory.from_long(repo.load_market_history())
+        episodes = repo.load_market_episodes()
         limits = repo.load_limits(on=market.as_of)
         collateral = CollateralMap.from_reference(*repo.load_netting_sets())
     m = 1e6
@@ -319,9 +320,7 @@ def risk(
     typer.echo("  Largest DV01 books (k per bp):")
     for (desk, ccy), _ in dv.abs().sort_values(ascending=False).head(4).items():
         typer.echo(f"    {desk:<16}{ccy}  {dv[(desk, ccy)] / 1e3:>9,.1f}")
-    scen = list(HYPOTHETICAL_LIBRARY) + historical_episodes_from_simulation(
-        hist, DEFAULT_EPISODES, market.as_of
-    )
+    scen = list(HYPOTHETICAL_LIBRARY) + historical_episodes(hist, episodes)
     st = run_stress(pf, scen, hist)
     typer.echo("  Stress (m):")
     for _, r in stress_table(st, val).head(6).iterrows():
