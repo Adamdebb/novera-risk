@@ -41,6 +41,12 @@ categories with the shocks it applies:
    only a real replay at REAL; the page says so rather than showing synthetic moves over a
    real calendar as if they were the event.
 
+## Prior art
+Ideas for reverse stress testing, correlation breakdown and liquidity-adjusted stress are
+reviewed in `docs/references/` (wraquant, torchquantlib, Hurlin et al. 2026, van Oers 2017).
+They are references only: none is used by the code, and none is adopted until it has its own
+methodology record and tests.
+
 ## Assumptions
 Shocks are simultaneous and instantaneous; no liquidity horizon; no rebalancing. Vol
 shocks are absolute vol points applied to every surface node. A rate shock on `IR:EUR:` moves
