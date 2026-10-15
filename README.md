@@ -92,7 +92,7 @@ uv run novera --help                # everything else
 
 Alerts are stored always and delivered only when Slack or SMTP is configured. Leave them
 unconfigured while you explore, because a full EOD run delivers for real once they are set.
-The full test suite takes about 20 minutes (`uv run pytest`).
+The full test suite takes about 3 minutes on four parallel workers (`uv run pytest`; `-n 0` runs it in one process, about 20 minutes).
 
 ## Architecture
 

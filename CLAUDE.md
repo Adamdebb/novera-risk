@@ -75,7 +75,7 @@ src/novera/
 ## Commands
 ```
 uv sync --all-extras          # create .venv and install
-uv run pytest                 # tests
+uv run pytest                 # tests, 4 parallel workers (pytest-xdist, ~3 min); -n 0 for one process
 uv run novera --help          # CLI
 uv run novera simulate        # simulated bank, portfolio, market data, limits
 uv run novera run eod         # governed EOD run, stores results and audit events (--business-date)

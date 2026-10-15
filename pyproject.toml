@@ -46,7 +46,7 @@ packages = ["src/novera"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -n 4 --dist loadfile"  # 4 workers: each builds its own fixtures, 8 GB RAM is the limit
 pythonpath = ["src"]
 
 [tool.ruff]
@@ -75,4 +75,5 @@ ignore_missing_imports = true
 [dependency-groups]
 dev = [
     "playwright>=1.62.0",
+    "pytest-xdist>=3.8.0",
 ]
