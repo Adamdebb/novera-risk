@@ -18,9 +18,10 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from novera.regulatory.allocation import UNASSIGNED, by_bump, desk_map, with_euler
 from novera.simulation import reference_levels as _ref
 
-MODEL_VERSION = "1.2.0"
+MODEL_VERSION = "1.3.0"
 
 # --- GIRR ----------------------------------------------------------------------------------
 GIRR_VERTICES = np.array([0.25, 0.5, 1, 2, 3, 5, 10, 15, 20, 30])
@@ -409,19 +410,32 @@ def frtb_sa(
     base_vols: dict[str, float] | None = None,
     exotic_notional: pd.Series | None = None,
 ) -> FRTBSAResult:
-    """Firm charge plus attribution by desk (standalone charges scaled to the total).
+    """Firm charge plus its desk allocation (REG-008): Euler contributions, incremental and
+    standalone charges, with each desk's standalone breakdown by risk class.
     ``exotic_notional`` is gross notional by trade id for the residual risk add-on."""
     base_vols = base_vols or {}
     res = _charges(sens, valuation, base_vols, exotic_notional)
-    keys = valuation[["trade_id", "desk_id"]].drop_duplicates("trade_id")
-    s2 = sens.merge(keys, on="trade_id", how="left")
+    desk = desk_map(valuation)
+    s2 = sens.assign(desk_id=sens["trade_id"].map(desk).fillna(UNASSIGNED))
+    v2 = valuation.assign(desk_id=valuation["trade_id"].map(desk))
+    ex2 = exotic_notional if exotic_notional is not None else pd.Series(dtype=float)
+
+    def charge(scales, other: float) -> float:
+        ks, kv = s2["desk_id"].map(scales).fillna(other), v2["desk_id"].map(scales).fillna(other)
+        kx = ex2.index.map(lambda t: scales.get(desk.get(t, UNASSIGNED), other))
+        return _charges(
+            s2.assign(value=s2["value"] * ks)[ks != 0],
+            v2.assign(pv=v2["pv"] * kv)[kv != 0],
+            base_vols,
+            ex2 * np.asarray(kx, dtype=float),
+        ).total
+
     rows = []
-    for desk, g in s2.groupby("desk_id", dropna=False):
-        r = _charges(g, valuation[valuation["desk_id"] == desk], base_vols, exotic_notional)
+    for d, g in s2.groupby("desk_id"):
+        r = _charges(g, v2[v2["desk_id"] == d], base_vols, exotic_notional)
         rows.append(
             {
-                "desk_id": desk,
-                "standalone": r.total,
+                "desk_id": d,
                 "sbm": r.sbm,
                 "drc": r.drc,
                 "rrao": r.rrao,
@@ -429,8 +443,9 @@ def frtb_sa(
                 **{f"{c.risk_class}": c.total for c in r.classes},
             }
         )
-    by_desk = pd.DataFrame(rows)
-    if len(by_desk) and by_desk["standalone"].sum():
-        by_desk["attributed"] = by_desk["standalone"] / by_desk["standalone"].sum() * res.total
-    res.by_desk = by_desk.sort_values("standalone", ascending=False)
+    desks = sorted(set(s2["desk_id"]) | set(v2.loc[v2["status"] == "LIVE", "desk_id"]))
+    by_desk = with_euler(by_bump(charge, desks, res.total), res.total)
+    if rows:
+        by_desk = by_desk.merge(pd.DataFrame(rows), on="desk_id", how="left")
+    res.by_desk = by_desk.sort_values("euler", ascending=False, ignore_index=True)
     return res

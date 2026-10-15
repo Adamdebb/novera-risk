@@ -1468,13 +1468,40 @@ class CapitalComponent(ApiModel):
 
 
 class CapitalByDesk(ApiModel):
+    """Official desk allocation: Euler contributions, which add up to each charge (REG-008)."""
+
     desk_id: str
     frtb_sa: float | None = None
     frtb_ima: float | None = None
     saccr: float | None = None
     ba_cva: float | None = None
-    total_sa: float | None = None
+    ccp_trade: float | None = None
+    ccp_default_fund: float | None = None
+    total_sa: float | None = Field(default=None, description="FRTB SA + SA-CCR + BA-CVA + CCP capital")
     business_id: str | None = None
+
+
+class DeskAllocationRow(ApiModel):
+    """One desk's share of one charge (REG-008); ``component`` ``total_sa`` is the standardised stack."""
+
+    desk_id: str
+    business_id: str | None = None
+    component: str
+    euler: float = Field(description="Euler contribution, rescaled to the charge: the official figure")
+    euler_raw: float = Field(description="Euler contribution before rescaling")
+    incremental: float = Field(description="Charge less the charge without the desk")
+    standalone: float = Field(description="The desk's charge on its own")
+
+
+class AllocationSummaryRow(ApiModel):
+    component: str
+    label: str
+    capital: float
+    euler: float
+    euler_raw: float
+    euler_scale: float | None = Field(default=None, description="Charge / sum of raw Euler contributions")
+    incremental: float
+    standalone: float
 
 
 class FRTBClassRow(ApiModel):
@@ -1584,6 +1611,8 @@ class CapitalReport(ApiModel):
     summary: RegulatorySummary | None = None
     components: list[CapitalComponent] = Field(default_factory=list)
     by_desk: list[CapitalByDesk] = Field(default_factory=list)
+    desk_allocation: list[DeskAllocationRow] = Field(default_factory=list)
+    allocation_summary: list[AllocationSummaryRow] = Field(default_factory=list)
     frtb_sa_classes: list[FRTBClassRow] = Field(default_factory=list)
     frtb_sa_detail: list[FRTBDetailRow] = Field(default_factory=list)
     ima: list[IMARow] = Field(default_factory=list)

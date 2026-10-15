@@ -31,6 +31,9 @@ five days, a conservative shortcut.
 Default-fund inputs are assumed, not read from the CCPs' public quantitative disclosures; no
 unfunded default-fund commitments; no non-qualifying CCP treatment.
 
+## Desk allocation
+Trade exposure by Euler contributions; the default-fund charge by each desk's share of them: REG-008.
+
 ## Validation tests
 `tests/test_ccp.py::test_qccp_capital`: the 2% trade charge, the K_CM formula and its total.
 

@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Regulatory Capital Methodology |
 | Approval status | Draft |
 | Code | `novera.regulatory.frtb_ima` |
-| Last validated | 2026-09-14 |
+| Last validated | 2026-10-15 |
 
 ## Definition
 `IMES = sqrt( Σ_j ( ES(Q_j) · sqrt((LH_j − LH_{j−1}) / 10) )² )` over liquidity horizons
@@ -27,5 +27,16 @@ The stressed-period scaling (ES_full / ES_reduced) is not applied. 10-day ES use
 square root of time on one-day moves rather than overlapping ten-day returns. The same
 historical window serves as both current and stress periods.
 
+## Desk allocation
+The scenario P&L is kept by desk for each liquidity-horizon subset. A desk carries its Euler
+contribution to the capital, exact through the cascade, with incremental and standalone
+capital beside it (REG-008). This replaces the standalone 10-day ES scaled to the total.
+
 ## Validation tests
-`tests/test_regulatory.py`.
+`tests/test_regulatory.py`, `tests/test_capital_allocation.py::test_ima_euler_is_exact_and_matches_the_derivative_of_the_cascade`.
+
+## Change history
+| Version | Date | Change |
+|---|---|---|
+| 1.0.0 | 2026-09-14 | Initial model |
+| 1.1.0 | 2026-10-15 | Desk allocation by Euler contributions (decision 41, REG-008); capital unchanged |

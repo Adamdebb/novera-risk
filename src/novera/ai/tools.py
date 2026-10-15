@@ -553,6 +553,7 @@ def build_tools(db_path: str) -> list[Tool]:
                 }
                 for x in c["frtb_sa_classes"]
             ],
+            "by_desk_basis": "Euler contributions, which add up to each charge (REG-008)",
             "by_desk_m": [
                 {
                     "desk_id": x["desk_id"],
@@ -560,9 +561,16 @@ def build_tools(db_path: str) -> list[Tool]:
                     "frtb_ima": _m(x["frtb_ima"]),
                     "saccr": _m(x["saccr"]),
                     "ba_cva": _m(x["ba_cva"]),
+                    "ccp": _m((x.get("ccp_trade") or 0.0) + (x.get("ccp_default_fund") or 0.0)),
+                    "total_sa": _m(x["total_sa"]),
                 }
                 for x in c["by_desk"][:10]
             ],
+            "total_sa_incremental_m": {
+                x["desk_id"]: _m(x["incremental"])
+                for x in c.get("desk_allocation", [])
+                if x["component"] == "total_sa"
+            },
             "saccr_top_m": [
                 {"counterparty_id": x["counterparty_id"], "ead": _m(x["ead"]), "rwa": _m(x["rwa"])}
                 for x in c["saccr_counterparty"][:6]

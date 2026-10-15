@@ -243,6 +243,62 @@
         "title": "AlertRecord",
         "type": "object"
       },
+      "AllocationSummaryRow": {
+        "additionalProperties": true,
+        "properties": {
+          "capital": {
+            "title": "Capital",
+            "type": "number"
+          },
+          "component": {
+            "title": "Component",
+            "type": "string"
+          },
+          "euler": {
+            "title": "Euler",
+            "type": "number"
+          },
+          "euler_raw": {
+            "title": "Euler Raw",
+            "type": "number"
+          },
+          "euler_scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Charge / sum of raw Euler contributions",
+            "title": "Euler Scale"
+          },
+          "incremental": {
+            "title": "Incremental",
+            "type": "number"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "standalone": {
+            "title": "Standalone",
+            "type": "number"
+          }
+        },
+        "required": [
+          "component",
+          "label",
+          "capital",
+          "euler",
+          "euler_raw",
+          "incremental",
+          "standalone"
+        ],
+        "title": "AllocationSummaryRow",
+        "type": "object"
+      },
       "AnalystAnswer": {
         "additionalProperties": true,
         "properties": {
@@ -1775,6 +1831,7 @@
       },
       "CapitalByDesk": {
         "additionalProperties": true,
+        "description": "Official desk allocation: Euler contributions, which add up to each charge (REG-008).",
         "properties": {
           "ba_cva": {
             "anyOf": [
@@ -1797,6 +1854,28 @@
               }
             ],
             "title": "Business Id"
+          },
+          "ccp_default_fund": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ccp Default Fund"
+          },
+          "ccp_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ccp Trade"
           },
           "desk_id": {
             "title": "Desk Id",
@@ -1844,6 +1923,7 @@
                 "type": "null"
               }
             ],
+            "description": "FRTB SA + SA-CCR + BA-CVA + CCP capital",
             "title": "Total Sa"
           }
         },
@@ -1886,6 +1966,13 @@
       "CapitalReport": {
         "additionalProperties": true,
         "properties": {
+          "allocation_summary": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationSummaryRow"
+            },
+            "title": "Allocation Summary",
+            "type": "array"
+          },
           "available": {
             "title": "Available",
             "type": "boolean"
@@ -1923,6 +2010,13 @@
               "$ref": "#/components/schemas/CapitalComponent"
             },
             "title": "Components",
+            "type": "array"
+          },
+          "desk_allocation": {
+            "items": {
+              "$ref": "#/components/schemas/DeskAllocationRow"
+            },
+            "title": "Desk Allocation",
             "type": "array"
           },
           "frtb_sa_classes": {
@@ -3244,6 +3338,61 @@
           "region"
         ],
         "title": "Desk",
+        "type": "object"
+      },
+      "DeskAllocationRow": {
+        "additionalProperties": true,
+        "description": "One desk's share of one charge (REG-008); ``component`` ``total_sa`` is the standardised stack.",
+        "properties": {
+          "business_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Id"
+          },
+          "component": {
+            "title": "Component",
+            "type": "string"
+          },
+          "desk_id": {
+            "title": "Desk Id",
+            "type": "string"
+          },
+          "euler": {
+            "description": "Euler contribution, rescaled to the charge: the official figure",
+            "title": "Euler",
+            "type": "number"
+          },
+          "euler_raw": {
+            "description": "Euler contribution before rescaling",
+            "title": "Euler Raw",
+            "type": "number"
+          },
+          "incremental": {
+            "description": "Charge less the charge without the desk",
+            "title": "Incremental",
+            "type": "number"
+          },
+          "standalone": {
+            "description": "The desk's charge on its own",
+            "title": "Standalone",
+            "type": "number"
+          }
+        },
+        "required": [
+          "desk_id",
+          "component",
+          "euler",
+          "euler_raw",
+          "incremental",
+          "standalone"
+        ],
+        "title": "DeskAllocationRow",
         "type": "object"
       },
       "DocumentBody": {

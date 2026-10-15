@@ -1456,12 +1456,79 @@ elif page == "Capital":
     if not comp.empty:
         comp["capital"] = comp["capital"] / M
         st.bar_chart(comp.set_index("component")["capital"])
-    st.subheader("By desk (standardised stack: FRTB SA + SA-CCR + BA-CVA; IMA shown for comparison)")
     bd = df(cap["by_desk"])
-    if not bd.empty:
-        for c_ in ("frtb_sa", "frtb_ima", "saccr", "ba_cva", "total_sa"):
-            bd[c_] = bd[c_] / M
-        st.dataframe(bd.round(1), use_container_width=True, hide_index=True)
+    alloc = df(cap.get("desk_allocation", []))
+    summ = df(cap.get("allocation_summary", []))
+    official, decision = st.columns([3, 2])
+    with official:
+        st.subheader("Capital by desk: Euler allocation (official)")
+        if not bd.empty:
+            names = {
+                "frtb_sa": "FRTB SA",
+                "frtb_ima": "FRTB IMA",
+                "saccr": "SA-CCR",
+                "ba_cva": "BA-CVA",
+                "ccp_trade": "CCP trade",
+                "ccp_default_fund": "CCP default fund",
+                "total_sa": "Standardised total",
+            }
+            cols = ["desk_id", "business_id", *[c_ for c_ in names if c_ in bd]]
+            show = bd[cols].copy()
+            for c_ in names:
+                if c_ in show:
+                    show[c_] = show[c_] / M
+            st.dataframe(show.rename(columns=names).round(1), use_container_width=True, hide_index=True)
+            note = (
+                "Each desk's Euler contribution to each charge (REG-008): the charges' derivatives "
+                "along the desk's positions, which add up to the firm charge. The standardised total "
+                "is FRTB SA, SA-CCR, BA-CVA and CCP capital; FRTB IMA is the alternative to FRTB SA."
+            )
+            if not summ.empty:
+                adj = summ[(summ["component"] != "total_sa") & ((summ["euler_scale"] - 1.0).abs() > 0.005)]
+                if len(adj):
+                    note += (
+                        " Rescaled to the charge where it is not scale-invariant: "
+                        + ", ".join(f"{r_.label} x{r_.euler_scale:.2f}" for r_ in adj.itertuples())
+                        + "."
+                    )
+            st.caption(note)
+    with decision:
+        st.subheader("Decision view")
+        if alloc.empty:
+            st.info("Run the regulatory stage again to see incremental capital for this run.")
+        else:
+            labels = dict(zip(summ["component"], summ["label"], strict=True))
+            comp_ = st.selectbox(
+                "Charge",
+                list(labels),
+                index=list(labels).index("total_sa") if "total_sa" in labels else 0,
+                format_func=labels.get,
+            )
+            view = alloc[alloc["component"] == comp_][["desk_id", "euler", "incremental", "standalone"]]
+            view = view.sort_values("euler", ascending=False)
+            row = summ[summ["component"] == comp_].iloc[0]
+            m1, m2 = st.columns(2)
+            m1.metric("Charge", money(row["capital"]), f"incremental sum {money(row['incremental'])}")
+            m2.metric(
+                "Diversification",
+                money(row["standalone"] - row["capital"]),
+                f"standalone sum {money(row['standalone'])}",
+                delta_color="off",
+            )
+            for c_ in ("euler", "incremental", "standalone"):
+                view[c_] = view[c_] / M
+            st.dataframe(
+                view.rename(
+                    columns={"euler": "Euler", "incremental": "Incremental", "standalone": "Standalone"}
+                ).round(1),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "Incremental: the charge freed if the desk's book were closed, the figure for a "
+                "decision to grow, cut or exit a desk. Standalone: the desk's charge on its own. "
+                "Neither adds up to the charge; the Euler column does."
+            )
     left, right = st.columns(2)
     with left:
         st.subheader("FRTB SA by risk class")

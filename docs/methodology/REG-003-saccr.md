@@ -25,5 +25,8 @@ Equity and commodity OTC derivatives are not in the simulated bilateral book (li
 products are exchange-cleared), so those asset classes carry no add-on yet. Effective
 maturity for BA-CVA is a proxy (1y margined, 2.5y unmargined).
 
+## Desk allocation
+By Euler contributions, with incremental and standalone figures beside them: REG-008.
+
 ## Validation tests
 `tests/test_regulatory.py::test_regulatory_run_end_to_end`.

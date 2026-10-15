@@ -10,8 +10,10 @@ commodity type. Counterparty risk weights by rating (standardised approach) give
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -178,10 +180,75 @@ def _trade_addon(
 
 
 @dataclass
+class NettingSetInputs:
+    """What one netting set's EAD is computed from, kept so that a desk's share can be measured
+    again on a changed set (desk allocation, REG-008)."""
+
+    netting_set_id: str
+    counterparty_id: str
+    csa: CSA | None
+    pv: dict[str, float]  # trade id -> value in reporting currency
+    addons: list[TradeAddOn]
+    collateral: float | None = None  # held today, from the exposure engine; None: from the CSA
+
+    def ead(self, scale: Mapping[str, float] | None = None) -> dict[str, Any]:
+        """EAD and its terms. ``scale`` multiplies each listed trade's value and notional (0
+        removes it); a scaled set derives its collateral from the CSA terms, since the balance
+        held today belongs to today's set."""
+        if scale is None:
+            return _set_ead(sum(self.pv.values()), self.addons, self.csa, self.collateral)
+        v = sum(pv * scale.get(t, 1.0) for t, pv in self.pv.items())
+        addons = []
+        for a in self.addons:
+            k = scale.get(a.trade_id, 1.0)
+            if k:
+                addons.append(
+                    a
+                    if k == 1.0
+                    else replace(a, adjusted_notional=a.adjusted_notional * k, effective=a.effective * k)
+                )
+        if not addons and not any(scale.get(t, 1.0) for t in self.pv):
+            return _set_ead(0.0, [], None, 0.0)  # nothing left: no value, no add-on, no exposure
+        return _set_ead(v, addons, self.csa, None)
+
+
+def _set_ead(v: float, addons: list[TradeAddOn], csa: CSA | None, collateral: float | None) -> dict[str, Any]:
+    """EAD = 1.4 × (RC + multiplier × add-on) of one netting set worth ``v``."""
+    c = collateral
+    if c is None:
+        c = 0.0
+        if csa is not None:
+            they = max(v - csa.threshold_they_post, 0.0)
+            we = max(-v - csa.threshold_we_post, 0.0)
+            they = 0.0 if they < csa.minimum_transfer_amount else they
+            we = 0.0 if we < csa.minimum_transfer_amount else we
+            c = they * (1 - csa.haircut) + csa.independent_amount - we * (1 - csa.haircut)
+    if csa is not None:
+        rc = max(v - c, csa.threshold_they_post + csa.minimum_transfer_amount - csa.independent_amount, 0.0)
+    else:
+        rc = max(v - c, 0.0)
+    addon_by_class = _aggregate_addons(addons)
+    addon_agg = sum(addon_by_class.values())
+    mult = min(1.0, 0.05 + 0.95 * np.exp((v - c) / (2 * 0.95 * addon_agg))) if addon_agg > 0 else 1.0
+    pfe = mult * addon_agg
+    return {
+        "value": v,
+        "collateral": c,
+        "rc": rc,
+        "addon": addon_agg,
+        "multiplier": mult,
+        "pfe": pfe,
+        "ead": ALPHA * (rc + pfe),
+        "addon_by_class": addon_by_class,
+    }
+
+
+@dataclass
 class SACCRResult:
     by_netting_set: pd.DataFrame
     by_counterparty: pd.DataFrame
     trades: pd.DataFrame = field(default_factory=pd.DataFrame)
+    inputs: dict[str, NettingSetInputs] = field(default_factory=dict)  # by netting set id
 
     @property
     def total_ead(self) -> float:
@@ -264,16 +331,17 @@ def saccr(
             and t.netting_set_id in ns_map
         ):
             by_set.setdefault(t.netting_set_id, []).append(t)
+    inputs: dict[str, NettingSetInputs] = {}
     for k, ts in by_set.items():
         ns = ns_map[k]
         csa = csa_map.get(ns.csa_id) if ns.csa_id else None
         margined = csa is not None
-        v = 0.0
+        pv: dict[str, float] = {}
         addons: list[TradeAddOn] = []
         for t in ts:
             try:
                 r = value_trade(t, market, as_of, discounting)
-                v += r.pv_local * fx_to_reporting(market, r.currency, reporting)
+                pv[t.trade_id] = r.pv_local * fx_to_reporting(market, r.currency, reporting)
             except Exception:  # noqa: BLE001
                 continue
             a = _trade_addon(t, market, as_of, reporting, margined, discounting)
@@ -281,44 +349,26 @@ def saccr(
                 a.effective = a.delta * a.adjusted_notional * a.maturity_factor
                 addons.append(a)
                 trade_rows.append({**a.__dict__, "netting_set_id": k})
-        c = coll.get(k)
-        if c is None:
-            c = 0.0
-            if margined:
-                they = max(v - csa.threshold_they_post, 0.0)
-                we = max(-v - csa.threshold_we_post, 0.0)
-                they = 0.0 if they < csa.minimum_transfer_amount else they
-                we = 0.0 if we < csa.minimum_transfer_amount else we
-                c = they * (1 - csa.haircut) + csa.independent_amount - we * (1 - csa.haircut)
-        if margined:
-            rc = max(
-                v - c, csa.threshold_they_post + csa.minimum_transfer_amount - csa.independent_amount, 0.0
-            )
-        else:
-            rc = max(v - c, 0.0)
-        addon_by_class = _aggregate_addons(addons)
-        addon_agg = sum(addon_by_class.values())
-        mult = min(1.0, 0.05 + 0.95 * np.exp((v - c) / (2 * 0.95 * addon_agg))) if addon_agg > 0 else 1.0
-        pfe = mult * addon_agg
-        ead = ALPHA * (rc + pfe)
+        inputs[k] = NettingSetInputs(k, ns.counterparty_id, csa, pv, addons, coll.get(k))
+        e = inputs[k].ead()
         rows.append(
             {
                 "netting_set_id": k,
                 "counterparty_id": ns.counterparty_id,
                 "margined": margined,
-                "value": v,
-                "collateral": c,
-                "replacement_cost": rc,
-                "addon": addon_agg,
-                "multiplier": mult,
-                "pfe": pfe,
-                "ead": ead,
-                **{f"addon_{cls}": val for cls, val in addon_by_class.items()},
+                "value": e["value"],
+                "collateral": e["collateral"],
+                "replacement_cost": e["rc"],
+                "addon": e["addon"],
+                "multiplier": e["multiplier"],
+                "pfe": e["pfe"],
+                "ead": e["ead"],
+                **{f"addon_{cls}": val for cls, val in e["addon_by_class"].items()},
             }
         )
     by_ns = pd.DataFrame(rows)
     if by_ns.empty:
-        return SACCRResult(by_ns, pd.DataFrame(), pd.DataFrame(trade_rows))
+        return SACCRResult(by_ns, pd.DataFrame(), pd.DataFrame(trade_rows), inputs)
     by_cp = by_ns.groupby("counterparty_id", as_index=False).agg(
         ead=("ead", "sum"),
         rc=("replacement_cost", "sum"),
@@ -336,4 +386,4 @@ def saccr(
     by_cp["risk_weight"] = by_cp["counterparty_id"].map(rw)
     by_cp["rwa"] = by_cp["ead"] * by_cp["risk_weight"]
     by_cp["capital"] = by_cp["rwa"] * 0.08
-    return SACCRResult(by_ns, by_cp.sort_values("ead", ascending=False), pd.DataFrame(trade_rows))
+    return SACCRResult(by_ns, by_cp.sort_values("ead", ascending=False), pd.DataFrame(trade_rows), inputs)

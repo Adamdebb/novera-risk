@@ -13,5 +13,8 @@ Reduced basic approach: `K = 2.33 × sqrt((ρ Σ SCVA_c)² + (1 − ρ²) Σ SCV
 `SCVA_c = RW_c × M_c × EAD_c × DF_c / 1.4`, `DF = (1 − e^{−0.05M}) / (0.05M)`, risk weights
 by sector (sovereign, financial, corporate) and investment-grade status, EAD from SA-CCR.
 
+## Desk allocation
+By Euler contributions, with incremental and standalone figures beside them: REG-008.
+
 ## Validation tests
 `tests/test_regulatory.py::test_regulatory_run_end_to_end`.

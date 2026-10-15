@@ -15,6 +15,16 @@ from novera.counterparty_risk.ccp import build_ccp_sets, qccp_capital
 from novera.market_data.history import MarketHistory
 from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import fx_to_reporting
+from novera.regulatory.allocation import (
+    COMPONENTS,
+    DeskAllocation,
+    assemble,
+    ba_cva_by_desk,
+    ccp_by_desk,
+    desk_map,
+    saccr_by_set,
+    saccr_capital,
+)
 from novera.regulatory.cash_ladder import cash_ladder
 from novera.regulatory.cva_capital import ba_cva
 from novera.regulatory.frtb_ima import IMAResult, frtb_ima
@@ -24,7 +34,8 @@ from novera.regulatory.simm import SIMMResult, simm
 from novera.risk.revaluation import Portfolio
 from novera.storage.duckdb_repository import DuckDBRepository
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
+COMPONENT_KEYS = {label: key for key, label in COMPONENTS.items()}  # capital table label -> key
 
 
 @dataclass
@@ -41,6 +52,7 @@ class RegulatoryRun:
     by_desk: pd.DataFrame
     notes: dict[str, Any] = field(default_factory=dict)
     ccp: pd.DataFrame = field(default_factory=pd.DataFrame)  # qualifying-CCP capital per CCP
+    allocation: DeskAllocation | None = None  # capital by desk: Euler, incremental, standalone
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -216,37 +228,25 @@ def run_regulatory(
             },
         ]
     )
-    # Desk attribution: FRTB (SA attributed) + SA-CCR (by EAD share of trades) + CVA (same share).
-    keys = val[["trade_id", "desk_id", "business_id"]].drop_duplicates("trade_id")
-    ead_share = pd.Series(dtype=float)
-    if len(sc.trades):
-        tr = sc.trades.merge(keys, on="trade_id", how="left")
-        tr["abs_eff"] = tr["effective"].abs()
-        ns_ead = sc.by_netting_set.set_index("netting_set_id")["ead"]
-        tr["ead"] = (
-            tr["abs_eff"]
-            / tr.groupby("netting_set_id")["abs_eff"].transform("sum")
-            * tr["netting_set_id"].map(ns_ead)
-        )
-        ead_share = tr.groupby("desk_id")["ead"].sum()
-    by_desk = sa.by_desk.set_index("desk_id")[["attributed"]].rename(columns={"attributed": "frtb_sa"})
-    if len(ima.by_desk):
-        by_desk = by_desk.join(
-            ima.by_desk.set_index("desk_id")[["attributed_capital"]].rename(
-                columns={"attributed_capital": "frtb_ima"}
-            ),
-            how="outer",
-        )
-    tot_ead = ead_share.sum() if len(ead_share) else 0.0
-    by_desk["saccr"] = (ead_share / tot_ead * sc.total_rwa * 0.08) if tot_ead else 0.0
-    by_desk["ba_cva"] = (ead_share / tot_ead * cva_k) if tot_ead else 0.0
-    by_desk = by_desk.fillna(0.0)
-    by_desk["total_sa"] = by_desk["frtb_sa"] + by_desk["saccr"] + by_desk["ba_cva"]
-    by_desk = (
-        by_desk.reset_index()
-        .merge(keys[["desk_id", "business_id"]].drop_duplicates("desk_id"), on="desk_id", how="left")
-        .sort_values("total_sa", ascending=False)
+    # Desk allocation (REG-008): Euler contributions are the official figures; incremental and
+    # standalone charges sit beside them.
+    desk_of = desk_map(val)
+    sets = saccr_by_set(sc, desk_of)
+    trade_ccp, fund_ccp = ccp_by_desk(sc_ccp, ccp_cap, sens, val, base_vols, set(ccp.ids), desk_of)
+    keys = val[["desk_id", "business_id"]].dropna().drop_duplicates("desk_id")
+    alloc = assemble(
+        {
+            "frtb_sa": sa.by_desk[["desk_id", "euler_raw", "incremental", "standalone"]],
+            "frtb_ima": ima.by_desk[["desk_id", "euler_raw", "incremental", "standalone"]],
+            "saccr": saccr_capital(sets, sc),
+            "ba_cva": ba_cva_by_desk(cva_k, cva_detail, sets),
+            "ccp_trade": trade_ccp,
+            "ccp_default_fund": fund_ccp,
+        },
+        dict(zip(capital["component"].map(COMPONENT_KEYS), capital["capital"], strict=True)),
+        dict(zip(keys["desk_id"], keys["business_id"], strict=True)),
     )
+    by_desk = alloc.by_desk
 
     out = RegulatoryRun(
         run_id,
@@ -265,10 +265,13 @@ def run_regulatory(
             "im_threshold": settings.im_threshold,
         },
         ccp=ccp_cap,
+        allocation=alloc,
     )
     if persist:
         repo.save_run_frame(run_id, "reg_capital", capital)
         repo.save_run_frame(run_id, "reg_by_desk", by_desk)
+        repo.save_run_frame(run_id, "reg_desk_allocation", alloc.rows)
+        repo.save_run_frame(run_id, "reg_allocation_summary", alloc.summary)
         repo.save_run_frame(run_id, "reg_frtb_sa_detail", sa.detail)
         repo.save_run_frame(run_id, "reg_frtb_sa_classes", pd.DataFrame([c.__dict__ for c in sa.classes]))
         repo.save_run_frame(run_id, "reg_frtb_ima_pla", ima.pla)

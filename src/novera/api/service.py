@@ -1034,6 +1034,8 @@ class RiskService:
             "summary": summ.iloc[0].to_dict(),
             "components": _records(self.repo.load_run_frame(r.run_id, "reg_capital")),
             "by_desk": _records(self.repo.load_run_frame(r.run_id, "reg_by_desk")),
+            "desk_allocation": _records(self.repo.load_run_frame(r.run_id, "reg_desk_allocation")),
+            "allocation_summary": _records(self.repo.load_run_frame(r.run_id, "reg_allocation_summary")),
             "frtb_sa_classes": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_sa_classes")),
             "frtb_sa_detail": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_sa_detail")),
             "ima": _records(self.repo.load_run_frame(r.run_id, "reg_frtb_ima_summary")),

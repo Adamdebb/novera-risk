@@ -19,11 +19,12 @@ import pandas as pd
 from scipy import stats
 
 from novera.market_data.history import MarketHistory
+from novera.regulatory.allocation import UNASSIGNED, desk_map, with_euler
 from novera.risk.revaluation import Portfolio
 from novera.risk.scenarios import historical_shocks
 from novera.risk.var import taylor_pnl_matrix
 
-MODEL_VERSION = "1.0.0"
+MODEL_VERSION = "1.1.0"
 
 LIQUIDITY_HORIZONS = (10, 20, 40, 60, 120)
 
@@ -122,22 +123,21 @@ def frtb_ima(
     lh = np.array([liquidity_horizon(f) for f in scen.columns])
     modellable = np.array([f not in set(nmrf_factors) for f in scen.columns])
 
-    def es_with(mask: np.ndarray) -> float:
+    desk_of = desk_map(valuation)
+
+    def desk_pnl(mask: np.ndarray) -> pd.DataFrame:
+        """Scenario P&L by desk (columns) from the factors in ``mask``."""
         sub = scen.copy()
         sub.loc[:, ~mask] = 0.0
-        pnl = taylor_pnl_matrix(pf, sens, sub).sum(axis=1).to_numpy()
-        return es_975(pnl) * np.sqrt(10)  # 10-day by square root of time (MAR33 base horizon)
+        pnl = taylor_pnl_matrix(pf, sens, sub)
+        return pnl.T.groupby(pnl.columns.map(lambda t: desk_of.get(t, UNASSIGNED))).sum().T
 
-    es_by_h = {h: es_with(modellable & (lh >= h)) for h in LIQUIDITY_HORIZONS}
-    prev = 0
-    total = 0.0
-    for h in LIQUIDITY_HORIZONS:
-        total += (es_by_h[h] * np.sqrt((h - prev) / 10)) ** 2
-        prev = h
-    imes = float(np.sqrt(total))
-    ses = es_with(~modellable) if (~modellable).any() else 0.0
+    # 10-day ES by square root of time (MAR33 base horizon), by liquidity horizon, then the
+    # non-modellable factors on their own.
+    pnl_by_h = {h: desk_pnl(modellable & (lh >= h)) for h in LIQUIDITY_HORIZONS}
+    pnl_ses = desk_pnl(~modellable) if (~modellable).any() else None
     mult = multiplier_from_exceptions(backtest_exceptions)
-    capital = mult * imes + ses
+    es_by_h, imes, ses, capital = _ima_capital(pnl_by_h, pnl_ses, mult)
 
     # P&L attribution test per desk on the scenario series: RTPL (Taylor) versus HPL (full reval).
     rtpl = taylor_pnl_matrix(pf, sens, scen)
@@ -154,22 +154,7 @@ def frtb_ima(
         zone = "GREEN" if (rho >= 0.8 and ks <= 0.09) else ("RED" if (rho < 0.7 or ks > 0.12) else "AMBER")
         rows.append({"desk_id": desk, "spearman": rho, "ks": ks, "zone": zone, "trades": len(ids)})
     pla = pd.DataFrame(rows)
-    # Desk attribution of IMES: standalone IMES per desk scaled to the total.
-    by_desk_rows = []
-    for desk in sorted(keys.dropna().unique()):
-        ids = set(keys[keys == desk].index)
-        sub_sens = sens[sens["trade_id"].isin(ids)]
-        if sub_sens.empty:
-            continue
-        sub = scen.copy()
-        sub.loc[:, ~(modellable & (lh >= 10))] = 0.0
-        pnl = taylor_pnl_matrix(pf, sub_sens, sub).sum(axis=1).to_numpy()
-        by_desk_rows.append({"desk_id": desk, "standalone_es10": es_975(pnl) * np.sqrt(10)})
-    by_desk = pd.DataFrame(by_desk_rows)
-    if len(by_desk) and by_desk["standalone_es10"].sum():
-        by_desk["attributed_capital"] = (
-            by_desk["standalone_es10"] / by_desk["standalone_es10"].sum() * capital
-        )
+    by_desk = _ima_by_desk(pnl_by_h, pnl_ses, mult, capital)
     return IMAResult(
         es_by_h,
         imes,
@@ -179,5 +164,67 @@ def frtb_ima(
         backtest_exceptions,
         capital,
         pla,
-        by_desk.sort_values("standalone_es10", ascending=False) if len(by_desk) else by_desk,
+        by_desk,
     )
+
+
+def _ima_capital(
+    pnl_by_h: dict[int, pd.DataFrame], pnl_ses: pd.DataFrame | None, mult: float, w: pd.Series | None = None
+) -> tuple[dict[int, float], float, float, float]:
+    """ES by horizon, IMES, SES and capital of the book with each desk's P&L weighted by ``w``
+    (all 1 when None): IMES = sqrt(Σ_h (ES_h · sqrt((h − h_prev)/10))²), capital = m · IMES + SES."""
+
+    def es(p: pd.DataFrame) -> float:
+        x = p.to_numpy() @ (
+            np.ones(p.shape[1]) if w is None else w.reindex(p.columns, fill_value=0.0).to_numpy()
+        )
+        return es_975(x) * np.sqrt(10)
+
+    es_by_h = {h: es(p) for h, p in pnl_by_h.items()}
+    prev, total = 0, 0.0
+    for h in LIQUIDITY_HORIZONS:
+        total += (es_by_h[h] * np.sqrt((h - prev) / 10)) ** 2
+        prev = h
+    imes = float(np.sqrt(total))
+    ses = es(pnl_ses) if pnl_ses is not None else 0.0
+    return es_by_h, imes, ses, mult * imes + ses
+
+
+def _tail_contribution(p: pd.DataFrame) -> pd.Series:
+    """Euler contribution of each desk to the 10-day ES of the sum: minus its mean P&L over the
+    scenarios in the total's tail (exact: the contributions add up to the ES)."""
+    total = p.sum(axis=1).to_numpy()
+    tail = total <= np.percentile(total, 2.5, method="linear")
+    return -p[tail].mean(axis=0) * np.sqrt(10) if tail.any() else p.iloc[0] * 0.0
+
+
+def _ima_by_desk(
+    pnl_by_h: dict[int, pd.DataFrame], pnl_ses: pd.DataFrame | None, mult: float, capital: float
+) -> pd.DataFrame:
+    """Desk allocation of the IMA capital (REG-008). Euler through the cascade:
+    ∂IMES/∂x_d = Σ_h ES_h · w_h² · c_d,h / IMES with w_h² = (h − h_prev)/10 and c_d,h the desk's
+    tail contribution to ES_h, so a desk carries m · that + its tail contribution to SES."""
+    es_by_h, imes, _, _ = _ima_capital(pnl_by_h, pnl_ses, mult)
+    desks = list(pnl_by_h[LIQUIDITY_HORIZONS[0]].columns)
+    euler = pd.Series(0.0, index=desks)
+    prev = 0
+    for h in LIQUIDITY_HORIZONS:
+        if imes:
+            euler += mult * es_by_h[h] * (h - prev) / 10 * _tail_contribution(pnl_by_h[h]) / imes
+        prev = h
+    if pnl_ses is not None:
+        euler += _tail_contribution(pnl_ses).reindex(desks, fill_value=0.0)
+    rows = []
+    for d in desks:
+        alone = pd.Series([float(x == d) for x in desks], index=desks)
+        others = 1.0 - alone
+        rows.append(
+            {
+                "desk_id": d,
+                "euler_raw": float(euler[d]),
+                "incremental": capital - _ima_capital(pnl_by_h, pnl_ses, mult, others)[3],
+                "standalone": _ima_capital(pnl_by_h, pnl_ses, mult, alone)[3],
+            }
+        )
+    frame = pd.DataFrame(rows, columns=["desk_id", "euler_raw", "incremental", "standalone"])
+    return with_euler(frame, capital).sort_values("euler", ascending=False, ignore_index=True)

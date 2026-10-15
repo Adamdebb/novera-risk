@@ -242,7 +242,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "FRTB standardised approach",
-                version="1.2.0",
+                version="1.3.0",
                 face="bank",
             ),
             MeasureSpec(
@@ -253,6 +253,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "FRTB internal models approach",
+                version="1.1.0",
                 face="bank",
             ),
             MeasureSpec(
@@ -292,6 +293,16 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Capital",
                 "BA-CVA capital",
+                face="bank",
+            ),
+            MeasureSpec(
+                "REG-008",
+                "Regulatory capital by desk",
+                "Each desk's Euler contribution to every charge, which adds up to the charge, with "
+                "incremental capital (the charge freed by closing the desk) and standalone capital.",
+                "reporting currency",
+                "Capital",
+                "Regulatory capital by desk",
                 face="bank",
             ),
             MeasureSpec(

@@ -1560,6 +1560,63 @@ avoid it and took three measures together.
 - Where: `market_data/curves.py`, `pyproject.toml`, test
   `test_zero_curve_scalar_fast_path_matches_the_array_path`.
 
+## Round 41 — Capital allocated to desks by Euler contributions (2026-10-15)
+
+Context: the owner asked to make Euler the official desk allocation on the Capital page for
+every component, with an incremental view next to it for decisions. Until then the desk table
+mixed three methods. FRTB SA and IMA used standalone charges scaled pro rata to the total.
+SA-CCR and BA-CVA used each desk's share of absolute effective notional within the netting set.
+CCP capital was not allocated. One question round; the owner took every recommended option.
+
+### 41.1 Charges that are not scale-invariant
+- Options: rescale to the charge and report the scale ★ · keep raw contributions with an
+  "Unallocated" row
+- Choice (owner): **rescale and report**. SA-CCR is rescaled per netting set, and every
+  component is checked against its charge. `reg_allocation_summary` stores the raw sum and the
+  scale, and the page caption names any component scaled by more than 0.5%.
+- Found: on the demo book, raw SA-CCR contributions cover 58% of the charge (scale 1.72). The gap
+  is the replacement-cost floor TH + MTA − NICA (9.5m on most hedge-fund and corporate CSAs),
+  which does not depend on positions. Unmargined sets reconcile exactly. Every other component
+  has a scale of 1.00.
+
+### 41.2 Scope
+- Options: all six charges including CCP ★ · the four main ones · five, without the default fund
+- Choice (owner): **all six**. FRTB SA, FRTB IMA, SA-CCR, BA-CVA, CCP trade exposure (SA-CCR
+  Euler on the cleared sets plus the Euler of the margin posted), and the CCP default fund split
+  by each desk's Euler share of the trade exposure at that CCP. The standardised total now
+  includes CCP capital, so desks add up to the firm's standardised stack. FRTB IMA is
+  allocated separately as the alternative to FRTB SA.
+
+### 41.3 The incremental measure
+- Options: remove the desk ★ · grow the desk by 1% · both
+- Choice (owner): **remove the desk**: the charge less the charge without the desk. Standalone
+  capital is shown too, so diversification (Σ standalone − charge) is visible. The default fund
+  has zero incremental, since the firm stays a clearing member.
+
+### 41.4 Layout
+- Options: Euler table with a decision panel beside it ★ · paired columns in one table · two
+  tables side by side
+- Choice (owner): **Euler table + panel**. The official table shows Euler by desk for every
+  charge and the standardised total. The panel beside it takes a charge and shows Euler,
+  incremental and standalone by desk, with the diversification.
+
+- Choice (default): Euler for FRTB IMA and BA-CVA is analytic. IMA uses tail-scenario means
+  through the liquidity-horizon cascade, which is exact for ES. FRTB SA, SA-CCR and the CCP
+  margin use a central difference with a bump of 10⁻⁴. The one trade without a desk
+  (`IRS_001516`) is allocated to `UNASSIGNED` instead of a blank row. SA-CCR keeps each netting
+  set's inputs (`NettingSetInputs`) so a set can be re-measured; its numbers are unchanged
+  (old and new code agree within 1e-8 on every set). The regulatory stage takes about 6 s
+  instead of 3.5 s.
+- Found, left as it was: re-running the regulatory stage after the counterparty stage gives a
+  different SA-CCR. The second run reads the exposure engine's collateral balance
+  (`cp_profiles`), which the EOD's own regulatory step, running first, does not have. On the
+  demo run, SA-CCR capital is 31.3m stored and 41.0m on a re-run. Listed as item 27 below.
+- Where: `regulatory/allocation.py` (new), `frtb_sa.frtb_sa`, `frtb_ima._ima_by_desk`,
+  `saccr.NettingSetInputs`, `cva_capital.ba_cva_charge`, `engine.run_regulatory`
+  (`reg_desk_allocation`, `reg_allocation_summary`, `reg_by_desk` now Euler); `GET /capital`
+  (`desk_allocation`, `allocation_summary`); Capital page; the Analyst's capital tool.
+  REG-008 1.0.0 (new), REG-001 1.3.0, REG-002 1.1.0. Tests: `tests/test_capital_allocation.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1648,3 +1705,8 @@ avoid it and took three measures together.
 26. **FVA on a flat funding spread** (37.2, closes the FVA gap of 35.4): one spread for every
     currency and tenor, set rather than observed, so FVA has no market sensitivity; no MVA for
     initial margin posted, no ColVA.
+27. **A regulatory re-run reads collateral the EOD step did not have** (41): `run_regulatory` takes
+    the exposure engine's t0 collateral per netting set when `cp_profiles` exists. The EOD runs
+    regulatory before counterparty, so the stored run uses CSA-derived collateral, while a later
+    re-run of the stage uses the simulated balance. On the demo run, SA-CCR goes from 31.3m to 41.0m
+    and BA-CVA follows. One source of collateral should be chosen for both.

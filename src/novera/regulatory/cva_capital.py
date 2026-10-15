@@ -65,5 +65,9 @@ def ba_cva(
     t = pd.DataFrame(rows)
     if t.empty:
         return 0.0, t
-    k = 2.33 * np.sqrt((RHO * t["scva"].sum()) ** 2 + (1 - RHO**2) * (t["scva"] ** 2).sum())
-    return float(k), t.sort_values("scva", ascending=False)
+    return ba_cva_charge(t["scva"].to_numpy()), t.sort_values("scva", ascending=False)
+
+
+def ba_cva_charge(scva: np.ndarray) -> float:
+    """K from the stand-alone CVA charges of the counterparties."""
+    return float(2.33 * np.sqrt((RHO * scva.sum()) ** 2 + (1 - RHO**2) * (scva**2).sum()))

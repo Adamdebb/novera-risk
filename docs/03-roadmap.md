@@ -103,7 +103,7 @@ measures with flags, and the daily risk pack in HTML, PDF and Excel (RP-001).
   (REG-001); FRTB internal models with liquidity horizons, NMRF, the backtesting
   multiplier and the P&L attribution test (REG-002); SA-CCR EAD and RWA (REG-003);
   SIMM-lite initial margin feeding the exposure engine (REG-004); BA-CVA capital
-  (REG-005); funding cash ladder (REG-006); capital attributed to desks; Capital page,
+  (REG-005); funding cash ladder (REG-006); capital allocated to desks by Euler contributions with incremental capital beside them (REG-008, round 41); Capital page,
   API, Analyst tool, `novera run regulatory`.
 - **Hedge fund (HF)**: a second simulated organisation, Meridian Multi-Strategy Fund, with
   strategies, prime brokers, a NAV and an investor register (`novera simulate --template

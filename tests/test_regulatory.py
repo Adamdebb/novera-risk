@@ -194,9 +194,11 @@ def test_frtb_sa_scales_with_sensitivities():
     assert girr.delta == pytest.approx(1000 / 1e-4 * 0.011)  # one node, RW 1.1%
     eq = next(c for c in r1.classes if c.risk_class == "EQ")
     assert eq.delta == pytest.approx(5000 * 100 * 0.15)
-    assert set(r1.by_desk["desk_id"]) == {"D1", "D2"} and r1.by_desk["attributed"].sum() == pytest.approx(
-        r1.total
-    )
+    # Different risk classes add up: each desk's Euler, incremental and standalone charge agree.
+    by = r1.by_desk.set_index("desk_id")
+    assert set(by.index) == {"D1", "D2"} and by["euler"].sum() == pytest.approx(r1.total)
+    assert by["incremental"].to_numpy() == pytest.approx(by["standalone"].to_numpy())
+    assert by["euler"].to_numpy() == pytest.approx(by["standalone"].to_numpy(), rel=1e-6)
 
 
 def test_regulatory_run_end_to_end(db):
@@ -215,6 +217,16 @@ def test_regulatory_run_end_to_end(db):
         assert rr.ba_cva_capital > 0 and not rr.ba_cva_detail.empty
         assert not rr.cash_ladder.empty and (rr.cash_ladder["inflow"] >= 0).all()
         assert rr.by_desk["frtb_sa"].sum() == pytest.approx(rr.frtb_sa.total, rel=1e-6)
+        # Every charge is allocated to desks by Euler contributions that add up to it (REG-008).
+        summ = rr.allocation.summary.set_index("component")
+        assert (summ["euler"] - summ["capital"]).abs().max() < 1e-6 * summ["capital"].abs().max()
+        assert summ.loc["frtb_ima", "euler_raw"] == pytest.approx(rr.frtb_ima.capital, rel=1e-9)
+        assert summ.loc["ba_cva", "euler_raw"] == pytest.approx(rr.ba_cva_capital, rel=1e-9)
+        assert summ.loc["total_sa", "capital"] == pytest.approx(
+            rr.frtb_sa.total + rr.saccr.total_rwa * 0.08 + rr.ba_cva_capital + float(rr.ccp["capital"].sum())
+        )
+        stored = repo.load_run_frame(db["run_id"], "reg_desk_allocation")
+        assert set(stored["component"]) >= {"frtb_sa", "frtb_ima", "saccr", "ba_cva", "total_sa"}
         assert not repo.load_run_frame(db["run_id"], "reg_summary").empty
         # Initial margin then reduces exposure in the counterparty engine.
         cfg = ExposureSimConfig(paths=30, seed=1)

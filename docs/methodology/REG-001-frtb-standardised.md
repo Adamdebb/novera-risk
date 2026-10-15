@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Owner | Regulatory Capital Methodology |
 | Approval status | Draft |
 | Code | `novera.regulatory.frtb_sa` |
-| Last validated | 2026-10-14 |
+| Last validated | 2026-10-15 |
 
 ## Definition
 Sensitivities-based method (MAR21): delta, vega and curvature charges per risk class
@@ -39,8 +39,8 @@ platform's stored sensitivities (MR-001).
 ## Simplifications
 Curvature approximated from gamma rather than full ±RW repricing; no residual risk
 add-on (no exotics); CSR buckets by index quality only; equity buckets by developed
-market only; no GIRR inflation. The desk attribution scales standalone
-charges to the firm total.
+market only; no GIRR inflation. Desks carry their Euler contribution to the charge, with
+incremental and standalone charges beside it (REG-008).
 
 ## Validation tests
 `tests/test_regulatory.py::test_frtb_building_blocks`, `test_frtb_sa_scales_with_sensitivities`,
@@ -52,3 +52,4 @@ charges to the firm total.
 | 1.0.0 | 2026-09-14 | Initial model |
 | 1.1.0 | 2026-10-14 | EURIBOR curves as GIRR risk factors next to ESTR (decision 33) |
 | 1.2.0 | 2026-10-14 | Cross-currency basis as a GIRR risk factor per currency (decision 35); `test_cross_currency_basis_is_its_own_girr_and_simm_factor` |
+| 1.3.0 | 2026-10-15 | Desk allocation by Euler contributions instead of standalone charges scaled to the total (decision 41, REG-008); charge unchanged |
