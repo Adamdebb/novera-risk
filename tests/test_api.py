@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from novera.api.client import LocalClient
 from novera.api.errors import InvalidRequestError
 from novera.api.service import RiskService, RunNotFoundError
+from novera.domain.geography import seed_geography
 from novera.market_data.history import MarketHistory
 from novera.risk import VaRConfig
 from novera.security import issue, seed_users
@@ -45,6 +46,7 @@ def db_path(tmp_path_factory):
         repo.save_market_history(md.history)
         repo.save_market_snapshot(md.previous_snapshot)
         repo.save_market_snapshot(md.snapshot)
+        seed_geography(repo)
         res = run_eod(
             repo,
             EODConfig(counterparty=False, regulatory=False, var=VaRConfig(window_days=150), workers=1),
@@ -745,3 +747,30 @@ def test_var_setup_endpoints(client, tokens):
     assert sc and sum(x["weight"] for x in sc) == pytest.approx(1.0)
     restore = client.post("/admin/var/setup", json={"measures": st["measures"], "comment": "back"}, **cro)
     assert restore.status_code == 200 and restore.json()["headline"] == st["headline"]
+
+
+def test_risk_by_region_and_country(client):
+    """Decision round 44: FX trades by their pair's less liquid currency, other trades by their
+    currency; the geography dimensions add up like any other grouping."""
+    geo = client.get("/reference/geography").json()
+    assert len(geo["regions"]) == 8 and len(geo["currencies"]) >= 150
+    pairs = {p["currency_pair"]: p for p in geo["currency_pairs"]}
+    assert pairs["USDJPY"]["currency"] == "JPY" and pairs["EURGBP"]["currency"] == "GBP"
+    assert pairs["USDTRY"]["region_name"] == "Central and Eastern Europe"
+    extract = client.get("/runs/latest/trade-extract").json()["rows"]
+    for t in extract:
+        if t["asset_class"] == "FX":
+            assert t["currency_pair"] and t["risk_currency"] == pairs[t["currency_pair"]]["currency"]
+        else:
+            assert t["currency_pair"] is None and t["risk_currency"] == t["currency"]
+        assert t["region"] and t["country"]
+    total = sum(x["component_var"] for x in client.get("/runs/latest/var", params={"by": "desk_id"}).json())
+    by_region = client.get("/runs/latest/var", params={"by": "region"}).json()
+    assert {r["region"] for r in by_region} <= {r["name"] for r in geo["regions"]}
+    assert sum(r["component_var"] for r in by_region) == pytest.approx(total, rel=1e-9)
+    dm = client.get("/runs/latest/positions", params={"by": "country", "region": "Developed Markets"}).json()
+    assert dm and all(
+        geo_c in {c["name"] for c in geo["countries"] if c["region"] == "DM"}
+        for geo_c in (r["country"] for r in dm)
+    )
+    assert client.get("/runs/latest/stress", params={"by": "region"}).json()

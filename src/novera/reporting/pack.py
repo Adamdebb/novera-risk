@@ -96,6 +96,8 @@ def build_pack(repo: DuckDBRepository, run_id: str | None, out_dir: Path, pdf: b
     var_summary = pd.DataFrame(svc.var_summary(rid))
     var_by_ac = pd.DataFrame(svc.var_by("asset_class", rid))
     var_by_desk = pd.DataFrame(svc.var_by("desk_id", rid))
+    var_by_region = pd.DataFrame(svc.var_by("region", rid))  # geography (decision round 44)
+    var_by_country = pd.DataFrame(svc.var_by("country", rid))
     stress = pd.DataFrame(svc.stress(rid, by=None))
     limits = pd.DataFrame(svc.limits(rid))
     breaches = pd.DataFrame(svc.breaches(open_only=True))
@@ -163,7 +165,11 @@ def build_pack(repo: DuckDBRepository, run_id: str | None, out_dir: Path, pdf: b
             + "<h3>By asset class</h3>"
             + _table(var_by_ac, money_cols=("component_var", "component_es"), int_cols=("trades",))
             + "<h3>By desk</h3>"
-            + _table(var_by_desk, money_cols=("component_var", "component_es"), int_cols=("trades",)),
+            + _table(var_by_desk, money_cols=("component_var", "component_es"), int_cols=("trades",))
+            + "<h3>By region</h3>"
+            + _table(var_by_region, money_cols=("component_var", "component_es"), int_cols=("trades",))
+            + "<h3>By country</h3>"
+            + _table(var_by_country, money_cols=("component_var", "component_es"), int_cols=("trades",)),
         ),
         (
             "Backtest",
@@ -318,6 +324,8 @@ def build_pack(repo: DuckDBRepository, run_id: str | None, out_dir: Path, pdf: b
             ("VaR", var_summary),
             ("VaR by asset class", var_by_ac),
             ("VaR by desk", var_by_desk),
+            ("VaR by region", var_by_region),
+            ("VaR by country", var_by_country),
             ("Backtest", bt),
             ("Stress", stress),
             ("Limits", limits),

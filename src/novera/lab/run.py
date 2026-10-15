@@ -266,6 +266,9 @@ def run_lab(spec: LabSpec, settings: Settings | None = None) -> LabResult:
         repo.save_market_episodes(md.episodes)
         for snap in md.snapshots.values():
             repo.save_market_snapshot(snap)
+        from novera.domain.geography import seed_geography
+
+        seed_geography(repo)
         repo.save_lab_spec(spec.name, spec.to_dict(), [i.model_dump() for i in gen.injections], md.planted)
         res = run_eod(
             repo,

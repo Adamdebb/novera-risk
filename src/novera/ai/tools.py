@@ -45,7 +45,13 @@ BY = {
         "currency",
         "counterparty_id",
         "trader_id",
+        "region",
+        "country",
+        "risk_currency",
+        "currency_pair",
     ],
+    "description": "Grouping; region, country, risk_currency and currency_pair follow the geography "
+    "table (an FX trade by its pair's less liquid currency, any other trade by its own currency)",
 }
 
 

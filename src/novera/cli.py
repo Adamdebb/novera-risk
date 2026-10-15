@@ -28,6 +28,10 @@ lab_app = typer.Typer(
 app.add_typer(lab_app, name="lab")
 signoff_app = typer.Typer(no_args_is_help=True, help="Sign-off and release of a run's metrics (OPS-003).")
 app.add_typer(signoff_app, name="signoff")
+reference_app = typer.Typer(
+    no_args_is_help=True, help="Static reference data: the geography table (decision round 44)."
+)
+app.add_typer(reference_app, name="reference")
 users_app = typer.Typer(no_args_is_help=True, help="Role accounts and personal access tokens (ADR 0006).")
 app.add_typer(users_app, name="users")
 var_setup_app = typer.Typer(
@@ -219,6 +223,9 @@ def simulate(
             n_rows = repo.save_market_history(md.history)
             repo.save_market_episodes(md.episodes)
             md_ids = {d: repo.save_market_snapshot(m) for d, m in md.snapshots.items()}
+        from novera.domain.geography import seed_geography
+
+        seed_geography(repo)  # static geography table (decision round 44)
     snap = gen.snapshot
     typer.echo(
         f"{org.firm.name} ({db_path}): {len(org.legal_entities)} legal entities, {len(org.desks)} desks, "
@@ -1313,3 +1320,40 @@ def users_revoke(token_id: str, fund: bool = typer.Option(False)) -> None:
     if not ok:
         raise typer.BadParameter(f"no live token {token_id}")
     typer.echo(f"{token_id} revoked")
+
+
+# --- static reference data (decision round 44) ---------------------------------------------------
+@reference_app.command("seed")
+def reference_seed(fund: bool = typer.Option(False, help="Use the hedge-fund database")) -> None:
+    """Store the geography table (regions, countries, currencies, liquidity scores) and the
+    currency pairs of the risk-factor universe and the stored FX trades."""
+    from novera.domain.geography import seed_geography
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        repo.init_schema()
+        geo = seed_geography(repo)
+        pairs = repo.load_currency_pairs()
+    typer.echo(
+        f"{len(geo.regions)} regions, {len(geo.countries)} countries, {len(geo.currencies)} currencies, "
+        f"{len(pairs)} currency pairs"
+    )
+
+
+@reference_app.command("geography")
+def reference_geography(
+    pairs_only: bool = typer.Option(False, "--pairs", help="Only the currency pairs"),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Show the currency pairs and the currency, country and region each attaches to."""
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        g = RiskService(repo).geography()
+    for p in g["currency_pairs"]:
+        typer.echo(f"{p['currency_pair']}  -> {p['currency']}  {p['country_name']:<24} {p['region_name']}")
+    if not pairs_only:
+        typer.echo(
+            f"{len(g['regions'])} regions, {len(g['countries'])} countries, {len(g['currencies'])} currencies"
+        )

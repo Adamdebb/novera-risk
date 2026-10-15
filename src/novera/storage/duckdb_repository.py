@@ -256,6 +256,30 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     attempts INTEGER NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ref_region (
+    region VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    sort_order INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ref_country (
+    country VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    region VARCHAR NOT NULL,
+    currency VARCHAR NOT NULL,
+    is_union BOOLEAN NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ref_currency (
+    currency VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    country VARCHAR NOT NULL,
+    liquidity_score INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ref_currency_pair (
+    currency_pair VARCHAR PRIMARY KEY,
+    currency_1 VARCHAR NOT NULL,
+    currency_2 VARCHAR NOT NULL,
+    currency VARCHAR NOT NULL
+);
 CREATE TABLE IF NOT EXISTS app_user (
     user_id VARCHAR PRIMARY KEY,
     name VARCHAR NOT NULL,
@@ -1248,6 +1272,53 @@ class DuckDBRepository:
         return [json.loads(r[0]) for r in rows]
 
     # --- market data provenance ---------------------------------------------------------
+    # --- geography (decision round 44) -------------------------------------------------------
+    def save_geography(self, geo: Any, pairs: list[str]) -> None:
+        """Replace the static geography table and the currency pairs attached by its rule."""
+        from novera.domain.geography import split_pair
+
+        for t in ("ref_region", "ref_country", "ref_currency", "ref_currency_pair"):
+            self._conn.execute(f"DELETE FROM {t}")
+        self._conn.executemany(
+            "INSERT INTO ref_region VALUES (?, ?, ?)",
+            [(c, n, i) for i, (c, n) in enumerate(geo.regions.items())],
+        )
+        self._conn.executemany(
+            "INSERT INTO ref_country VALUES (?, ?, ?, ?, ?)",
+            [(c, *v) for c, v in geo.countries.items()],
+        )
+        self._conn.executemany(
+            "INSERT INTO ref_currency VALUES (?, ?, ?, ?)", [(c, *v) for c, v in geo.currencies.items()]
+        )
+        self._conn.executemany(
+            "INSERT INTO ref_currency_pair VALUES (?, ?, ?, ?)",
+            [(p, *split_pair(p), geo.pair_currency(p)) for p in sorted(set(pairs))],
+        )
+
+    def load_geography(self) -> Any | None:
+        """The stored geography table, or None for a database built before it existed."""
+        from novera.domain.geography import Geography
+
+        if not self._has_table("ref_currency"):
+            return None
+        cur = self._conn.execute("SELECT * FROM ref_currency").fetchall()
+        if not cur:
+            return None
+        regions = self._conn.execute("SELECT region, name FROM ref_region ORDER BY sort_order").fetchall()
+        countries = self._conn.execute("SELECT * FROM ref_country").fetchall()
+        return Geography(
+            {r[0]: r[1] for r in regions},
+            {c[0]: (c[1], c[2], c[3], bool(c[4])) for c in countries},
+            {c[0]: (c[1], c[2], int(c[3])) for c in cur},
+        )
+
+    def load_currency_pairs(self) -> list[dict[str, Any]]:
+        if not self._has_table("ref_currency_pair"):
+            return []
+        cur = self._conn.execute("SELECT * FROM ref_currency_pair ORDER BY currency_pair")
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+
     # --- users and tokens (ADR 0006) --------------------------------------------------------
     def _has_table(self, name: str) -> bool:
         return bool(

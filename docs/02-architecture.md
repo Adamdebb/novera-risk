@@ -78,6 +78,17 @@ Step by step, with what each stage reads and writes: `docs/07-eod-workflow.md`.
 - `run_id`: ULID. Run record stores both snapshot IDs, model versions, config hash.
 - Every result row carries `run_id`. Every AI answer cites `run_id`s.
 
+## Geography
+
+A second hierarchy beside the organisation: currency pair -> currency -> country -> region
+(decision round 44). The static table holds 8 regions, the 254 ISO 3166 territories that have a
+currency plus six monetary unions, and the 153 ISO 4217 currencies in circulation. Each currency
+has a liquidity score (the BIS FX turnover rank, 1 = USD); a pair attaches to its less liquid
+currency. `scripts/build_geography.py` generates the table from the Unicode CLDR data;
+`novera simulate` and `novera reference seed` store it (`ref_region`, `ref_country`,
+`ref_currency`, `ref_currency_pair`). Reports attach it at read time: every stored run, old or
+new, can be shown by region, country, risk currency or currency pair.
+
 ## Risk-factor model
 
 Every instrument maps to risk factors in a shared universe (curve nodes, FX pairs, equity

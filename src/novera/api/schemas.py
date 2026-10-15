@@ -297,6 +297,10 @@ class TradeValuation(ApiModel):
     asset_class: str
     product_type: str
     currency: str
+    currency_pair: str | None = None
+    risk_currency: str | None = Field(default=None, description="Geography dimensions (decision round 44)")
+    country: str | None = None
+    region: str | None = None
     quantity: float
     direction: str
     status: str
@@ -724,6 +728,53 @@ class StressCategory(ApiModel):
     scenarios: list[StressScenarioSpec]
 
 
+class RegionRow(ApiModel):
+    region: str
+    name: str
+
+
+class CountryRow(ApiModel):
+    country: str = Field(
+        description="ISO 3166 alpha-2, or a monetary union (EMU, WAEMU, CEMAC, ECCU, CFP, CWSX)"
+    )
+    name: str
+    region: str
+    region_name: str | None = None
+    currency: str
+    is_union: bool
+
+
+class CurrencyRow(ApiModel):
+    currency: str = Field(description="ISO 4217")
+    name: str
+    country: str = Field(description="Issuing country or monetary union")
+    liquidity_score: int = Field(description="1 = most liquid (BIS FX turnover rank), the rest after it")
+    country_name: str | None = None
+    region: str | None = None
+    region_name: str | None = None
+
+
+class CurrencyPairRow(ApiModel):
+    currency_pair: str
+    currency_1: str
+    currency_2: str
+    currency: str = Field(description="The currency the pair attaches to: the higher liquidity score")
+    country: str | None = None
+    country_name: str | None = None
+    region: str | None = None
+    region_name: str | None = None
+    liquidity_scores: list[int] = Field(default_factory=list)
+
+
+class GeographyReference(ApiModel):
+    """Currency pair -> currency -> country -> region (decision round 44)."""
+
+    regions: list[RegionRow] = Field(default_factory=list)
+    countries: list[CountryRow] = Field(default_factory=list)
+    currencies: list[CurrencyRow] = Field(default_factory=list)
+    currency_pairs: list[CurrencyPairRow] = Field(default_factory=list)
+
+
 class StressLibrary(ApiModel):
     """The stress library by category with the shocks each scenario applies, and for
     historical windows the realised moves of headline factors. Record MR-005."""
@@ -762,6 +813,12 @@ class TradeExtractRow(Row):
     instrument_id: str | None = None
     description: str | None = None
     currency: str
+    currency_pair: str | None = Field(default=None, description="FX trades: the pair, e.g. USDJPY")
+    risk_currency: str | None = Field(
+        default=None, description="The pair's less liquid currency for FX, else the trade currency (round 44)"
+    )
+    country: str | None = None
+    region: str | None = None
     direction: str
     swap_side: str | None = None
     quantity: float

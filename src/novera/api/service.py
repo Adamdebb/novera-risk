@@ -25,7 +25,17 @@ VAR_CONTRIBUTION_FRAMES: dict[str, str] = {
 }
 """Stored per-trade contribution frame for each VaR method the EOD run writes (MR-002, MR-004, MR-010)."""
 
-DIMENSIONS = HIERARCHY + ["legal_entity_id", "asset_class", "product_type", "currency", "counterparty_id"]
+GEOGRAPHY = ["region", "country", "risk_currency", "currency_pair"]
+"""Geography dimensions (decision round 44): an FX trade's currency is the one its pair attaches
+to, any other trade's its own currency; country and region follow from the currency."""
+DIMENSIONS = HIERARCHY + [
+    "legal_entity_id",
+    "asset_class",
+    "product_type",
+    "currency",
+    "counterparty_id",
+    *GEOGRAPHY,
+]
 
 
 def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -95,11 +105,69 @@ class RiskService:
         return r, self.repo.load_run_frame(r.run_id, name)
 
     def valuation(self, run_id: str | None = None, **filters: str) -> pd.DataFrame:
-        _, v = self._frame(run_id, "valuation")
+        r, v = self._frame(run_id, "valuation")
+        if not v.empty:
+            v = self._with_geography(r, v)
         for k, val in filters.items():
             if val and k in v.columns:
                 v = v[v[k] == val]
         return v
+
+    def _with_geography(self, r: RunRecord, v: pd.DataFrame) -> pd.DataFrame:
+        """The valuation with the geography dimensions; the pair comes from the run's portfolio
+        snapshot, so every stored run gets them. Left empty when the database has no table yet
+        (``novera reference seed``)."""
+        geo = self.repo.load_geography()
+        if geo is None:
+            return v.assign(**{c: None for c in GEOGRAPHY})
+        try:
+            trades = self.repo.load_portfolio_snapshot(r.portfolio_snapshot_id).trades
+        except RuntimeError:  # stored under an older trade model: FX trades fall back to their currency
+            trades = ()
+        pair = {
+            t.trade_id: t.instrument.pair.replace("/", "") for t in trades if hasattr(t.instrument, "pair")
+        }
+        pairs = v["trade_id"].map(pair)
+        ccy = pairs.map(lambda p: geo.pair_currency(p) if isinstance(p, str) else None).fillna(v["currency"])
+        info = {c: geo.describe(c) for c in ccy.dropna().unique()}
+        return v.assign(
+            currency_pair=pairs,
+            risk_currency=ccy,
+            country=ccy.map(lambda c: info.get(c, {}).get("country_name")),
+            region=ccy.map(lambda c: info.get(c, {}).get("region_name")),
+        )
+
+    def geography(self) -> dict[str, Any]:
+        """The static table: regions, countries, currencies with liquidity, attached pairs."""
+        geo = self.repo.load_geography()
+        if geo is None:
+            return {"regions": [], "countries": [], "currencies": [], "currency_pairs": []}
+        return {
+            "regions": [{"region": k, "name": n} for k, n in geo.regions.items()],
+            "countries": [
+                {
+                    "country": k,
+                    "name": n,
+                    "region": r,
+                    "region_name": geo.regions.get(r),
+                    "currency": c,
+                    "is_union": u,
+                }
+                for k, (n, r, c, u) in sorted(geo.countries.items())
+            ],
+            "currencies": [
+                {"currency": k, "name": n, "country": c, "liquidity_score": sc, **geo.describe(k)}
+                for k, (n, c, sc) in sorted(geo.currencies.items(), key=lambda kv: kv[1][2])
+            ],
+            "currency_pairs": [
+                {
+                    **p,
+                    **geo.describe(p["currency"]),
+                    "liquidity_scores": [geo.score(p["currency_1"]), geo.score(p["currency_2"])],
+                }
+                for p in self.repo.load_currency_pairs()
+            ],
+        }
 
     def positions(
         self, run_id: str | None = None, by: str = "desk_id", **filters: str
@@ -301,6 +369,10 @@ class RiskService:
         "instrument_id",
         "description",
         "currency",
+        "currency_pair",
+        "risk_currency",
+        "country",
+        "region",
         "direction",
         "swap_side",
         "quantity",
@@ -324,6 +396,8 @@ class RiskService:
         """Every trade of the run: valuation row joined with the booked trade and its
         instrument terms flattened into columns (a term a product lacks is empty)."""
         r, v = self._frame(run_id, "valuation")
+        if not v.empty:
+            v = self._with_geography(r, v)
         snap = self.repo.load_portfolio_snapshot(r.portfolio_snapshot_id)
         booked = []
         for tr in snap.trades:
@@ -336,7 +410,8 @@ class RiskService:
             for k, val in ins.items():
                 if k in ("currency", "product_type"):
                     continue
-                d.setdefault(k, val)
+                # an equity's own country is its issuer's; ``country`` is the currency's (round 44)
+                d.setdefault("issuer_country" if k == "country" else k, val)
             d["maturity_date"] = (
                 ins.get("maturity_date")
                 or ins.get("expiry_date")

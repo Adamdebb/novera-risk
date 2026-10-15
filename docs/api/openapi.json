@@ -3075,6 +3075,52 @@
         "title": "CounterpartyType",
         "type": "string"
       },
+      "CountryRow": {
+        "additionalProperties": true,
+        "properties": {
+          "country": {
+            "description": "ISO 3166 alpha-2, or a monetary union (EMU, WAEMU, CEMAC, ECCU, CFP, CWSX)",
+            "title": "Country",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "is_union": {
+            "title": "Is Union",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "region": {
+            "title": "Region",
+            "type": "string"
+          },
+          "region_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Name"
+          }
+        },
+        "required": [
+          "country",
+          "name",
+          "region",
+          "currency",
+          "is_union"
+        ],
+        "title": "CountryRow",
+        "type": "object"
+      },
       "CrowdingRow": {
         "additionalProperties": true,
         "properties": {
@@ -3184,6 +3230,152 @@
           "venue_name"
         ],
         "title": "CryptoSpot",
+        "type": "object"
+      },
+      "CurrencyPairRow": {
+        "additionalProperties": true,
+        "properties": {
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "country_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Name"
+          },
+          "currency": {
+            "description": "The currency the pair attaches to: the higher liquidity score",
+            "title": "Currency",
+            "type": "string"
+          },
+          "currency_1": {
+            "title": "Currency 1",
+            "type": "string"
+          },
+          "currency_2": {
+            "title": "Currency 2",
+            "type": "string"
+          },
+          "currency_pair": {
+            "title": "Currency Pair",
+            "type": "string"
+          },
+          "liquidity_scores": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Liquidity Scores",
+            "type": "array"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "region_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Name"
+          }
+        },
+        "required": [
+          "currency_pair",
+          "currency_1",
+          "currency_2",
+          "currency"
+        ],
+        "title": "CurrencyPairRow",
+        "type": "object"
+      },
+      "CurrencyRow": {
+        "additionalProperties": true,
+        "properties": {
+          "country": {
+            "description": "Issuing country or monetary union",
+            "title": "Country",
+            "type": "string"
+          },
+          "country_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Name"
+          },
+          "currency": {
+            "description": "ISO 4217",
+            "title": "Currency",
+            "type": "string"
+          },
+          "liquidity_score": {
+            "description": "1 = most liquid (BIS FX turnover rank), the rest after it",
+            "title": "Liquidity Score",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "region_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Name"
+          }
+        },
+        "required": [
+          "currency",
+          "name",
+          "country",
+          "liquidity_score"
+        ],
+        "title": "CurrencyRow",
         "type": "object"
       },
       "DQFinding": {
@@ -4581,6 +4773,42 @@
           "available"
         ],
         "title": "FundReport",
+        "type": "object"
+      },
+      "GeographyReference": {
+        "additionalProperties": true,
+        "description": "Currency pair -> currency -> country -> region (decision round 44).",
+        "properties": {
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/CountryRow"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyRow"
+            },
+            "title": "Currencies",
+            "type": "array"
+          },
+          "currency_pairs": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyPairRow"
+            },
+            "title": "Currency Pairs",
+            "type": "array"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/RegionRow"
+            },
+            "title": "Regions",
+            "type": "array"
+          }
+        },
+        "title": "GeographyReference",
         "type": "object"
       },
       "GovernmentBond": {
@@ -8625,6 +8853,25 @@
         "title": "RedemptionScenario",
         "type": "object"
       },
+      "RegionRow": {
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "region": {
+            "title": "Region",
+            "type": "string"
+          }
+        },
+        "required": [
+          "region",
+          "name"
+        ],
+        "title": "RegionRow",
+        "type": "object"
+      },
       "RegulatorySummary": {
         "additionalProperties": true,
         "properties": {
@@ -12104,9 +12351,32 @@
             ],
             "title": "Counterparty Id"
           },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "currency": {
             "title": "Currency",
             "type": "string"
+          },
+          "currency_pair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "FX trades: the pair, e.g. USDJPY",
+            "title": "Currency Pair"
           },
           "description": {
             "anyOf": [
@@ -12263,6 +12533,29 @@
           "quantity": {
             "title": "Quantity",
             "type": "number"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "risk_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The pair's less liquid currency for FX, else the trade currency (round 44)",
+            "title": "Risk Currency"
           },
           "settlement_date": {
             "anyOf": [
@@ -12497,9 +12790,31 @@
             ],
             "title": "Counterparty Id"
           },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
           "currency": {
             "title": "Currency",
             "type": "string"
+          },
+          "currency_pair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Pair"
           },
           "desk_id": {
             "title": "Desk Id",
@@ -12604,6 +12919,29 @@
           "quantity": {
             "title": "Quantity",
             "type": "number"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "risk_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Geography dimensions (decision round 44)",
+            "title": "Risk Currency"
           },
           "status": {
             "title": "Status",
@@ -17249,6 +17587,73 @@
         "summary": "Counterparty Reference"
       }
     },
+    "/reference/geography": {
+      "get": {
+        "description": "Regions, countries, currencies with their liquidity score, and the currency pairs of the\nplatform with the currency each attaches to (decision round 44).",
+        "operationId": "geography_reference_geography_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeographyReference"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Geography"
+      }
+    },
     "/reference/market-data-sources": {
       "get": {
         "operationId": "market_data_sources_reference_market_data_sources_get",
@@ -18805,6 +19210,70 @@
             }
           },
           {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "risk_currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Risk Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency_pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Pair"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -18951,6 +19420,70 @@
                 }
               ],
               "title": "Asset Class"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "risk_currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Risk Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency_pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Pair"
             }
           },
           {
@@ -19308,6 +19841,70 @@
                 }
               ],
               "title": "Desk Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "risk_currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Risk Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency_pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Pair"
             }
           },
           {
@@ -19683,6 +20280,70 @@
                 }
               ],
               "title": "Desk Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "risk_currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Risk Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency_pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Pair"
             }
           },
           {
@@ -20970,6 +21631,70 @@
                 }
               ],
               "title": "Business Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "risk_currency",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Risk Currency"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency_pair",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Pair"
             }
           },
           {

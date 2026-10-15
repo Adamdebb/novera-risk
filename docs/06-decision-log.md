@@ -1744,6 +1744,63 @@ question round; the owner took every recommended option. Recorded as ADR 0006.
   Records: ADR 0006, MR-008 1.1.0, OPS-003 1.2.0, AI-004 1.1.0. Tests: `tests/test_security.py`,
   `tests/test_api.py::test_writes_need_a_token_and_a_role_that_allows_them`.
 
+## Round 44 — Risk by region and country (2026-10-15)
+
+Context: the owner asked for a hierarchy of currency pair, currency, country and region, so that
+risk reports can show risk by region or country. Their specification: a static table of regions
+(North Asia excluding Japan, South East Asia, CEE, Middle East, Africa, and Developed Markets made
+of USD, EUR, JPY, GBP, AUD, NZD, CAD, CHF, NOK, SEK and DKK); every country attached to its
+region and every currency to its country; every ISO currency; a liquidity score per currency
+(1 = most liquid), with a pair CCY1CCY2 attached to the currency with the higher score; FX
+products mapped by their pair, every other product by its currency. A first question round was
+withdrawn when the owner restated the specification; a second round settled the gaps, and the
+owner took every recommended option.
+
+### 44.1 Countries outside the six regions
+- Options: add Latin America and South Asia ★ · those two plus Rest of World · six plus Other
+- Choice (owner): **eight regions**. Latin America includes Central America and the Caribbean.
+  Central Asia, the Caucasus, Turkey, the Balkans and Iceland count as CEE; the Pacific islands
+  as South East Asia.
+
+### 44.2 Shared currencies
+- Options: a monetary-union entry ★ · the anchor country
+- Choice (owner): **unions**: EUR to the Euro area (EMU), XOF to WAEMU, XAF to CEMAC, XCD to the
+  ECCU, XPF to the CFP franc zone, XCG to Curaçao and Sint Maarten. Every other currency
+  attaches to its issuer, the territory named by the code's first two letters.
+
+### 44.3 Liquidity of currencies the BIS does not rank
+- Options: BIS rank, then the rest alphabetically ★ · BIS rank, then one shared score
+- Choice (owner): **unique scores**: the BIS Triennial Survey 2022 order for 38 currencies (USD 1,
+  EUR 2, JPY 3, GBP 4, CNY 5, ...), then the other 115 alphabetically.
+
+### 44.4 Where it shows
+- Options: every 'by' report ★ · VaR, stress and risk pack only · static data first
+- Choice (owner): **everywhere**: `region`, `country`, `risk_currency` and `currency_pair` are
+  dimensions and filters on positions, sensitivities, VaR, stress, P&L explain, run comparison,
+  the trade extract and the Drill-down page. The risk pack adds VaR by region and by country, the
+  Analyst's tools accept them, and the Reference data page has a Geography view.
+
+- Choice (default): **Developed Markets is a region of countries**: the issuers of the 11
+  currencies, the euro-area members, and the territories of those states that use the sovereign's
+  currency. A country that only uses USD (Ecuador) stays in its own region; that never decides a
+  trade, since trades map by currency.
+- Choice (default): **mapped at read time**. The pair comes from the run's stored portfolio
+  snapshot, so every stored run can be shown by geography. The equity instrument's own `country`
+  (the issuer's) appears in the trade extract as `issuer_country`, so that `country` always means
+  the currency's country.
+- Found: CLDR in babel 2.18 still lists BGN for Bulgaria, which adopted the euro on 1 January
+  2026. The generator overrides it, and BGN is out of the table. The Lab database from
+  15 September cannot load its portfolio snapshot (the trade model has changed since), so its
+  FX trades fall back to their own currency. Listed as items 28 and 29 below.
+- On the demo run: component VaR is 61.9m in Developed Markets, 2.8m in Latin America, 0.3m in
+  South Asia and less elsewhere; it adds up to the firm VaR like any other grouping.
+- Where: `scripts/build_geography.py`, `domain/geography_data.py` (generated),
+  `domain/geography.py` (`Geography`, `pair_currency`, `seed_geography`), `storage`
+  (`ref_region`, `ref_country`, `ref_currency`, `ref_currency_pair`), `api/service.py`
+  (`_with_geography`, `geography`), `GET /reference/geography`, the geography filters on the run
+  routes, `novera reference seed | geography`, `reporting/pack.py`, `ai/tools.py`, `ui/app.py`.
+  Tests: `tests/test_geography.py`, `tests/test_api.py::test_risk_by_region_and_country`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1833,3 +1890,9 @@ question round; the owner took every recommended option. Recorded as ADR 0006.
 27. **Closed in round 41 (41.5)**: SA-CCR collateral always comes from the CSA terms. Was: **a regulatory
     re-run reads collateral the EOD step did not have**. A re-run after the counterparty stage used
     the exposure engine's simulated balance, so SA-CCR went from 31.3m to 41.0m on the demo run.
+28. **Liquidity scores from the BIS 2022 survey** (44.3): the 2025 Triennial Survey has been
+    published since and was not checked here; the order changes a pair's currency only where two
+    currencies swap places. Refresh `BIS_2022` in `scripts/build_geography.py` and rerun it.
+29. **The Lab database predates the current trade model** (44): `data/lab/lab_demo.duckdb` cannot
+    load its portfolio snapshot (integrity check), so anything that reads the trades fails there.
+    Re-running the Lab sandbox rebuilds it.

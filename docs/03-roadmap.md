@@ -173,6 +173,9 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       EURIBOR curves as GIRR and SIMM risk factors; the swap moves to acceptable simplification
       in MV-001 (round 33). The strike smile on the swaption cube came first (round 21)
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
+- [x] Geography hierarchy (round 44): currency pair -> currency -> country -> region from ISO
+      4217 and ISO 3166 with a liquidity score per currency; risk by region, country, risk
+      currency and currency pair in every report, the risk pack and the Analyst's tools
 - [x] Identity and permissions (round 43): role accounts seeded from the organisation, personal
       access tokens stored hashed, the actor of every API and MCP write taken from the token and
       checked against a role matrix (approvals, four-eyes, desk scope); the dashboard's user picker

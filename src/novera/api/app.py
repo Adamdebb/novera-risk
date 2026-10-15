@@ -226,6 +226,21 @@ def summary(run_id: str, svc: RiskService = Depends(service)):
     return svc.summary(run_id)
 
 
+def geo_filters(
+    region: str | None = None,
+    country: str | None = None,
+    risk_currency: str | None = None,
+    currency_pair: str | None = None,
+) -> dict[str, str | None]:
+    """Geography filters (decision round 44): region and country by name, e.g. "South Asia"."""
+    return {
+        "region": region,
+        "country": country,
+        "risk_currency": risk_currency,
+        "currency_pair": currency_pair,
+    }
+
+
 @app.get("/runs/{run_id}/positions", response_model=list[s.PositionRow])
 def positions(
     run_id: str,
@@ -234,10 +249,11 @@ def positions(
     book_id: str | None = None,
     business_id: str | None = None,
     asset_class: str | None = None,
+    geo: dict = Depends(geo_filters),
     svc: RiskService = Depends(service),
 ):
     return svc.positions(
-        run_id, by, desk_id=desk_id, book_id=book_id, business_id=business_id, asset_class=asset_class
+        run_id, by, desk_id=desk_id, book_id=book_id, business_id=business_id, asset_class=asset_class, **geo
     )
 
 
@@ -249,9 +265,10 @@ def var(
     measure_id: str | None = None,
     desk_id: str | None = None,
     business_id: str | None = None,
+    geo: dict = Depends(geo_filters),
     svc: RiskService = Depends(service),
 ):
-    return svc.var_by(by, run_id, method, measure_id, desk_id=desk_id, business_id=business_id)
+    return svc.var_by(by, run_id, method, measure_id, desk_id=desk_id, business_id=business_id, **geo)
 
 
 @app.get("/runs/{run_id}/var/summary", response_model=list[s.VarSummaryRow])
@@ -275,9 +292,10 @@ def sensitivities(
     measure: str = "DV01",
     by: str = "desk_id",
     desk_id: str | None = None,
+    geo: dict = Depends(geo_filters),
     svc: RiskService = Depends(service),
 ):
-    return svc.sensitivities(run_id, measure, by, desk_id=desk_id)
+    return svc.sensitivities(run_id, measure, by, desk_id=desk_id, **geo)
 
 
 @app.get("/runs/{run_id}/stress", response_model=list[s.StressRow])
@@ -285,9 +303,10 @@ def stress(
     run_id: str,
     by: str | None = "asset_class",
     desk_id: str | None = None,
+    geo: dict = Depends(geo_filters),
     svc: RiskService = Depends(service),
 ):
-    return svc.stress(run_id, by, desk_id=desk_id)
+    return svc.stress(run_id, by, desk_id=desk_id, **geo)
 
 
 @app.get("/runs/{run_id}/limits", response_model=list[s.LimitRow])
@@ -306,8 +325,14 @@ def dq(run_id: str, svc: RiskService = Depends(service)):
 
 
 @app.get("/runs/{run_id}/pnl", response_model=s.PnLExplain)
-def pnl(run_id: str, by: str | None = None, desk_id: str | None = None, svc: RiskService = Depends(service)):
-    return svc.pnl(run_id, by, desk_id=desk_id)
+def pnl(
+    run_id: str,
+    by: str | None = None,
+    desk_id: str | None = None,
+    geo: dict = Depends(geo_filters),
+    svc: RiskService = Depends(service),
+):
+    return svc.pnl(run_id, by, desk_id=desk_id, **geo)
 
 
 class ExtractFilters(BaseModel):
@@ -401,6 +426,13 @@ def risk_factor_reference(svc: RiskService = Depends(service)):
 @app.get("/reference/market-data-sources", response_model=s.MarketDataSources)
 def market_data_sources(svc: RiskService = Depends(service)):
     return svc.market_data_sources()
+
+
+@app.get("/reference/geography", response_model=s.GeographyReference)
+def geography(svc: RiskService = Depends(service)):
+    """Regions, countries, currencies with their liquidity score, and the currency pairs of the
+    platform with the currency each attaches to (decision round 44)."""
+    return svc.geography()
 
 
 @app.get("/reference/stress-library", response_model=s.StressLibrary)

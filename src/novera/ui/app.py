@@ -332,11 +332,20 @@ elif page == "Drill-down":
             "product_type",
             "currency",
             "counterparty_id",
+            "region",
+            "country",
+            "risk_currency",
+            "currency_pair",
         ],
         index=1,
     )
-    desk = st.selectbox("Filter desk", ["(all)"] + [d["desk_id"] for d in org["desks"]])
+    f1, f2 = st.columns(2)
+    desk = f1.selectbox("Filter desk", ["(all)"] + [d["desk_id"] for d in org["desks"]])
+    regions = [r["name"] for r in client.geography()["regions"]]
+    region = f2.selectbox("Filter region", ["(all)", *regions])
     filters = {} if desk == "(all)" else {"desk_id": desk}
+    if region != "(all)":
+        filters["region"] = region
     pos = df(load("positions", run_id, by=level, **filters))
     var = df(load("var_by", run_id, by=level, **filters))
     if not pos.empty:
@@ -485,7 +494,20 @@ elif page == "VaR":
                 "set on the Admin page (OPS-004) and recorded in the run's configuration."
             )
 
-    by = st.selectbox("Component VaR by", ["asset_class", "business_id", "desk_id", "book_id", "currency"])
+    by = st.selectbox(
+        "Component VaR by",
+        [
+            "asset_class",
+            "business_id",
+            "desk_id",
+            "book_id",
+            "currency",
+            "region",
+            "country",
+            "risk_currency",
+            "currency_pair",
+        ],
+    )
     if legacy:
         prim = df(load("var_by", run_id, by=by)).set_index(by)
         chal = df(load("var_by", run_id, by=by, method="delta_gamma_vega"))
@@ -596,7 +618,19 @@ elif page == "VaR":
 
 elif page == "Stress":
     header("Stress testing")
-    by = st.selectbox("Loss by", ["asset_class", "business_id", "desk_id", "book_id"])
+    by = st.selectbox(
+        "Loss by",
+        [
+            "asset_class",
+            "business_id",
+            "desk_id",
+            "book_id",
+            "region",
+            "country",
+            "risk_currency",
+            "currency_pair",
+        ],
+    )
     stt = df(load("stress", run_id, by=by))
     if not stt.empty:
         cols = [c for c in stt.columns if c not in ("scenario_id", "name", "kind", "description", "total")]
@@ -1607,7 +1641,19 @@ elif page == "Capital":
 
 elif page == "P&L explain":
     header("Daily P&L explain")
-    by = st.selectbox("Attribution by", ["asset_class", "business_id", "desk_id", "book_id"])
+    by = st.selectbox(
+        "Attribution by",
+        [
+            "asset_class",
+            "business_id",
+            "desk_id",
+            "book_id",
+            "region",
+            "country",
+            "risk_currency",
+            "currency_pair",
+        ],
+    )
     p = load("pnl", run_id, by=by)
     steps = df(p["steps"])
     if not steps.empty:
@@ -1947,7 +1993,19 @@ elif page == "Compare runs":
         st.info("Only one run stored. Run a second business day to compare.")
         st.stop()
     other = st.selectbox("Compare against", others, format_func=labels.get)
-    by = st.selectbox("VaR by", ["asset_class", "business_id", "desk_id", "book_id"])
+    by = st.selectbox(
+        "VaR by",
+        [
+            "asset_class",
+            "business_id",
+            "desk_id",
+            "book_id",
+            "region",
+            "country",
+            "risk_currency",
+            "currency_pair",
+        ],
+    )
     c = client.compare(other, run_id, by=by)
     st.caption(f"A = {labels[other]}   →   B = {labels[run_id]}")
     cols = st.columns(5)
@@ -2432,7 +2490,15 @@ elif page == "Reference data":
     )
     what = st.radio(
         "Show",
-        ["Organisation", "Counterparties", "Products", "Model inventory", "Risk measures", "Risk factors"],
+        [
+            "Organisation",
+            "Counterparties",
+            "Products",
+            "Model inventory",
+            "Risk measures",
+            "Risk factors",
+            "Geography",
+        ],
         horizontal=True,
         key="ref_what",
     )
@@ -2730,7 +2796,7 @@ elif page == "Reference data":
                             f"- screen: {m['screen']}\n"
                             f"- face: {m['face']}"
                         )
-    else:
+    elif what == "Risk factors":
         factors = client.risk_factor_reference()["factors"]
         type_names = {
             "IR_ZERO": "Zero curves",
@@ -2824,6 +2890,52 @@ elif page == "Reference data":
                     label = f"{type_names.get(kind, kind)} · {kind} · {n_und} underlyings · {n_kind} factors"
                     with st.expander(label, expanded=bool(q)):
                         st.markdown("\n".join(factor_line(u, fs) for u, fs in sorted(unds.items())))
+    elif what == "Geography":
+        geo = client.geography()
+        if not geo["currencies"]:
+            st.info("No geography table in this database yet: run `novera reference seed`.")
+        st.caption(
+            "Currency pair → currency → country → region (decision round 44). A pair attaches to its "
+            "less liquid currency, the higher liquidity score (BIS FX turnover rank, 1 = USD); an FX "
+            "trade takes that currency, any other trade its own. Generated from ISO 4217 and ISO 3166 "
+            "by scripts/build_geography.py."
+        )
+        pairs = df(geo["currency_pairs"])
+        if not pairs.empty:
+            st.subheader("Currency pairs in the platform")
+            pairs = pairs[
+                pairs.apply(lambda r: _hit(r["currency_pair"], r["currency"], r["country_name"]), axis=1)
+            ]
+            shown += len(pairs)
+            st.dataframe(
+                pairs[["currency_pair", "currency", "country_name", "region_name", "liquidity_scores"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+        ccy = df(geo["currencies"])
+        if not ccy.empty:
+            regions = [r["name"] for r in geo["regions"]]
+            region = st.selectbox("Region", ["(all)", *regions], key="geo_region")
+            if region != "(all)":
+                ccy = ccy[ccy["region_name"] == region]
+            ccy = ccy[ccy.apply(lambda r: _hit(r["currency"], r["name"], r["country_name"]), axis=1)]
+            shown += len(ccy)
+            st.subheader(f"Currencies ({len(ccy)}), by liquidity")
+            st.dataframe(
+                ccy[["liquidity_score", "currency", "name", "country", "country_name", "region_name"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+            cty = df(geo["countries"])
+            if region != "(all)":
+                cty = cty[cty["region_name"] == region]
+            cty = cty[cty.apply(lambda r: _hit(r["country"], r["name"], r["currency"]), axis=1)]
+            st.subheader(f"Countries ({len(cty)})")
+            st.dataframe(
+                cty[["country", "name", "region_name", "currency", "is_union"]],
+                hide_index=True,
+                use_container_width=True,
+            )
     if not shown:
         st.info("Nothing matches the filter.")
 
