@@ -475,7 +475,7 @@ class _Slow(ScriptedProvider):
     def complete(self, system, messages, tools):
         import time
 
-        time.sleep(1.0)
+        time.sleep(0.3)  # wakes while the fallback is storing: its tools then hold read-only connections
         return super().complete(system, messages, tools)
 
 
@@ -504,7 +504,8 @@ def test_auto_commentary_drafts_falls_back_and_can_be_off(db_path, monkeypatch) 
 
     monkeypatch.setattr(analyst_mod, "make_provider", lambda *_a, **_k: _Slow())
     slow = draft_after_run(str(db_path), rid, Settings(_env_file=None, commentary_timeout_seconds=0.2))
-    assert slow["fallback"] and "exceeded" in slow["llm_error"]
+    assert slow["status"] == "DRAFTED", slow
+    assert slow["fallback"] and "exceeded 0.2s" in slow["llm_error"]
 
     assert draft_after_run(str(db_path), rid, Settings(_env_file=None, commentary_auto=False)) == {
         "status": "OFF"

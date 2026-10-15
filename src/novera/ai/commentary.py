@@ -10,15 +10,22 @@ written to the audit trail. ``commentary_auto`` switches it off. Record AI-001.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
-from typing import Any
+from typing import Any, TypeVar
+
+import duckdb
 
 from novera.config import Settings, get_settings
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import AuditEvent
 
 AUTO_SESSION = "auto-commentary"  # session id marking the drafts made by this step
+WRITE_RETRY_SECONDS = 10.0  # how long a write waits out the read-only connections of a late LLM draft
+
+T = TypeVar("T")
 
 
 def draft_after_run(db_path: str, run_id: str, settings: Settings | None = None) -> dict[str, Any]:
@@ -40,7 +47,7 @@ def draft_after_run(db_path: str, run_id: str, settings: Settings | None = None)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)  # a late LLM answer is discarded
     except FutureTimeout:
-        ans, error = None, f"LLM draft exceeded {settings.commentary_timeout_seconds:.0f}s"
+        ans, error = None, f"LLM draft exceeded {settings.commentary_timeout_seconds:g}s"
     except Exception as e:  # noqa: BLE001 - every provider failed, or the run cannot be read
         ans, error = None, f"{type(e).__name__}: {e}"[:300]
     fallback = ans is None
@@ -49,7 +56,7 @@ def draft_after_run(db_path: str, run_id: str, settings: Settings | None = None)
             analyst = Analyst(db_path, provider=ScriptedProvider(), settings=settings)
             ans = analyst.commentary(run_id, False)
         ans.session_id = AUTO_SESSION
-        analyst.store(ans)
+        _with_retry(lambda: analyst.store(ans))
     except Exception as e:  # noqa: BLE001 - recorded, the run is unaffected
         msg = f"{type(e).__name__}: {e}"[:300]
         _audit(db_path, run_id, "COMMENTARY_FAILED", error=msg, llm_error=error)
@@ -79,7 +86,30 @@ def note_for_job(outcome: dict[str, Any]) -> str:
 
 def _audit(db_path: str, run_id: str, kind: str, **payload: Any) -> None:
     try:
-        with DuckDBRepository(db_path) as repo:
-            repo.save_audit_events([AuditEvent.now("analyst", kind, run_id, **payload)])
+
+        def write() -> None:
+            with DuckDBRepository(db_path) as repo:
+                repo.save_audit_events([AuditEvent.now("analyst", kind, run_id, **payload)])
+
+        _with_retry(write)
     except Exception:  # noqa: BLE001 - the audit write must not take the caller down
         pass
+
+
+def _with_retry(write: Callable[[], T]) -> T:
+    """Run a read-write step, retrying while DuckDB refuses it.
+
+    A timed-out LLM draft keeps running in its abandoned thread, and its tools open read-only
+    connections; DuckDB refuses a read-write connection in the same process while one is open.
+    Those connections are short-lived, so the write is retried with a growing pause until it
+    gets through or ``WRITE_RETRY_SECONDS`` have passed."""
+    deadline = time.monotonic() + WRITE_RETRY_SECONDS
+    pause = 0.05
+    while True:
+        try:
+            return write()
+        except duckdb.ConnectionException:
+            if time.monotonic() + pause > deadline:
+                raise
+            time.sleep(pause)
+            pause = min(pause * 2, 1.0)
