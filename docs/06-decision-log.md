@@ -1628,6 +1628,73 @@ CCP capital was not allocated. One question round; the owner took every recommen
 - Where: `regulatory/saccr.py` (REG-003 1.1.0), `regulatory/engine.py`; the end-to-end test
   re-runs the stage after the counterparty run and must reproduce SA-CCR and BA-CVA.
 
+## Round 42 — Stress episodes that end on their moves, an inflation bear, a history backtest (2026-10-15)
+
+Context: second-look items 6 (the extension years are calm) and 17 (the crash window is noisy).
+Measured first on the generator: the crash window gave S&P 500 −14% and USD 10Y +18bp against a
+defined −27% and −60bp. At 2.5× daily vol over 22 days, the rates noise (about 70bp, one
+standard deviation) is larger than the drift. The rates shock overshot its targets the other way. Two
+question rounds; the owner took every recommended option.
+
+### 42.1 The crash fix
+- Options: bridge both episodes ★ · lower the vol multiplier · stronger drift
+- Choice (owner): **bridge**. Inside each episode window every random draw series (the global
+  factor and each group's own draws) has its mean over the window removed. The net move is the
+  episode's drift alone, and each day keeps the noise its multiplier gives it. Seed 42: crash
+  S&P 500 −26.5%, 10Y −63bp, Euro Stoxx −26.5%, Brent −32%; rates shock S&P 500 −12.2%, 10Y +113bp
+  (the 10Y sits between the curve's short and long loads). Holds for seed 7 too.
+
+### 42.2 The extension episode
+- Options: a 2022-style inflation bear ★ · a short liquidity crunch · both
+- Choice (owner): **the inflation bear**: 125 days from early January 2022, stocks and bonds down
+  together. Realised: S&P 500 −22.1%, USD 10Y +206bp, 2Y +249bp, EUR/USD −10.7%, Bitcoin −60%,
+  Brent +35%. The inputs sit above those figures (equities −25%, +365bp short, +215bp long),
+  because six months of equity drift and rates mean reversion take back part of the move. The
+  10Y move still varies by seed (+222bp for seed 7), because the pull depends on where rates
+  start. The core three years are unchanged by this choice.
+
+### 42.3 The backtest
+- Options: add a five-year information backtest ★ · the same on full revaluation · leave it
+- Choice (owner): **information backtest on the delta-gamma-vega P&L**: today's book on every
+  daily move of the stored history after a 250-day lookback (1,055 days on the bank, 14
+  exceptions against 10.6 expected; fund 1,054 days, 16), stored as `STATIC_SENSITIVITY_HISTORY`
+  with its own series. The 250-day static result still alone sets the IMA multiplier.
+
+### 42.4 Episode dates (default)
+- Found: the stress engine counted each episode window back from the end of the stored history,
+  which grows by a day per scheduled run, so the live demo's windows had slid two business days
+  (crash 13 November instead of 11 November). The generator now returns each window from the
+  close before its first day to its last day, and `simulate` and the Lab store them
+  (`market_episode`). Every stress caller reads them; a database without them falls back to the
+  old offsets.
+
+### 42.5 The rebuild
+- Bridging moves the core path after the crash, so the levels on the business date move (Bitcoin,
+  equity indices, rates), trades are struck at different levels and limits are recalibrated.
+  Firm VaR on the 15th is 64.0m (was 70.2m). The fund's worst stress is now the inflation bear
+  (−207m on the 11th, was −146m for equity −20%). The bank's 250-day backtest is AMBER on the 15th
+  (5 exceptions) instead of the 14th, so the IMA multiplier moves with it.
+- First rebuild, brought to the owner (second round):
+  - EUR_RATES_STRESS breached on the 15th at 100.1%. The EUR rates desk's worst loss is now 150m
+    in the risk-off crash: once the crash ends on its rates rally, the desk's exposure to falling
+    rates shows, which the noisy window had hidden. Calibration capped the limit at 150m (twice the
+    75m appetite). Options: keep it as a ninth breach ★ · raise its appetite. Choice (owner):
+    **keep it**, the same reasoning as CPTY_CORP_AIR in 34.3.
+  - Two story crossings drifted just short: SINGLE_NAME_EQ_VEGA ended the 15th at 99.0% (it still
+    breached on the 14th), and the fund's EQ_LS_US_VAR reached 97.7% on the 14th. Options: re-aim
+    the targets ★ · accept the shorter story. Choice (owner): **re-aim**: `STORY_TARGETS`
+    0.92 → 0.94 and 0.95 → 0.98.
+- Second rebuild: bank 5, 7 and 9 breaches (EUR_RATES_STRESS the ninth); SINGLE_NAME_EQ_VEGA
+  94%, 104.8%, 101.1%; fund 2 then 3 (EQ_LS_US_VAR 98%, 100.8%).
+- Where: `simulation/market_data.py` (`_Sim._bridge`, `EXTENSION_EPISODES`,
+  `GeneratedMarketData.episodes`; SIM-001 1.6.0), `storage` (`market_episode`,
+  `save/load_market_episodes`), `risk/stress.py` (`historical_episodes`; MR-005 1.4.0),
+  `risk/backtest.py` (`history_backtest`; MR-011 1.1.0), `workflows/eod.py` and `rerun.py`,
+  `GET /backtest` (`history_series`), the VaR page, `limits/calibration.py` (`STORY_TARGETS`).
+  Tests: `test_episodes_end_on_their_defined_moves_whatever_the_seed`,
+  `test_stored_episode_windows_do_not_move_as_the_history_grows`,
+  `test_results_persisted_and_reloadable` (three backtest series).
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1645,9 +1712,9 @@ CCP capital was not allocated. One question round; the owner took every recommen
    the model-risk story for option books.
 5. **Closed in round 40** (MR-017). Was: **Limit calibration by hand** (4.3): any generator change moves the utilisations;
    consider calibrating limits from a target utilisation instead.
-6. **Extension years are calm** (20.1): the two earlier years carry no stress episode and
-   the backtest still uses 250 + 250 days; a longer backtest and an older third episode are
-   the natural next steps.
+6. **Closed in round 42**: the extension carries a 2022-style inflation bear, and a five-year
+   information backtest sits beside the 250-day one. Was: **Extension years are calm** (20.1): the
+   two earlier years carry no stress episode and the backtest still uses 250 + 250 days.
 7. **Synthetic parameters** (9.3, 11.2, HF-002, HF-006): volume, spread, margin schedules,
    crowding scores and capital risk weights are assumptions; each record says so.
 8. **Swaption smile with beta fixed at zero and no rho or nu sensitivities** (21.1, 21.2):
@@ -1675,12 +1742,9 @@ CCP capital was not allocated. One question round; the owner took every recommen
     per group were written from knowledge of the vendors, not from a fetch; wire one before
     quoting it to a client, and re-check FRED's ICE swap-rate series, which may be
     discontinued.
-17. **The stylised crash window is noisy in the demo seed** (22.3): on the Stress library
-    page the risk-off crash shows S&P 500 -9.7% first-to-last and USD 10Y +71bp, although the
-    episode is defined with -27% and -60bp. The 2.5x daily vol multiplier over 22 days lets
-    noise dominate the drift for seed 42 (the 20% drawdown test measures peak to trough over
-    the whole history). A cleaner episode needs a stronger drift or a lower multiplier, which
-    changes the core history and so every calibrated limit; deferred for that reason.
+17. **Closed in round 42**: the draws are bridged inside each episode window, so the crash ends at
+    S&P 500 −26.5% and USD 10Y −63bp. Was: **The stylised crash window is noisy in the demo seed**
+    (22.3): the risk-off crash showed S&P 500 −9.7% and USD 10Y +71bp against −27% and −60bp.
 18. **Addressed in round 40**: a VaR template switch is followed by a recalibration draft of the VaR
     and ES limits (`novera limits calibrate --types VAR,EXPECTED_SHORTFALL`). Still open: calibration
     resizes existing limits only, and no stressed-VaR limit is seeded yet. Was: **Limit amounts do not follow the VaR measure** (25.4): loading a template that changes

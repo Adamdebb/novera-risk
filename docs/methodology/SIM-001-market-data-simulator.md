@@ -2,7 +2,7 @@
 
 | Field            | Value |
 |------------------|-------|
-| Version          | 1.5.0 |
+| Version          | 1.6.0 |
 | Owner            | Market Risk Methodology |
 | Approval status  | Draft |
 | Code             | `novera.simulation.market_data` |
@@ -49,16 +49,26 @@ not a forecast and makes no claim about real markets.
 
 ## Inputs
 Base levels and vols in `simulation/reference_levels.py`; episodes in
-`DEFAULT_EPISODES`; seed and horizon in `MarketSimConfig`. The default horizon is five years
+`DEFAULT_EPISODES` (core) and `EXTENSION_EPISODES`; seed and horizon in `MarketSimConfig`. The default horizon is five years
 (1,305 business days) built as two segments. The core segment is the last `core_years`
 (three years, 783 days) and is drawn exactly as a three-year run would draw it, so the
 episodes (crash starting 480 days before the end, rates shock 220 days before), the levels
 on the business date and the VaR window are unchanged by the longer horizon, and the limit
 calibration holds. The extension segment covers the earlier years: a second run of the same
-model with seed `seed + 101` and no episodes, re-levelled so its last day equals the core's
+model with seed `seed + 101` and its own episode, a 2022-style inflation bear (decision 42.2),
+re-levelled so its last day equals the core's
 first day (a shift for zero rates, a scale for everything else), with that overlap day then
 dropped so the junction step is an ordinary daily move. Every risk-factor series is
 re-levelled independently, which preserves the FX triangle and the curve shapes.
+
+**Bridged episode windows** (decision 42.1). Inside each episode window every random draw
+series (the global factor and each group's own draws) has its mean over the window removed.
+The window's net move is then the episode's drift alone, while each day keeps the noise the
+vol multiplier gives it. Without the bridge, 22 days at 2.5× vol let the noise outweigh the
+drift: the crash showed S&P 500 −14% and USD 10Y +18bp against −27% and −60bp for seed 42. The
+generator returns each window from the close before its first day to its last day, and
+`novera simulate` stores them (`market_episode`), so stress scenarios keep their dates as the
+history grows.
 
 ## Assumptions
 Constant correlations except through the vol multiplier; lognormal returns; no jumps
@@ -67,17 +77,24 @@ outside the episodes; no holidays (weekdays only); no intraday data.
 ## Calibration
 Annualised vols set to plausible 2024-2026 levels. Episode sizes chosen to be visibly
 larger than typical daily noise (crash: equities -27%, vol x2.3; rates shock: +150bp short,
-+90bp long). Post-episode decay of 80% of the vol move and 60% of the spread move over 60 days.
++90bp long). The inflation bear runs 125 days from early January 2022: S&P 500 −22%, USD 10Y
++200bp and 2Y +250bp, credit ×1.6, USD +12%, Bitcoin −60%, Brent +35%. Its inputs are set above
+those figures (equities −25%, +365bp short, +215bp long) because six months of equity drift
+and rates mean reversion take back part of the move. Post-episode decay of 80% of the vol move and 60% of the spread move over 60 days.
 
 ## Limitations
-Synthetic history cannot be used to validate a VaR model against real events. Smile
+Synthetic history cannot be used to validate a VaR model against real events. Over the
+six-month inflation bear, the rates mean reversion depends on where rates stand when the
+episode starts, so the realised 10Y move varies by seed (about ±25bp). Smile
 shape is static outside episodes. Correlations across currencies' rate curves come only
 through the global factor. Not suitable for any regulatory purpose.
 
 ## Validation tests
 `tests/test_market_data.py`: reproducibility, positivity, skew sign, triangular FX
 consistency, backwardation shape, drawdown and rates-shock visibility, storage round trip,
-that the extension leaves the core bit-identical and joins without a jump, and
+that the extension leaves the core bit-identical and joins without a jump,
+(`test_episodes_end_on_their_defined_moves_whatever_the_seed`) that each episode ends on its
+defined move for two seeds, and
 (`test_tenor_basis_is_drawn_last_and_widens_in_a_crisis`) that the basis is positive, 6M above
 3M, widens most at the short end in the crash and leaves every other series unchanged.
 
@@ -90,3 +107,4 @@ that the extension leaves the core bit-identical and joins without a jump, and
 | 1.3.0 | 2026-10-14 | EURIBOR-3M and -6M tenor basis over ESTR, widening with credit in a crisis (decision 33.4) | Novera |
 | 1.4.0 | 2026-10-14 | TIIE-28D and JIBAR-3M tenor basis over F-TIIE and ZARONIA (decision 34.1) | Novera |
 | 1.5.0 | 2026-10-14 | Cross-currency basis against USD for 14 currencies, falling in a dollar-funding squeeze (decision 35.1) | Novera |
+| 1.6.0 | 2026-10-15 | Draws bridged inside episode windows; inflation bear in the extension; episode windows returned and stored (decision 42) | Novera |

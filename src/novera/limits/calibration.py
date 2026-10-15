@@ -60,11 +60,11 @@ STORY_TARGETS: dict[str, float] = {
     "ENERGY_CONC_BRENT": 1.38,
     "CPTY_CORP_AIR": 1.08,
     "CPTY_CORP_ENERGY": 0.98,
-    "SINGLE_NAME_EQ_VEGA": 0.92,
+    "SINGLE_NAME_EQ_VEGA": 0.94,
     "EUR_RATES_DV01_EUR": 0.85,
     "EQ_LS_US_CONC_NVDA": 2.52,
     "FUND_PB_CONCENTRATION": 1.61,
-    "EQ_LS_US_VAR": 0.95,
+    "EQ_LS_US_VAR": 0.98,
 }
 
 

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
 | Code | `novera.risk.stress`, `novera.risk.stress_catalogue` |
@@ -19,7 +19,7 @@ USD rates +100bp; global rates +100bp; USD steepener and flattener; EURIBOR basi
 cross-currency basis −25bp, EUR, JPY and CHF −40bp); EUR/USD −10%;
 equity −20% with vol +15; credit +150bp; oil −30%; BTC −50%; vol +10 points; global
 risk-off (composite); inflation shock (composite). Historical: the simulator's stylised
-risk-off crash and rates shock.
+inflation bear, risk-off crash and rates shock, on the windows stored with the history (SIM-001).
 
 ### Categories on the "Stress library" page
 `GET /reference/stress-library` and the dashboard page list every scenario in three
@@ -29,7 +29,7 @@ categories with the shocks it applies:
    spreads, vol points for surfaces and per cent for everything else, with the curve nodes a
    rule is limited to. Sizes are assumptions in the range regulators and desks use; none is
    measured from a real market move.
-2. **Stylised historical episodes** (2, in the daily run): the simulator's windows, shown as
+2. **Stylised historical episodes** (3, in the daily run): the simulator's windows, shown as
    the realised move of fourteen headline factors (S&P 500, Euro Stoxx, USD 2Y and 10Y, EUR
    10Y, EUR/USD, USD/JPY, CDX IG and HY, SPX 3M vol, USD 1Y10Y swaption vol, Brent, gold,
    Bitcoin) between the window's first and last day.
@@ -60,3 +60,4 @@ schema in `tests/test_api.py`, the page in `tests/test_ui.py`.
 | 1.1.0 | 2026-09-15 | Stress library catalogue: categories, shocks and crisis-window status (decision 22.1); scenario results unchanged | Novera |
 | 1.2.0 | 2026-10-14 | EURIBOR basis +20bp scenario (decision 33) | Novera |
 | 1.3.0 | 2026-10-14 | USD funding squeeze scenario on the cross-currency basis (decision 35) | Novera |
+| 1.4.0 | 2026-10-15 | Episode windows read from storage instead of counted back from the end of the history, which slid a day for each day appended; inflation bear added (decision 42) | Novera |
