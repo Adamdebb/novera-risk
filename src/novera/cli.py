@@ -28,10 +28,57 @@ lab_app = typer.Typer(
 app.add_typer(lab_app, name="lab")
 signoff_app = typer.Typer(no_args_is_help=True, help="Sign-off and release of a run's metrics (OPS-003).")
 app.add_typer(signoff_app, name="signoff")
+users_app = typer.Typer(no_args_is_help=True, help="Role accounts and personal access tokens (ADR 0006).")
+app.add_typer(users_app, name="users")
 var_setup_app = typer.Typer(
     no_args_is_help=True, help="The VaR measures produced daily, for limits or information (OPS-004)."
 )
 app.add_typer(var_setup_app, name="var-setup")
+
+
+@app.callback()
+def _console() -> None:
+    """The CLI is the operator console: every audit event it writes says so (ADR 0006)."""
+    import getpass
+
+    from novera.workflows.runs import set_audit_channel
+
+    set_audit_channel(channel="cli", os_user=getpass.getuser())
+
+
+def _as(repo, actor: str):
+    """The user ``--actor`` names, by id or name (ADR 0006). The CLI runs on the database host
+    with file access, so it is trusted to say who is acting, but only as a known user, whose
+    role then decides what the command may do."""
+    from novera.security.users import slug
+
+    users = repo.load_users()
+    if not users:
+        raise typer.BadParameter("this database has no users yet: run `novera users seed`")
+    a = actor.strip()
+    user = next((u for u in users if a in (u.user_id, u.name) or slug(a) == u.user_id), None)
+    if user is None or not user.active:
+        raise typer.BadParameter(f"unknown user {actor!r}; see `novera users list`")
+    return user
+
+
+def _write(fund: bool, actor: str, fn):
+    """Run ``fn(service)`` on a writable connection as the user ``--actor`` names; a refused
+    action is reported, not raised."""
+    from novera.api.errors import ApiError, translate
+    from novera.api.service import RiskWriteService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        svc = RiskWriteService(repo, _as(repo, actor))
+        try:
+            return fn(svc)
+        except Exception as e:  # noqa: BLE001 - workflow and permission errors become messages
+            err = e if isinstance(e, ApiError) else translate(e)
+            if err is None:
+                raise
+            typer.echo(f"{err.code}: {err}", err=True)
+            raise typer.Exit(1) from e
 
 
 def _db(fund: bool):
@@ -161,6 +208,9 @@ def simulate(
             repo.save_limits(build_fund_limits(org, cp, fund))
         else:
             repo.save_limits(build_limits(org, cp, bd))
+        from novera.security import seed_users
+
+        seed_users(repo, org.firm.firm_id)  # role accounts (ADR 0006); tokens: novera users token
         sid = repo.save_portfolio_snapshot(gen.snapshot)
         for snap_ in snapshots[1:]:
             repo.save_portfolio_snapshot(snap_)
@@ -488,12 +538,15 @@ def rerun_cmd(
 ) -> None:
     """Re-run one EOD stage on a stored run into a new RERUN run; the parent run is untouched (OPS-002)."""
     from novera.api.service import RiskService
+    from novera.security import Action, require
     from novera.storage.duckdb_repository import DuckDBRepository
     from novera.workflows.rerun import rerun_stage
 
     with DuckDBRepository(_db(fund)) as repo:
+        user = _as(repo, actor)
+        require(user, Action.RERUN)
         rid = RiskService(repo).resolve(run_id).run_id
-        res = rerun_stage(repo, rid, stage, actor, reason, workers=workers or None)
+        res = rerun_stage(repo, rid, stage, user.name, reason, workers=workers or None)
     r = res.run
     typer.echo(
         f"rerun {r.run_id}  stage {stage}  parent {res.parent.run_id}  {r.business_date}  {res.seconds:.1f}s"
@@ -536,11 +589,7 @@ def signoff_sign_cmd(
     fund: bool = typer.Option(False),
 ) -> None:
     """Sign one metric of a run; releases the run when every required metric is signed."""
-    from novera.api.service import RiskWriteService
-    from novera.storage.duckdb_repository import DuckDBRepository
-
-    with DuckDBRepository(_db(fund)) as repo:
-        st = RiskWriteService(repo).sign_metric(run_id, metric_id, actor, comment)
+    st = _write(fund, actor, lambda svc: svc.sign_metric(run_id, metric_id, comment))
     typer.echo(f"{metric_id} signed on {st['run_id']} by {actor}; release {st['release_status']}")
 
 
@@ -553,32 +602,27 @@ def signoff_reject_cmd(
     fund: bool = typer.Option(False),
 ) -> None:
     """Reject one metric of a run, or withdraw its signature; a comment is mandatory."""
-    from novera.api.service import RiskWriteService
-    from novera.storage.duckdb_repository import DuckDBRepository
-
-    with DuckDBRepository(_db(fund)) as repo:
-        st = RiskWriteService(repo).reject_metric(run_id, metric_id, actor, comment)
+    st = _write(fund, actor, lambda svc: svc.reject_metric(run_id, metric_id, comment))
     typer.echo(f"{metric_id} rejected on {st['run_id']} by {actor}; release {st['release_status']}")
 
 
 @signoff_app.command("policy")
 def signoff_policy_cmd(
     require: str = typer.Option(None, help="Comma-separated metric ids to require; omit to show the policy"),
-    actor: str = typer.Option("risk-control"),
+    actor: str = typer.Option("head-of-market-risk", help="Who sets it: Head of Market Risk or CRO"),
     comment: str = typer.Option(""),
     fund: bool = typer.Option(False),
 ) -> None:
     """Show or set which metrics must be signed before a run is released."""
-    from novera.api.service import RiskService, RiskWriteService
+    from novera.api.service import RiskService
     from novera.storage.duckdb_repository import DuckDBRepository
 
     if require is None:
         with DuckDBRepository(_db(fund), read_only=True) as repo:
             pol = RiskService(repo).signoff_policy()
     else:
-        with DuckDBRepository(_db(fund)) as repo:
-            ids = [x.strip() for x in require.split(",") if x.strip()]
-            pol = RiskWriteService(repo).set_signoff_policy(actor, ids, comment)
+        ids = [x.strip() for x in require.split(",") if x.strip()]
+        pol = _write(fund, actor, lambda svc: svc.set_signoff_policy(ids, comment))
     typer.echo(f"policy ({pol['source']}): {', '.join(pol['required']) or 'nothing required'}")
     for m in pol["metrics"]:
         typer.echo(f"  {m['metric_id']:<14} {'required' if m['required'] else 'optional':<9} {m['signer']}")
@@ -607,20 +651,12 @@ def var_setup_show(fund: bool = typer.Option(False)) -> None:
 @var_setup_app.command("template")
 def var_setup_template(
     name: str = typer.Argument(..., help="bank or hedge_fund"),
-    actor: str = typer.Option("risk-control"),
+    actor: str = typer.Option("head-of-market-risk", help="Who changes it: Head of Market Risk or CRO"),
     comment: str = typer.Option(""),
     fund: bool = typer.Option(False),
 ) -> None:
     """Replace the VaR setup with a template; the next EOD run produces those measures."""
-    from novera.api.service import RiskWriteService
-    from novera.limits import WorkflowError
-    from novera.storage.duckdb_repository import DuckDBRepository
-
-    with DuckDBRepository(_db(fund)) as repo:
-        try:
-            st = RiskWriteService(repo).apply_var_template(name, actor, comment)
-        except WorkflowError as e:
-            raise typer.BadParameter(str(e)) from e
+    st = _write(fund, actor, lambda svc: svc.apply_var_template(name, comment))
     _print_var_setup(st)
 
 
@@ -640,19 +676,9 @@ def breach_list(all_: bool = typer.Option(False, "--all", help="Include closed b
             )
 
 
-def _breach_action(fn, *args, **kwargs) -> None:
-    from novera.limits import WorkflowError
-    from novera.storage.duckdb_repository import DuckDBRepository
-
-    with DuckDBRepository(get_settings().db_path) as repo:
-        try:
-            obj, events = fn(repo, *args, **kwargs)
-        except WorkflowError as e:
-            raise typer.BadParameter(str(e)) from e
-    typer.echo(
-        f"{obj.status.value}: {getattr(obj, 'breach_id', getattr(obj, 'increase_id', ''))} "
-        f"({len(events)} audit events)"
-    )
+def _breach_action(actor: str, fn) -> None:
+    obj = _write(False, actor, fn)
+    typer.echo(f"{obj['status']}: {obj.get('breach_id') or obj.get('increase_id', '')} (by {actor})")
 
 
 @breach_app.command("ack")
@@ -662,9 +688,7 @@ def breach_ack(
     comment: str = typer.Option("", help="Comment"),
 ) -> None:
     """Acknowledge an open breach."""
-    from novera.limits import acknowledge
-
-    _breach_action(acknowledge, breach_id, actor, comment)
+    _breach_action(actor, lambda svc: svc.acknowledge(breach_id, comment))
 
 
 @breach_app.command("escalate")
@@ -675,9 +699,7 @@ def breach_escalate(
     comment: str = typer.Option(""),
 ) -> None:
     """Escalate a breach to a named role."""
-    from novera.limits import escalate
-
-    _breach_action(escalate, breach_id, actor, to, comment)
+    _breach_action(actor, lambda svc: svc.escalate(breach_id, to, comment))
 
 
 @breach_app.command("close")
@@ -690,9 +712,7 @@ def breach_close(
     comment: str = typer.Option(""),
 ) -> None:
     """Close a breach with a reason. Rules in docs/methodology/MR-008-breach-workflow.md."""
-    from novera.limits import close
-
-    _breach_action(close, breach_id, actor, reason, comment)
+    _breach_action(actor, lambda svc: svc.close(breach_id, reason, comment))
 
 
 @breach_app.command("request-increase")
@@ -705,18 +725,8 @@ def breach_request_increase(
     breach_id: str = typer.Option(None),
 ) -> None:
     """Request a temporary limit increase."""
-    from datetime import date as _date
-
-    from novera.limits import request_increase
-
     _breach_action(
-        request_increase,
-        limit_id,
-        amount,
-        _date.fromisoformat(expires),
-        actor,
-        rationale,
-        breach_id=breach_id,
+        actor, lambda svc: svc.request_increase(limit_id, amount, expires, rationale, breach_id=breach_id)
     )
 
 
@@ -728,9 +738,7 @@ def breach_decide_increase(
     comment: str = typer.Option(""),
 ) -> None:
     """Approve or reject a temporary increase (approval matrix applies)."""
-    from novera.limits import decide_increase
-
-    _breach_action(decide_increase, increase_id, approver, not reject, comment)
+    _breach_action(approver, lambda svc: svc.decide_increase(increase_id, not reject, comment))
 
 
 @app.command()
@@ -976,15 +984,19 @@ def mcp(
     db: str = typer.Option(None, help="Database path (overrides --fund)"),
     allow_agents: bool = typer.Option(False, help="Expose the agent tool, which writes notes to breaches"),
     transport: str = typer.Option("stdio", help="stdio (default, one process per client) or streamable-http"),
+    host: str = typer.Option("127.0.0.1", help="streamable-http only"),
+    port: int = typer.Option(8765, help="streamable-http only"),
 ) -> None:
     """MCP server exposing the Analyst's read-only tools and the what-if engine (AI-004).
 
     Register it with an MCP client, e.g. for Claude Code:
     claude mcp add novera -- uv run --directory <repo> novera mcp
+    Over streamable-http every call needs a personal access token (novera users token).
     """
-    from novera.mcp_server import build_server
+    from novera.mcp_server import main
 
-    build_server(db or _db(fund), allow_agents).run(transport=transport)
+    args = ["--db", str(db or _db(fund)), "--transport", transport, "--host", host, "--port", str(port)]
+    main(args + (["--allow-agents"] if allow_agents else []))
 
 
 # --- agents -----------------------------------------------------------------------------------
@@ -1059,12 +1071,16 @@ def agent_ingest(
         )
         document = str(write_demo_term_sheet(org, s.data_dir / "documents", cps[cid], le))
         typer.echo(f"demo term sheet written to {document}")
+    approver = None
+    if approve:
+        with DuckDBRepository(_db(fund), read_only=True) as repo:
+            approver = _as(repo, approve)
     ops = AgentOps(_db(fund))
     d = ops.propose_csa(document)
     typer.echo(d["text"])
     typer.echo(f"\n[note {d['note_id']} · {d['status']}]")
-    if approve:
-        out = ops.approve_csa(d["note_id"], approve)
+    if approver is not None:
+        out = AgentOps(_db(fund), approver).approve_csa(d["note_id"])
         typer.echo(f"APPROVED by {approve}: netting set {out['netting_set_id']}, CSA {out['csa_id']}")
 
 
@@ -1153,13 +1169,16 @@ def limits_calibrate(
     the next business day; limits in breach are left alone. Approve with `novera limits approve`."""
     from novera.api.service import RiskService
     from novera.domain.limits import LimitType
+    from novera.security import Action, require
     from novera.storage.duckdb_repository import DuckDBRepository
     from novera.workflows.limit_calibration import propose_recalibration
 
     wanted = {LimitType(t.strip()) for t in types.split(",") if t.strip()} or None
     with DuckDBRepository(_db(fund)) as repo:
+        user = _as(repo, actor)
+        require(user, Action.LIMIT_RECALIBRATE)
         rid = RiskService(repo).resolve(run_id).run_id
-        drafts, left = propose_recalibration(repo, rid, actor, wanted)
+        drafts, left = propose_recalibration(repo, rid, user.name, wanted)
     for d in drafts:
         typer.echo(
             f"{d['draft_id']}  {d['limit_id']:<28} {d['old_amount']:>16,.4g} -> {d['new_amount']:>16,.4g}"
@@ -1192,11 +1211,7 @@ def limits_approve(
     fund: bool = typer.Option(False),
 ) -> None:
     """Approve a recalibration draft (the limit's approver; never the proposer)."""
-    from novera.storage.duckdb_repository import DuckDBRepository
-    from novera.workflows.limit_calibration import decide_draft
-
-    with DuckDBRepository(_db(fund)) as repo:
-        d = decide_draft(repo, draft_id, actor, True, comment)
+    d = _write(fund, actor, lambda svc: svc.decide_limit_draft(draft_id, True, comment))
     typer.echo(
         f"{d['limit_id']} now {d['new_amount']:,.4g} from {d['effective_from']}; old version kept in history"
     )
@@ -1210,9 +1225,91 @@ def limits_reject(
     fund: bool = typer.Option(False),
 ) -> None:
     """Reject a recalibration draft with a comment."""
+    d = _write(fund, actor, lambda svc: svc.decide_limit_draft(draft_id, False, comment))
+    typer.echo(f"{d['limit_id']} draft rejected; the limit is unchanged")
+
+
+# --- users and tokens (ADR 0006) ---------------------------------------------------------------
+@users_app.command("seed")
+def users_seed(fund: bool = typer.Option(False, help="Use the hedge-fund database")) -> None:
+    """Create or refresh the role accounts from the organisation, its limits and the sign-off
+    metrics; existing tokens stay valid."""
+    from novera.security import seed_users
     from novera.storage.duckdb_repository import DuckDBRepository
-    from novera.workflows.limit_calibration import decide_draft
 
     with DuckDBRepository(_db(fund)) as repo:
-        d = decide_draft(repo, draft_id, actor, False, comment)
-    typer.echo(f"{d['limit_id']} draft rejected; the limit is unchanged")
+        repo.init_schema()
+        users = seed_users(repo)
+    typer.echo(f"{len(users)} users")
+
+
+@users_app.command("list")
+def users_list(fund: bool = typer.Option(False)) -> None:
+    """The role accounts and their live tokens."""
+    from datetime import UTC, datetime
+
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        users, tokens = repo.load_users(), repo.list_tokens()
+    now = datetime.now(UTC)
+    live = {}
+    for t in tokens:
+        exp = t["expires_at"] if t["expires_at"].tzinfo else t["expires_at"].replace(tzinfo=UTC)
+        if t["revoked_at"] is None and exp > now:
+            live[t["user_id"]] = live.get(t["user_id"], 0) + 1
+    for u in users:
+        scope = ",".join(u.desks or u.businesses)
+        typer.echo(f"{u.user_id:<34} {u.role.value:<26} {live.get(u.user_id, 0)} tokens  {u.name}  {scope}")
+
+
+@users_app.command("token")
+def users_token(
+    user_id: str = typer.Argument(..., help="User id, e.g. head-of-market-risk"),
+    days: int = typer.Option(90, help="Days until it expires"),
+    label: str = typer.Option("", help="What it is for, e.g. 'React client on laptop'"),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Issue a personal access token. It is printed once; only its hash is stored."""
+    from novera.security import issue
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        try:
+            t = issue(repo, _as(repo, user_id).user_id, days, label)
+        except (KeyError, ValueError) as e:
+            raise typer.BadParameter(str(e)) from e
+    typer.echo(t.token)
+    typer.echo(
+        f"{t.token_id} for {t.user_id}, expires {t.expires_at:%Y-%m-%d}; it will not be shown again", err=True
+    )
+
+
+@users_app.command("tokens")
+def users_tokens(user_id: str = typer.Option(None), fund: bool = typer.Option(False)) -> None:
+    """Token metadata: id, prefix, owner, label, expiry, revocation. Never the token."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        rows = repo.list_tokens(user_id)
+    for t in rows:
+        state = (
+            f"revoked {t['revoked_at']:%Y-%m-%d}"
+            if t["revoked_at"]
+            else f"expires {t['expires_at']:%Y-%m-%d}"
+        )
+        typer.echo(f"{t['token_id']}  {t['token_prefix']}…  {t['user_id']:<30} {state}  {t['label']}")
+
+
+@users_app.command("revoke")
+def users_revoke(token_id: str, fund: bool = typer.Option(False)) -> None:
+    """Revoke a token by its id; it stops working at once."""
+    from datetime import UTC, datetime
+
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund)) as repo:
+        ok = repo.revoke_token(token_id, datetime.now(UTC))
+    if not ok:
+        raise typer.BadParameter(f"no live token {token_id}")
+    typer.echo(f"{token_id} revoked")

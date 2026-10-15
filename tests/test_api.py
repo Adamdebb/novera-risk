@@ -8,6 +8,7 @@ from novera.api.errors import InvalidRequestError
 from novera.api.service import RiskService, RunNotFoundError
 from novera.market_data.history import MarketHistory
 from novera.risk import VaRConfig
+from novera.security import issue, seed_users
 from novera.simulation import (
     TradeGeneratorConfig,
     build_counterparty_universe,
@@ -38,6 +39,7 @@ def db_path(tmp_path_factory):
         repo.save_counterparties(cp.counterparties)
         repo.save_netting_sets(cp.netting_sets, cp.csas)
         repo.save_limits(build_limits(org, cp))
+        seed_users(repo, org.firm.firm_id)
         repo.save_portfolio_snapshot(gen.snapshot)
         repo.save_risk_factors(md.universe)
         repo.save_market_history(md.history)
@@ -55,6 +57,20 @@ def db_path(tmp_path_factory):
             repo, res.run.run_id, ExposureSimConfig(paths=20), runs_dir=data_dir / "runs", workers=1
         )
     return path
+
+
+@pytest.fixture(scope="module")
+def tokens(db_path) -> dict[str, str]:
+    """A personal access token for every user, by user id and by name (ADR 0006)."""
+    out = {}
+    with DuckDBRepository(db_path) as repo:
+        for u in repo.load_users():
+            out[u.user_id] = out[u.name] = issue(repo, u.user_id, days=1).token
+    return out
+
+
+def as_(tokens, who: str) -> dict:
+    return {"headers": {"Authorization": f"Bearer {tokens[who]}"}}
 
 
 @pytest.fixture(scope="module")
@@ -214,18 +230,21 @@ def test_local_client_matches_service(db_path):
     assert c.limits(status="BREACH") == [r for r in c.limits() if r["status"] == "BREACH"]
 
 
-def test_breach_endpoints_round_trip(client):
+def test_breach_endpoints_round_trip(client, tokens):
     breaches = client.get("/breaches").json()
     assert breaches, "the EOD run should have raised at least one breach"
-    bid = breaches[0]["breach_id"]
+    bid, owner = breaches[0]["breach_id"], breaches[0]["owner"]
     detail = client.get(f"/breaches/{bid}").json()
     assert detail["actions"][0]["action"] == "RAISED"
-    r = client.post(f"/breaches/{bid}/acknowledge", json={"actor": "Head of Desk", "comment": "on it"})
+    r = client.post(f"/breaches/{bid}/acknowledge", json={"comment": "on it"}, **as_(tokens, owner))
     assert r.status_code == 200 and r.json()["status"] == "ACKNOWLEDGED"
-    r = client.post(f"/breaches/{bid}/acknowledge", json={"actor": "Head of Desk"})
+    assert client.get(f"/breaches/{bid}").json()["actions"][-1]["actor"] == owner  # from the token
+    r = client.post(f"/breaches/{bid}/acknowledge", json={}, **as_(tokens, owner))
     assert r.status_code == 409  # workflow rule violated
-    r = client.post(f"/breaches/{bid}/close", json={"actor": "Head of Desk", "reason": "RISK_REDUCED"})
-    assert r.status_code == 409
+    r = client.post(f"/breaches/{bid}/close", json={"reason": "RISK_REDUCED"}, **as_(tokens, owner))
+    assert r.status_code == 403 and r.json()["code"] == "FORBIDDEN"  # Risk Control closes, not the desk
+    r = client.post(f"/breaches/{bid}/close", json={"reason": "RISK_REDUCED"}, **as_(tokens, "risk-control"))
+    assert r.status_code == 409  # still breached on the latest run
     lid = breaches[0]["limit_id"]
     lim = next(x for x in client.get("/runs/latest/limits").json() if x["limit_id"] == lid)
     r = client.post(
@@ -234,24 +253,26 @@ def test_breach_endpoints_round_trip(client):
             "limit_id": lid,
             "new_amount": lim["base_amount"] * 1.1,
             "expires_on": "2026-10-10",
-            "requested_by": "Head of Desk",
             "rationale": "unwind scheduled",
             "effective_from": "2026-09-11",
             "breach_id": bid,
         },
+        **as_(tokens, owner),
     )
     assert r.status_code == 200, r.text
+    assert r.json()["requested_by"] == owner
     iid = r.json()["increase_id"]
     inc = next(i for i in client.get("/increases").json() if i["increase_id"] == iid)
     assert inc["allowed_approvers"]
-    r = client.post(f"/increases/{iid}/decide", json={"approver": "Head of Desk", "approve": True})
-    assert r.status_code == 409
+    r = client.post(f"/increases/{iid}/decide", json={"approve": True}, **as_(tokens, owner))
+    assert r.status_code == 403  # a desk head is no approver
+    approver = inc["allowed_approvers"][0]
+    r = client.post(f"/increases/{iid}/decide", json={"approve": True}, **as_(tokens, approver))
+    assert r.status_code == 200 and r.json()["status"] == "APPROVED" and r.json()["decided_by"] == approver
     r = client.post(
-        f"/increases/{iid}/decide", json={"approver": inc["allowed_approvers"][0], "approve": True}
-    )
-    assert r.status_code == 200 and r.json()["status"] == "APPROVED"
-    r = client.post(
-        f"/breaches/{bid}/close", json={"actor": "Head of Desk", "reason": "TEMPORARY_INCREASE_APPROVED"}
+        f"/breaches/{bid}/close",
+        json={"reason": "TEMPORARY_INCREASE_APPROVED"},
+        **as_(tokens, "risk-control"),
     )
     assert r.status_code == 200 and r.json()["status"] == "CLOSED"
     rid = client.get("/runs").json()[0]["run_id"]
@@ -260,15 +281,62 @@ def test_breach_endpoints_round_trip(client):
     )
 
 
-def test_analyst_endpoints(client, monkeypatch):
+def test_writes_need_a_token_and_a_role_that_allows_them(client, tokens, db_path):
+    """ADR 0006: no token is 401; a role or scope that does not allow the action is 403; the
+    actor is the token's user whatever the body says; a revoked token stops working."""
+    from datetime import UTC, datetime
+
+    open_ = client.get("/breaches").json()
+    assert open_, "need an open breach"
+    b = open_[0]
+    r = client.post(f"/breaches/{b['breach_id']}/acknowledge", json={"actor": b["owner"]})
+    assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED"
+    r = client.post(
+        f"/breaches/{b['breach_id']}/acknowledge", json={}, headers={"Authorization": "Bearer nvr_nope"}
+    )
+    assert r.status_code == 401
+    assert (
+        client.post(f"/breaches/{b['breach_id']}/acknowledge", json={}, **as_(tokens, "viewer")).status_code
+        == 403
+    )
+    users = {u["name"]: u for u in client.get("/users").json()}
+    other = next(
+        u
+        for u in users.values()
+        if u["role"] == "DESK_HEAD"
+        and u["name"] != b["owner"]
+        and not set(u["desks"]) & set(users.get(b["owner"], {}).get("desks", []))
+    )
+    r = client.post(f"/breaches/{b['breach_id']}/acknowledge", json={}, **as_(tokens, other["user_id"]))
+    assert r.status_code == 403 and r.json()["context"]["limit_id"] == b["limit_id"]
+    assert (
+        client.post(
+            "/admin/var/template", json={"template": "bank"}, **as_(tokens, "risk-control")
+        ).status_code
+        == 403
+    )
+    assert client.post("/admin/run", json={}, **as_(tokens, "viewer")).status_code == 403
+    me = client.get("/me", **as_(tokens, "head-of-market-risk")).json()
+    assert me["name"] == "Head of Market Risk" and me["role"] == "HEAD_OF_MARKET_RISK"
+    assert client.get("/me").status_code == 401
+    with DuckDBRepository(db_path) as repo:
+        t = issue(repo, "viewer", days=1)
+        assert repo.revoke_token(t.token_id, datetime.now(UTC))
+        assert all("token_hash" not in x for x in repo.list_tokens())  # metadata never carries the hash
+    assert client.get("/me", headers={"Authorization": f"Bearer {t.token}"}).status_code == 401
+
+
+def test_analyst_endpoints(client, tokens, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert client.get("/analyst/provider").json()["provider"] == "scripted"
-    r = client.post("/analyst/ask", json={"question": "Which limits are breached?", "session_id": "t"})
+    q = {"question": "Which limits are breached?", "session_id": "t"}
+    assert client.post("/analyst/ask", json=q).status_code == 401
+    r = client.post("/analyst/ask", json=q, **as_(tokens, "viewer"))  # any signed-in user may ask
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["answer"] and d["tool_calls"] and d["run_ids_cited"]
     assert client.get("/analyst/history").json()[0]["answer_id"] == d["answer_id"]
-    r = client.post("/analyst/commentary")
+    r = client.post("/analyst/commentary", **as_(tokens, "viewer"))
     assert r.status_code == 200 and "VaR" in r.json()["answer"]
 
 
@@ -279,12 +347,12 @@ def test_ops_endpoints(client):
     assert client.get("/runs/latest/reconciliation").status_code == 404
 
 
-def test_measure_endpoints(client):
+def test_measure_endpoints(client, tokens):
     assert client.get("/runs/latest/concentration").json()["by_dimension"]
     liq = client.get("/runs/latest/liquidity").json()
     assert liq["liquidity_adjusted_var"] >= liq["var"]
     assert client.get("/runs/latest/backtest").json()["summary"]
-    r = client.post("/runs/latest/risk-pack", params={"pdf": False})
+    r = client.post("/runs/latest/risk-pack", params={"pdf": False}, **as_(tokens, "viewer"))
     assert r.status_code == 200 and r.json()["html"].endswith(".html")
 
 
@@ -412,7 +480,7 @@ def test_schemas_declare_every_field_the_engine_returns(client):
     assert not extra, extra
 
 
-def test_errors_are_problem_details(client):
+def test_errors_are_problem_details(client, tokens):
     r = client.get("/runs/nope/summary")
     assert r.status_code == 404 and r.headers["content-type"].startswith("application/problem+json")
     p = r.json()
@@ -425,22 +493,23 @@ def test_errors_are_problem_details(client):
     r = client.get("/runs/latest/risk-pack/docx")
     assert r.status_code == 422 and r.json()["code"] == "VALIDATION_FAILED"
     bid = client.get("/breaches", params={"open_only": False}).json()[0]["breach_id"]
-    r = client.post(f"/breaches/{bid}/acknowledge", json={"comment": "no actor"})
-    assert r.status_code == 422 and r.json()["code"] == "VALIDATION_FAILED" and "actor" in r.json()["detail"]
-    r = client.post(f"/breaches/{bid}/acknowledge", json={"actor": "Head of Desk"})
+    r = client.post(f"/breaches/{bid}/acknowledge", json={"comment": "no token"})
+    assert r.status_code == 401 and r.json()["code"] == "UNAUTHENTICATED" and r.json()["title"]
+    r = client.post(f"/breaches/{bid}/acknowledge", json={}, **as_(tokens, "cro"))
     assert r.status_code == 409 and r.json()["code"] == "WORKFLOW_CONFLICT"
     assert r.json()["title"] == "Workflow rule violated" and r.json()["detail"]
-    r = client.post(f"/breaches/{bid}/close", json={"actor": "Head of Desk"})
+    r = client.post(f"/breaches/{bid}/close", json={}, **as_(tokens, "cro"))
     assert r.status_code == 422 and r.json()["context"] == {"field": "reason"}
 
 
-def test_both_clients_raise_the_same_errors(db_path, client):
+def test_both_clients_raise_the_same_errors(db_path, client, tokens):
     from novera.api.client import HttpClient
-    from novera.api.errors import ConflictError, NotFoundError, RunNotFoundError
+    from novera.api.errors import ConflictError, ForbiddenError, NotFoundError, RunNotFoundError
 
-    local = LocalClient(db_path)
+    local = LocalClient(db_path, "cro")
     http = HttpClient("http://testserver")
     http.http = client  # the TestClient is an httpx client
+    http.http.headers["Authorization"] = f"Bearer {tokens['cro']}"
     for c in (local, http):
         with pytest.raises(RunNotFoundError) as e:
             c.summary(run_id="nope")
@@ -450,8 +519,9 @@ def test_both_clients_raise_the_same_errors(db_path, client):
         assert c.reconciliation() is None
         bid = c.breaches(open_only=False)[0]["breach_id"]
         with pytest.raises(ConflictError) as e:
-            c.acknowledge(bid, "Head of Desk")
+            c.acknowledge(bid, "already dealt with")
         assert e.value.code == "WORKFLOW_CONFLICT" and e.value.status == 409
+        assert c.me()["name"] == "CRO"
         csv = c.trade_extract_csv(asset_class=["RATES"])
         assert isinstance(csv, bytes) and csv.startswith(b"trade_id,")
     with pytest.raises(NotFoundError) as e:
@@ -461,10 +531,19 @@ def test_both_clients_raise_the_same_errors(db_path, client):
     strip = lambda d: {k: v for k, v in d.items() if v is not None}  # noqa: E731
     assert strip(local.summary()["summary"]) == strip(http.summary()["summary"])
     assert local.limits() == http.limits()
+    del http.http.headers["Authorization"]
+    viewer_http = HttpClient("http://testserver", tokens["viewer"])
+    viewer_http.http = client
+    viewer_http.http.headers["Authorization"] = f"Bearer {tokens['viewer']}"
+    for c in (LocalClient(db_path, "viewer"), viewer_http):
+        with pytest.raises(ForbiddenError) as e:
+            c.apply_var_template("bank")
+        assert e.value.code == "FORBIDDEN" and e.value.status == 403
+    del client.headers["Authorization"]
 
 
-def test_risk_pack_download(client):
-    r = client.post("/runs/latest/risk-pack", params={"pdf": False})
+def test_risk_pack_download(client, tokens):
+    r = client.post("/runs/latest/risk-pack", params={"pdf": False}, **as_(tokens, "viewer"))
     assert r.status_code == 200
     r = client.get("/runs/latest/risk-pack/html")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html") and b"<" in r.content
@@ -563,7 +642,7 @@ def test_measure_catalogue_matches_methodology_records():
     assert expected <= set(catalogued), f"records not catalogued: {sorted(expected - set(catalogued))}"
 
 
-def test_admin_run_endpoints_validate_before_running(client):
+def test_admin_run_endpoints_validate_before_running(client, tokens):
     """The options say what a manual full run can be launched on; a bad request is refused
     before any engine starts. The run itself is covered in tests/test_operations.py."""
     opts = client.get("/admin/run/options").json()
@@ -571,14 +650,13 @@ def test_admin_run_endpoints_validate_before_running(client):
     assert opts["snapshot_dates"] and opts["snapshot_dates"][0] == opts["latest_snapshot_date"]
     assert opts["latest_run_date"] == opts["latest_snapshot_date"] and opts["jobs"] == []
     assert {"counterparty_enabled", "regulatory_enabled"} <= set(opts)
-    r = client.post("/admin/run", json={"actor": "  "})
-    assert r.status_code == 422 and "actor" in r.text
-    r = client.post("/admin/run", json={"actor": "Risk Control", "business_date": "yesterday"})
+    assert client.post("/admin/run", json={}).status_code == 401
+    r = client.post("/admin/run", json={"business_date": "yesterday"}, **as_(tokens, "risk-control"))
     assert r.status_code == 422 and "YYYY-MM-DD" in r.text
     assert client.get("/admin/run/options").json()["jobs"] == []
 
 
-def test_admin_rerun_endpoints(client):
+def test_admin_rerun_endpoints(client, tokens):
     opts = client.get("/admin/rerun/options").json()
     assert opts["record"] == "OPS-002" and {x["name"] for x in opts["stages"]} >= {
         "valuation",
@@ -586,11 +664,10 @@ def test_admin_rerun_endpoints(client):
         "stress",
         "limits",
     }
-    r = client.post("/admin/rerun", json={"run_id": "latest", "stage": "nope", "actor": "Risk Control"})
+    rc = as_(tokens, "risk-control")
+    r = client.post("/admin/rerun", json={"run_id": "latest", "stage": "nope"}, **rc)
     assert r.status_code == 422 and "unknown stage" in r.text
-    r = client.post(
-        "/admin/rerun", json={"run_id": "latest", "stage": "stress", "actor": "Risk Control", "reason": "t"}
-    )
+    r = client.post("/admin/rerun", json={"run_id": "latest", "stage": "stress", "reason": "t"}, **rc)
     assert r.status_code == 200, r.text
     body = r.json()
     assert (
@@ -604,17 +681,22 @@ def test_admin_rerun_endpoints(client):
     assert client.get(f"/runs/{body['run_id']}/stress").json()
 
 
-def test_signoff_endpoints(client):
+def test_signoff_endpoints(client, tokens):
     st = client.get("/runs/latest/signoff").json()
     assert st["record"] == "OPS-003" and st["release_status"] == "PENDING" and st["required_total"] >= 5
-    r = client.post("/runs/latest/signoff/VAR/sign", json={"actor": "Head of Market Risk", "comment": "ok"})
+    hmr = as_(tokens, "head-of-market-risk")
+    r = client.post("/runs/latest/signoff/VAR/sign", json={"comment": "ok"}, **as_(tokens, "Head of Energy"))
+    assert r.status_code == 403 and r.json()["context"]["signer"] == "Head of Market Risk"
+    r = client.post("/runs/latest/signoff/VAR/sign", json={"comment": "ok"}, **hmr)
     assert r.status_code == 200, r.text
     assert next(m for m in r.json()["metrics"] if m["metric_id"] == "VAR")["status"] == "SIGNED"
-    assert client.post("/runs/latest/signoff/VAR/sign", json={"actor": "x"}).status_code == 409
-    assert client.post("/runs/latest/signoff/STRESS/reject", json={"actor": "x"}).status_code == 409
-    assert client.post("/runs/latest/signoff/NOPE/sign", json={"actor": "x"}).status_code == 409
+    assert client.post("/runs/latest/signoff/VAR/sign", json={}, **hmr).status_code == 409
+    assert client.post("/runs/latest/signoff/STRESS/reject", json={}, **hmr).status_code == 409
+    assert client.post("/runs/latest/signoff/NOPE/sign", json={}, **hmr).status_code == 409
     assert client.get("/admin/signoff/policy").json()["source"] == "defaults"
-    r = client.post("/admin/signoff/policy", json={"actor": "CRO", "required": ["VAR"], "comment": "narrow"})
+    r = client.post(
+        "/admin/signoff/policy", json={"required": ["VAR"], "comment": "narrow"}, **as_(tokens, "cro")
+    )
     assert r.status_code == 200 and r.json()["required"] == ["VAR"] and r.json()["source"] == "stored"
     st = client.get("/runs/latest/signoff").json()
     assert st["release_status"] == "RELEASED" and st["released_by"] == "Head of Market Risk"
@@ -624,7 +706,8 @@ def test_signoff_endpoints(client):
     assert any(e["event_type"] == "METRIC_SIGNED" for e in events)
 
 
-def test_var_setup_endpoints(client):
+def test_var_setup_endpoints(client, tokens):
+    cro = as_(tokens, "cro")
     st = client.get("/admin/var/setup").json()
     assert (
         st["record"] == "OPS-004" and st["source"] == "defaults" and st["headline"] == "VAR_99_HS_FULL_BASE"
@@ -633,7 +716,6 @@ def test_var_setup_endpoints(client):
     bad = client.post(
         "/admin/var/setup",
         json={
-            "actor": "CRO",
             "measures": [
                 {
                     "goal": "LIMIT",
@@ -644,12 +726,13 @@ def test_var_setup_endpoints(client):
                 }
             ],
         },
+        **cro,
     )
     assert bad.status_code == 409 and "headline" in bad.json()["detail"]
-    r = client.post("/admin/var/template", json={"actor": "CRO", "template": "hedge_fund"})
+    r = client.post("/admin/var/template", json={"template": "hedge_fund"}, **cro)
     assert r.status_code == 200 and r.json()["source"] == "stored"
     assert r.json()["measures"][0]["decay"] == 0.94 and r.json()["measures"][0]["limit_type"] == "VAR"
-    assert client.post("/admin/var/template", json={"actor": "CRO", "template": "nope"}).status_code == 409
+    assert client.post("/admin/var/template", json={"template": "nope"}, **cro).status_code == 409
     events = client.get("/audit", params={"subject": "var_setup"}).json()
     assert any(e["event_type"] == "VAR_SETUP_CHANGED" for e in events)
     # The stored run keeps its own matrix: measure-level reads work on it.
@@ -660,7 +743,5 @@ def test_var_setup_endpoints(client):
     assert by and sum(x["component_var"] for x in by) == pytest.approx(vs[0]["var"], rel=1e-6)
     sc = client.get("/runs/latest/var/measure-scenarios", params={"measure_id": mid}).json()
     assert sc and sum(x["weight"] for x in sc) == pytest.approx(1.0)
-    restore = client.post(
-        "/admin/var/setup", json={"actor": "CRO", "measures": st["measures"], "comment": "back"}
-    )
+    restore = client.post("/admin/var/setup", json={"measures": st["measures"], "comment": "back"}, **cro)
     assert restore.status_code == 200 and restore.json()["headline"] == st["headline"]

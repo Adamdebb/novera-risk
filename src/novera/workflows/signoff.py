@@ -165,7 +165,7 @@ METRICS: tuple[Metric, ...] = (
         "Fund measures",
         "Leverage, margin usage and prime-broker concentration.",
         "HF-001",
-        "Chief Risk Officer",
+        "CRO",
         True,
         ("fund",),
         faces=("fund",),

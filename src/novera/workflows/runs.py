@@ -70,6 +70,16 @@ class RunRecord:
         self.status = status
 
 
+AUDIT_CHANNEL: dict[str, str] = {}
+"""Where this process's actions come from, stamped on every audit event it writes: the CLI sets
+``channel="cli"`` and the OS user, under ``via`` (ADR 0006)."""
+
+
+def set_audit_channel(**fields: str) -> None:
+    AUDIT_CHANNEL.clear()
+    AUDIT_CHANNEL.update(fields)
+
+
 @dataclass(frozen=True)
 class AuditEvent:
     event_id: str
@@ -81,4 +91,6 @@ class AuditEvent:
 
     @classmethod
     def now(cls, actor: str, event_type: str, subject: str, **payload: Any) -> AuditEvent:
+        if AUDIT_CHANNEL:
+            payload = {**payload, "via": dict(AUDIT_CHANNEL)}
         return cls(new_run_id("evt"), datetime.now(UTC), actor, event_type, subject, payload)

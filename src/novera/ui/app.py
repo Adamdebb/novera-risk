@@ -7,12 +7,14 @@ HTTP API) and carries the run id it was computed in (ADR 0004).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from novera.api.client import make_client
+from novera.api.errors import ApiError
 from novera.config import get_settings
 
 settings = get_settings()
@@ -22,7 +24,31 @@ FIRMS = {"Global Macro Bank": settings.db_path, "Meridian Multi-Strategy Fund": 
 _available = {k: v for k, v in FIRMS.items() if Path(v).exists()} or {"Global Macro Bank": settings.db_path}
 firm_name = st.sidebar.selectbox("Firm", list(_available), key="firm")
 is_fund = "Fund" in firm_name
-client = make_client(settings, db_path=_available[firm_name])
+_reader = make_client(settings, db_path=_available[firm_name])
+if os.environ.get("NOVERA_API_URL"):  # over HTTP the token decides who is acting
+    client = _reader
+    try:
+        me = client.me()
+    except Exception:  # noqa: BLE001 - no token: reads still work, writes will be refused
+        me = {"user_id": "", "name": "not signed in (set NOVERA_API_TOKEN)", "role": ""}
+else:  # in process: the picker stands in for the firm's single sign-on (ADR 0006)
+    _users = _reader.users()
+    _ids = [u["user_id"] for u in _users]
+    _default = _ids.index(settings.dashboard_user) if settings.dashboard_user in _ids else 0
+    _pick = st.sidebar.selectbox(
+        "Acting as",
+        _ids or [""],
+        index=_default if _ids else 0,
+        format_func=lambda i: next(
+            (f"{u['name']} · {u['role'].replace('_', ' ').lower()}" for u in _users if u["user_id"] == i),
+            "no users: novera users seed",
+        ),
+        key=f"acting_as_{firm_name}",
+        help="Stands in for the firm's single sign-on: every action is recorded under this user and "
+        "allowed only if the role permits it (ADR 0006).",
+    )
+    client = make_client(settings, db_path=_available[firm_name], user_id=_pick or None)
+    me = next((u for u in _users if u["user_id"] == _pick), {"user_id": "", "name": "nobody", "role": ""})
 
 M = 1e6
 
@@ -733,9 +759,7 @@ elif page == "Admin":
             },
         )
         with st.form("var_setup_save"):
-            c1, c2 = st.columns(2)
-            actor = c1.text_input("Acting as", value="Head of Market Risk", key="vsu_actor")
-            comment = c2.text_input("Comment", key="vsu_comment")
+            comment = st.text_input("Comment", key="vsu_comment")
             go = st.form_submit_button("Save the VaR setup")
         if go:
             measures = [
@@ -744,7 +768,7 @@ elif page == "Admin":
                 if not pd.isna(row.get("metric")) and row.get("metric")
             ]
             try:
-                res = client.set_var_setup(actor.strip(), measures, comment.strip())
+                res = client.set_var_setup(measures, comment.strip())
                 st.success(
                     f"Setup saved: {len(res['measures'])} measures, headline {res['headline']}. "
                     "The next EOD run produces them; a partial re-run of the VaR stage on a stored run "
@@ -799,13 +823,11 @@ elif page == "Admin":
                     key=f"pol_{m['metric_id']}",
                 ):
                     chosen.append(m["metric_id"])
-            c1, c2 = st.columns(2)
-            actor = c1.text_input("Acting as", value="Chief Risk Officer", key="pol_actor")
-            comment = c2.text_input("Comment", key="pol_comment")
+            comment = st.text_input("Comment", key="pol_comment")
             go = st.form_submit_button("Save policy")
         if go:
             try:
-                res = client.set_signoff_policy(actor.strip(), chosen, comment.strip())
+                res = client.set_signoff_policy(chosen, comment.strip())
                 st.success(f"Policy saved: {', '.join(res['required']) or 'nothing required'}.")
                 st.cache_data.clear()
             except ApiError as e:
@@ -864,52 +886,45 @@ elif page == "Admin":
                     "when the latest day already has a completed run; the business date above is then "
                     "ignored.",
                 )
-                c3, c4 = st.columns(2)
-                actor = c3.text_input("Actor", value="Risk Control", key="manual_run_actor")
-                reason = c4.text_input(
+                reason = st.text_input(
                     "Reason",
                     placeholder="e.g. late trade booking on the credit desk",
                     key="manual_run_reason",
                 )
                 go = st.form_submit_button(f"Run the full end-of-day for {firm_name}")
             if go:
-                if not actor.strip():
-                    st.error("Name the actor: every manual run is audited.")
-                else:
-                    try:
-                        with st.spinner(f"Running the end-of-day for {firm_name}, {duration}..."):
-                            res = client.run_full(actor.strip(), reason.strip(), bd, advance)
-                    except ApiError as e:
-                        st.error(str(e))
-                        res = None
-                    if res is not None:
-                        for n in res.get("notes", []):
-                            st.caption(n)
-                        if res["status"] in ("COMPLETED", "PARTIAL") and res.get("run"):
-                            r = res["run"]
-                            sm = r["summary"]
-                            secs = sum(r.get("timings", {}).values())
-                            done = st.success if res["status"] == "COMPLETED" else st.warning
-                            done(
-                                f"Run {r['run_id']} for {r['business_date']} "
-                                f"{res['status'].lower()} in {secs:.0f}s: "
-                                f"verdict {r['verdict']}, VaR {money(sm.get('var'))}, "
-                                f"{sm.get('breaches', 0)} breach and {sm.get('warnings', 0)} warning."
-                                + (
-                                    " Failed: " + ", ".join(sorted(sm.get("failed_stages") or {})) + "."
-                                    if res["status"] == "PARTIAL"
-                                    else ""
-                                )
+                try:
+                    with st.spinner(f"Running the end-of-day for {firm_name}, {duration}..."):
+                        res = client.run_full(reason.strip(), bd, advance)
+                except ApiError as e:
+                    st.error(str(e))
+                    res = None
+                if res is not None:
+                    for n in res.get("notes", []):
+                        st.caption(n)
+                    if res["status"] in ("COMPLETED", "PARTIAL") and res.get("run"):
+                        r = res["run"]
+                        sm = r["summary"]
+                        secs = sum(r.get("timings", {}).values())
+                        done = st.success if res["status"] == "COMPLETED" else st.warning
+                        done(
+                            f"Run {r['run_id']} for {r['business_date']} "
+                            f"{res['status'].lower()} in {secs:.0f}s: "
+                            f"verdict {r['verdict']}, VaR {money(sm.get('var'))}, "
+                            f"{sm.get('breaches', 0)} breach and {sm.get('warnings', 0)} warning."
+                            + (
+                                " Failed: " + ", ".join(sorted(sm.get("failed_stages") or {})) + "."
+                                if res["status"] == "PARTIAL"
+                                else ""
                             )
-                            load_runs.clear()
-                            st.cache_data.clear()
-                            st.caption("It is now the latest run; select it in the sidebar to browse it.")
-                        else:
-                            first = (res.get("error") or "unknown error").splitlines()[0]
-                            st.error(
-                                f"Run failed: {first}. The job {res['job_id']} is recorded with the error."
-                            )
-                    ro = client.run_options()
+                        )
+                        load_runs.clear()
+                        st.cache_data.clear()
+                        st.caption("It is now the latest run; select it in the sidebar to browse it.")
+                    else:
+                        first = (res.get("error") or "unknown error").splitlines()[0]
+                        st.error(f"Run failed: {first}. The job {res['job_id']} is recorded with the error.")
+                ro = client.run_options()
             st.subheader("Manual runs so far")
             if ro["jobs"]:
                 st.dataframe(
@@ -948,9 +963,7 @@ elif page == "Admin":
                     "Run to re-run", list(labels), index=list(labels).index(run_id), format_func=labels.get
                 )
                 stage = c2.selectbox("Stage", list(stages), format_func=lambda n: stages[n]["title"])
-                c3, c4 = st.columns(2)
-                actor = c3.text_input("Actor", value="Risk Control")
-                reason = c4.text_input("Reason", placeholder="e.g. market data correction on the USD 7Y node")
+                reason = st.text_input("Reason", placeholder="e.g. market data correction on the USD 7Y node")
                 go = st.form_submit_button("Run the stage")
             spec = stages[stage]
             st.caption(
@@ -958,11 +971,13 @@ elif page == "Admin":
                 f"{', '.join(spec['dependents']) or 'nothing depends on it'}."
             )
             if go:
-                if not actor.strip():
-                    st.error("Name the actor: every re-run is audited.")
-                else:
+                try:
                     with st.spinner(f"Re-running {spec['title'].lower()} on {parent}..."):
-                        res = client.rerun_stage(parent, stage, actor.strip(), reason.strip())
+                        res = client.rerun_stage(parent, stage, reason.strip())
+                except ApiError as e:
+                    st.error(str(e))
+                    res = None
+                if res is not None:
                     info = res["rerun"]
                     st.success(
                         f"Re-run {res['run_id']} completed in {info['seconds']:.0f}s "
@@ -1089,15 +1104,13 @@ elif page == "Sign-off":
             ),
         )
         action = c2.radio("Action", ["Sign", "Reject"], horizontal=True)
-        c3, c4 = st.columns(2)
-        actor = c3.text_input("Acting as", value="Head of Market Risk")
-        comment = c4.text_input("Comment", placeholder="mandatory for a rejection or a RED override")
+        comment = st.text_input("Comment", placeholder="mandatory for a rejection or a RED override")
         go = st.form_submit_button("Record")
     if go:
         try:
             fn = client.sign_metric if action == "Sign" else client.reject_metric
-            res = fn(run_id, metric, actor.strip(), comment.strip())
-            st.success(f"{metric} {action.lower()}ed by {actor}; release {res['release_status']}.")
+            res = fn(run_id, metric, comment.strip())
+            st.success(f"{metric} {action.lower()}ed by {me['name']}; release {res['release_status']}.")
             st.cache_data.clear()
             st.rerun()
         except ApiError as e:
@@ -1662,17 +1675,16 @@ elif page == "Breaches":
                     hide_index=True,
                 )
             if b["status"] != "CLOSED":
-                actor = st.text_input("Acting as", value=b["owner"], key=f"actor_{b['breach_id']}")
-                note = st.text_input("Comment", key=f"note_{b['breach_id']}")
+                note = st.text_input(f"Comment (as {me['name']})", key=f"note_{b['breach_id']}")
                 a1, a2, a3, a4 = st.columns(4)
                 if b["status"] == "OPEN" and a1.button("Acknowledge", key=f"ack_{b['breach_id']}"):
-                    act(client.acknowledge, b["breach_id"], actor, note)
+                    act(client.acknowledge, b["breach_id"], note)
                 if b["status"] in ("OPEN", "ACKNOWLEDGED") and a2.button(
                     "Escalate", key=f"esc_{b['breach_id']}"
                 ):
-                    act(client.escalate, b["breach_id"], actor, None, note)
+                    act(client.escalate, b["breach_id"], None, note)
                 if a3.button("Add comment", key=f"cmt_{b['breach_id']}"):
-                    act(client.comment, b["breach_id"], actor, note)
+                    act(client.comment, b["breach_id"], note)
                 if st.button("Investigate with the agent", key=f"inv_{b['breach_id']}"):
                     with st.spinner("Gathering evidence from the stored runs and drafting the note..."):
                         note_d = client.investigate_breach(b["breach_id"], True)
@@ -1687,20 +1699,19 @@ elif page == "Breaches":
                     key=f"reason_{b['breach_id']}",
                 )
                 if a4.button("Close", key=f"close_{b['breach_id']}"):
-                    act(client.close, b["breach_id"], actor, reason, note)
+                    act(client.close, b["breach_id"], reason, note)
                 with st.form(key=f"inc_{b['breach_id']}"):
                     st.markdown("**Request a temporary limit increase**")
                     lim_row = next(
                         (r for r in load("limits", run_id) if r["limit_id"] == b["limit_id"]), None
                     )
                     base = lim_row["base_amount"] if lim_row else 0.0
-                    i1, i2, i3 = st.columns(3)
+                    i1, i2 = st.columns(2)
                     conc = b["limit_type"] == "CONCENTRATION"
                     new_amt = i1.number_input(
                         "New amount" + ("" if conc else " (m)"), value=float(base if conc else base / M) * 1.2
                     )
                     expires = i2.date_input("Expires on")
-                    requester = i3.text_input("Requested by", value=b["owner"])
                     rationale = st.text_input("Rationale")
                     if st.form_submit_button("Submit request"):
                         act(
@@ -1708,7 +1719,6 @@ elif page == "Breaches":
                             b["limit_id"],
                             new_amt if conc else new_amt * M,
                             str(expires),
-                            requester,
                             rationale,
                             None,
                             b["breach_id"],
@@ -1736,15 +1746,11 @@ elif page == "Breaches":
         )
         if inc["status"] == "REQUESTED":
             d1, d2, d3 = st.columns([2, 1, 1])
-            approver = d1.selectbox(
-                "Deciding as",
-                inc["allowed_approvers"] + ["Head of Desk (not allowed)"],
-                key=f"appr_{inc['increase_id']}",
-            )
+            d1.caption(f"Deciding as {me['name']}")
             if d2.button("Approve", key=f"ok_{inc['increase_id']}"):
-                act(client.decide_increase, inc["increase_id"], approver, True, "")
+                act(client.decide_increase, inc["increase_id"], True, "")
             if d3.button("Reject", key=f"no_{inc['increase_id']}"):
-                act(client.decide_increase, inc["increase_id"], approver, False, "")
+                act(client.decide_increase, inc["increase_id"], False, "")
     st.caption(
         "Approval matrix: desk and book limits need Head of Market Risk or CRO; firm and business "
         "limits need the CRO; increases above 25% always need the CRO; requesters cannot approve "
@@ -2164,17 +2170,17 @@ elif page == "Agents":
         if d:
             st.markdown(d["text"])
             st.json(d["evidence"]["proposal"])
-            approver = st.text_input("Approver", value="Head of Counterparty Risk")
+            st.caption(f"Deciding as {me['name']}")
             c1, c2 = st.columns(2)
             if c1.button("Approve and save"):
                 try:
-                    out = client.approve_csa(d["note_id"], approver)
+                    out = client.approve_csa(d["note_id"])
                     st.success(f"saved netting set {out['netting_set_id']} and CSA {out['csa_id']}")
                     st.session_state.pop("csa_note", None)
                 except Exception as e:  # noqa: BLE001
                     st.error(str(e))
             if c2.button("Reject"):
-                client.reject_csa(d["note_id"], approver, "rejected in review")
+                client.reject_csa(d["note_id"], "rejected in review")
                 st.session_state.pop("csa_note", None)
                 st.info("rejected")
     with tab_notes:
@@ -3008,15 +3014,21 @@ elif page == "Limit management":
             "run, and never on a limit in breach. An approved draft starts the next business day; the old "
             "version stays in the history."
         )
-        who = st.text_input("Your name or role", value="", key="cal_actor")
+        st.caption(
+            f"Acting as {me['name']}: proposals need Head of Market Risk or CRO, "
+            "and the proposer cannot approve."
+        )
         types = st.text_input(
             "Limit types to recalibrate (blank = all)", value="", placeholder="VAR,EXPECTED_SHORTFALL"
         )
-        if st.button("Propose recalibration on this run", disabled=not who.strip()):
-            out = client.propose_limit_recalibration(
-                who.strip(), run_id, [t.strip() for t in types.split(",") if t.strip()]
-            )
-            st.success(f"{len(out)} drafts proposed")
+        if st.button("Propose recalibration on this run"):
+            try:
+                out = client.propose_limit_recalibration(
+                    run_id, [t.strip() for t in types.split(",") if t.strip()]
+                )
+                st.success(f"{len(out)} drafts proposed")
+            except ApiError as e:
+                st.error(str(e))
         drafts = client.limit_drafts("PENDING")
         if drafts:
             dd = df(drafts)[
@@ -3034,12 +3046,15 @@ elif page == "Limit management":
             pick = st.selectbox("Draft", [d["draft_id"] for d in drafts], key="cal_pick")
             note = st.text_input("Comment", key="cal_note")
             a, b = st.columns(2)
-            if a.button("Approve", disabled=not who.strip()):
-                client.decide_limit_draft(pick, who.strip(), True, note)
-                st.success(f"{pick} approved")
-            if b.button("Reject", disabled=not (who.strip() and note.strip())):
-                client.decide_limit_draft(pick, who.strip(), False, note)
-                st.success(f"{pick} rejected")
+            try:
+                if a.button("Approve"):
+                    client.decide_limit_draft(pick, True, note)
+                    st.success(f"{pick} approved")
+                if b.button("Reject", disabled=not note.strip()):
+                    client.decide_limit_draft(pick, False, note)
+                    st.success(f"{pick} rejected")
+            except ApiError as e:
+                st.error(str(e))
         else:
             st.info("No recalibration drafts awaiting approval.")
 

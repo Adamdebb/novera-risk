@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Risk Technology |
 | Approval status | Draft |
 | Code | `novera.mcp_server`, `novera ai.tools` (tool registry) |
@@ -37,11 +37,20 @@ Claude Desktop: add the same command to `claude_desktop_config.json` under `mcpS
 `--fund` serves the fund database, `--db` any sandbox (for example a Portfolio Lab).
 
 ## Limitations
-stdio only by default (`--transport streamable-http` exists for a network deployment but
-carries no authentication of its own; put it behind the firm's gateway). Tool outputs are
+stdio by default. `--transport streamable-http` (`--host`, `--port`) refuses to start without
+users, and every call then needs a personal access token (ADR 0006). The token's user is
+recorded on each `MCP_TOOL_CALL` event, and the agent tool needs an agent-running role as well
+as `--allow-agents`. TLS belongs to the firm's gateway. Tool outputs are
 capped to keep the client's context small; long tables are truncated the same way the
 Analyst truncates them.
 
 ## Validation tests
 `test_server_registers_read_only_tools_by_default`, `test_stdio_round_trip_and_audit`
-(schemas, a read tool, an engine what-if, an error surfaced to the client, audit events).
+(schemas, a read tool, an engine what-if, an error surfaced to the client, audit events);
+`tests/test_security.py::test_mcp_checks_the_same_tokens`.
+
+## Change history
+| Version | Date | Change |
+|---|---|---|
+| 1.0.0 | 2026-09-15 | stdio server over the Analyst's tools, audited |
+| 1.1.0 | 2026-10-15 | Token authentication and per-user audit on streamable-http (decision 43) |

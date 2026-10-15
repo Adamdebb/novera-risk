@@ -83,6 +83,17 @@ class Settings(BaseSettings):
     # Real market data adapters (optional).
     fred_api_key: str | None = Field(default=None, validation_alias="FRED_API_KEY")
 
+    # Identity (ADR 0006).
+    auth_required_for_reads: bool = Field(
+        default=False, description="Require a token on read routes too (writes always need one)"
+    )
+    api_token: str | None = Field(
+        default=None, description="Personal access token the HTTP client sends (novera users token)"
+    )
+    dashboard_user: str = Field(
+        default="risk-control", description="User the dashboard opens as; it stands in for single sign-on"
+    )
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

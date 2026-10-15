@@ -58,28 +58,26 @@ class RiskClient(Protocol):
     def rerun_options(self) -> dict[str, Any]: ...
     def run_options(self) -> dict[str, Any]: ...
     def run_full(
-        self, actor: str, reason: str = "", business_date: str | None = None, advance: bool = False
+        self, reason: str = "", business_date: str | None = None, advance: bool = False
     ) -> dict[str, Any]: ...
     def morning_commentary(self, run_id: str | None = None) -> dict[str, Any]: ...
     def signoff_status(self, run_id: str | None = None) -> dict[str, Any]: ...
     def limit_drafts(self, status: str | None = None) -> list[dict[str, Any]]: ...
     def propose_limit_recalibration(
-        self, actor: str, run_id: str | None = None, limit_types: list[str] | None = None
+        self, run_id: str | None = None, limit_types: list[str] | None = None
     ) -> list[dict[str, Any]]: ...
-    def decide_limit_draft(
-        self, draft_id: str, approver: str, approve: bool, comment: str = ""
-    ) -> dict[str, Any]: ...
+    def decide_limit_draft(self, draft_id: str, approve: bool, comment: str = "") -> dict[str, Any]: ...
     def signoff_policy(self) -> dict[str, Any]: ...
     def signoff_queue(self, limit: int = 20) -> list[dict[str, Any]]: ...
-    def sign_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
-    def reject_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
-    def set_signoff_policy(self, actor: str, required: list[str], comment: str = "") -> dict[str, Any]: ...
+    def sign_metric(self, run_id: str, metric_id: str, comment: str = "") -> dict[str, Any]: ...
+    def reject_metric(self, run_id: str, metric_id: str, comment: str = "") -> dict[str, Any]: ...
+    def set_signoff_policy(self, required: list[str], comment: str = "") -> dict[str, Any]: ...
     def var_setup(self) -> dict[str, Any]: ...
-    def set_var_setup(
-        self, actor: str, measures: list[dict[str, Any]], comment: str = ""
-    ) -> dict[str, Any]: ...
-    def apply_var_template(self, template: str, actor: str, comment: str = "") -> dict[str, Any]: ...
-    def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]: ...
+    def set_var_setup(self, measures: list[dict[str, Any]], comment: str = "") -> dict[str, Any]: ...
+    def apply_var_template(self, template: str, comment: str = "") -> dict[str, Any]: ...
+    def rerun_stage(self, run_id: str, stage: str, reason: str = "") -> dict[str, Any]: ...
+    def me(self) -> dict[str, Any]: ...
+    def users(self) -> list[dict[str, Any]]: ...
 
 
 WRITE_METHODS = {
@@ -101,15 +99,41 @@ WRITE_METHODS = {
     "decide_limit_draft",
 }
 ANALYST_METHODS = {"ask", "commentary", "analyst_history", "analyst_provider"}
+SIGNED_IN = {"ask", "commentary", "risk_pack"}  # any user, but a signed-in one (ADR 0006)
+AGENT_WRITES = {
+    "investigate_breach",
+    "suggest_scenarios",
+    "draft_validation",
+    "propose_csa",
+    "approve_csa",
+    "reject_csa",
+    "run_lab",
+}
 PACK_METHODS = {"risk_pack"}
 
 
 class LocalClient:
     """Opens a short-lived connection per call: read-only for reads so it coexists with a
-    writer (the EOD run), writable only for workflow actions."""
+    writer (the EOD run), writable only for workflow actions. Writes act as ``user_id``, the
+    dashboard's signed-in user (its user picker stands in for single sign-on, ADR 0006)."""
 
-    def __init__(self, db_path) -> None:
+    def __init__(self, db_path, user_id: str | None = None) -> None:
         self.db_path = db_path
+        self.user_id = user_id
+
+    def _user(self):
+        from novera.api.errors import UnauthenticatedError
+
+        if self.user_id is None:
+            raise UnauthenticatedError("choose who you are acting as before a write")
+        with DuckDBRepository(self.db_path, read_only=True) as repo:
+            user = repo.load_user(self.user_id)
+        if user is None or not user.active:
+            raise UnauthenticatedError(f"no active user {self.user_id}")
+        return user
+
+    def me(self) -> dict[str, Any]:
+        return self._user().model_dump(mode="json")
 
     def _call(self, name: str, *a: Any, **kw: Any) -> Any:
         try:
@@ -135,6 +159,8 @@ class LocalClient:
         return Path(path).read_bytes()
 
     def _dispatch(self, name: str, *a: Any, **kw: Any) -> Any:
+        if name in SIGNED_IN:
+            self._user()
         if name in ANALYST_METHODS:
             from novera.ai import Analyst, make_provider
 
@@ -148,10 +174,12 @@ class LocalClient:
         if name in AGENT_METHODS:
             from novera.api.agents_api import AgentOps
 
-            return getattr(AgentOps(self.db_path), name)(*a, **kw)
+            user = self._user() if name in AGENT_WRITES else None
+            return getattr(AgentOps(self.db_path, user), name)(*a, **kw)
         if name in WRITE_METHODS:
+            user = self._user()  # read before the writable connection opens
             with DuckDBRepository(self.db_path) as repo:
-                out = getattr(RiskWriteService(repo), name)(*a, **kw)
+                out = getattr(RiskWriteService(repo, user), name)(*a, **kw)
             if name == "run_full":  # draft once the run's connection is closed (decision round 38)
                 out = with_commentary(str(self.db_path), out)
             return out
@@ -171,11 +199,20 @@ class LocalClient:
 
 
 class HttpClient:
-    def __init__(self, base_url: str) -> None:
+    """Sends ``token`` (a personal access token, ADR 0006) on every request."""
+
+    def __init__(self, base_url: str, token: str | None = None) -> None:
         import httpx
 
         self.base = base_url.rstrip("/")
-        self.http = httpx.Client(base_url=self.base, timeout=30)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self.http = httpx.Client(base_url=self.base, timeout=30, headers=headers)
+
+    def me(self):
+        return self._get("/me")
+
+    def users(self):
+        return self._get("/users")
 
     @staticmethod
     def _check(r: Any) -> Any:
@@ -266,10 +303,8 @@ class HttpClient:
     def run_options(self):
         return self._get("/admin/run/options")
 
-    def run_full(self, actor, reason="", business_date=None, advance=False):
-        return self._post_long(
-            "/admin/run", actor=actor, reason=reason, business_date=business_date, advance=advance
-        )
+    def run_full(self, reason="", business_date=None, advance=False):
+        return self._post_long("/admin/run", reason=reason, business_date=business_date, advance=advance)
 
     def morning_commentary(self, run_id=None):
         return self._get(f"/runs/{run_id or 'latest'}/commentary")
@@ -283,32 +318,26 @@ class HttpClient:
     def signoff_queue(self, limit=20):
         return self._get("/signoff/queue", limit=limit)
 
-    def sign_metric(self, run_id, metric_id, actor, comment=""):
-        return self._post(
-            f"/runs/{run_id or 'latest'}/signoff/{metric_id}/sign", actor=actor, comment=comment
-        )
+    def sign_metric(self, run_id, metric_id, comment=""):
+        return self._post(f"/runs/{run_id or 'latest'}/signoff/{metric_id}/sign", comment=comment)
 
-    def reject_metric(self, run_id, metric_id, actor, comment=""):
-        return self._post(
-            f"/runs/{run_id or 'latest'}/signoff/{metric_id}/reject", actor=actor, comment=comment
-        )
+    def reject_metric(self, run_id, metric_id, comment=""):
+        return self._post(f"/runs/{run_id or 'latest'}/signoff/{metric_id}/reject", comment=comment)
 
-    def set_signoff_policy(self, actor, required, comment=""):
-        return self._post("/admin/signoff/policy", actor=actor, required=list(required), comment=comment)
+    def set_signoff_policy(self, required, comment=""):
+        return self._post("/admin/signoff/policy", required=list(required), comment=comment)
 
     def var_setup(self):
         return self._get("/admin/var/setup")
 
-    def set_var_setup(self, actor, measures, comment=""):
-        return self._post(
-            "/admin/var/setup", actor=actor, measures=[dict(m) for m in measures], comment=comment
-        )
+    def set_var_setup(self, measures, comment=""):
+        return self._post("/admin/var/setup", measures=[dict(m) for m in measures], comment=comment)
 
-    def apply_var_template(self, template, actor, comment=""):
-        return self._post("/admin/var/template", actor=actor, template=template, comment=comment)
+    def apply_var_template(self, template, comment=""):
+        return self._post("/admin/var/template", template=template, comment=comment)
 
-    def rerun_stage(self, run_id, stage, actor, reason=""):
-        return self._post("/admin/rerun", run_id=run_id, stage=stage, actor=actor, reason=reason)
+    def rerun_stage(self, run_id, stage, reason=""):
+        return self._post("/admin/rerun", run_id=run_id, stage=stage, reason=reason)
 
     def _post(self, path: str, **body: Any) -> Any:
         return self._check(self.http.post(path, json=body))
@@ -335,53 +364,48 @@ class HttpClient:
     def breach(self, breach_id):
         return self._get(f"/breaches/{breach_id}")
 
-    def acknowledge(self, breach_id, actor, comment=""):
-        return self._post(f"/breaches/{breach_id}/acknowledge", actor=actor, comment=comment)
+    def acknowledge(self, breach_id, comment=""):
+        return self._post(f"/breaches/{breach_id}/acknowledge", comment=comment)
 
-    def escalate(self, breach_id, actor, to=None, comment=""):
-        return self._post(f"/breaches/{breach_id}/escalate", actor=actor, to=to, comment=comment)
+    def escalate(self, breach_id, to=None, comment=""):
+        return self._post(f"/breaches/{breach_id}/escalate", to=to, comment=comment)
 
-    def comment(self, breach_id, actor, text):
-        return self._post(f"/breaches/{breach_id}/comment", actor=actor, comment=text)
+    def comment(self, breach_id, text):
+        return self._post(f"/breaches/{breach_id}/comment", comment=text)
 
-    def close(self, breach_id, actor, reason, comment=""):
-        return self._post(f"/breaches/{breach_id}/close", actor=actor, reason=reason, comment=comment)
+    def close(self, breach_id, reason, comment=""):
+        return self._post(f"/breaches/{breach_id}/close", reason=reason, comment=comment)
 
     def limit_drafts(self, status=None):
         return self._get("/limits/drafts", status=status)
 
-    def propose_limit_recalibration(self, actor, run_id=None, limit_types=None):
-        return self._post("/limits/recalibrate", actor=actor, run_id=run_id, limit_types=limit_types or [])
+    def propose_limit_recalibration(self, run_id=None, limit_types=None):
+        return self._post("/limits/recalibrate", run_id=run_id, limit_types=limit_types or [])
 
-    def decide_limit_draft(self, draft_id, approver, approve, comment=""):
-        return self._post(
-            f"/limits/drafts/{draft_id}/decide", approver=approver, approve=approve, comment=comment
-        )
+    def decide_limit_draft(self, draft_id, approve, comment=""):
+        return self._post(f"/limits/drafts/{draft_id}/decide", approve=approve, comment=comment)
 
     def increases(self, status=None, limit_id=None):
         return self._get("/increases", status=status, limit_id=limit_id)
 
     def request_increase(
-        self, limit_id, new_amount, expires_on, requested_by, rationale, effective_from=None, breach_id=None
+        self, limit_id, new_amount, expires_on, rationale, effective_from=None, breach_id=None
     ):
         return self._post(
             "/increases",
             limit_id=limit_id,
             new_amount=new_amount,
             expires_on=expires_on,
-            requested_by=requested_by,
             rationale=rationale,
             effective_from=effective_from,
             breach_id=breach_id,
         )
 
-    def decide_increase(self, increase_id, approver, approve, comment=""):
-        return self._post(
-            f"/increases/{increase_id}/decide", approver=approver, approve=approve, comment=comment
-        )
+    def decide_increase(self, increase_id, approve, comment=""):
+        return self._post(f"/increases/{increase_id}/decide", approve=approve, comment=comment)
 
-    def cancel_increase(self, increase_id, actor):
-        return self._post(f"/increases/{increase_id}/cancel", actor=actor)
+    def cancel_increase(self, increase_id):
+        return self._post(f"/increases/{increase_id}/cancel")
 
     def compare(self, run_a, run_b, by="asset_class"):
         return self._get("/compare", run_a=run_a, run_b=run_b, by=by)
@@ -424,11 +448,11 @@ class HttpClient:
     def propose_csa(self, path):
         return self._post_long("/agents/propose-csa", path=path)
 
-    def approve_csa(self, note_id, actor):
-        return self._post_long("/agents/approve-csa", note_id=note_id, actor=actor)
+    def approve_csa(self, note_id):
+        return self._post_long("/agents/approve-csa", note_id=note_id)
 
-    def reject_csa(self, note_id, actor, reason=""):
-        return self._post_long("/agents/reject-csa", note_id=note_id, actor=actor, reason=reason)
+    def reject_csa(self, note_id, reason=""):
+        return self._post_long("/agents/reject-csa", note_id=note_id, reason=reason)
 
     def agent_notes(self, kind=None, subject=None, limit=50):
         return self._get("/agents/notes", kind=kind, subject=subject, limit=limit)
@@ -508,8 +532,12 @@ class HttpClient:
         )
 
 
-def make_client(settings, db_path=None) -> RiskClient:
+def make_client(settings, db_path=None, user_id: str | None = None) -> RiskClient:
+    """HTTP when NOVERA_API_URL is set (sending NOVERA_API_TOKEN), in-process otherwise acting as
+    ``user_id``."""
     import os
 
     url = os.environ.get("NOVERA_API_URL")
-    return HttpClient(url) if url else LocalClient(db_path or settings.db_path)  # type: ignore[return-value]
+    if url:
+        return HttpClient(url, settings.api_token)  # type: ignore[return-value]
+    return LocalClient(db_path or settings.db_path, user_id)  # type: ignore[return-value]

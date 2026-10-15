@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.limits.workflow` |
@@ -41,8 +41,17 @@ records the base amount and the increase id) and expire automatically.
 
 ## Audit
 Every transition writes a breach action and an audit event with actor, comment, run id
-and, where relevant, escalation target or close reason. Actors are named but not
-authenticated until roles arrive in Phase 5.
+and, where relevant, escalation target or close reason. The actor is the signed-in user
+(ADR 0006): the limit's owner, the head of its desk or business, or the head of risk over it
+acknowledges and requests increases; Risk Control or that head of risk escalates and closes;
+approvals follow the matrix above and never the requester.
 
 ## Validation tests
-`tests/test_breach_workflow.py`.
+`tests/test_breach_workflow.py`; roles and scope in `tests/test_security.py` and
+`tests/test_api.py::test_breach_endpoints_round_trip`.
+
+## Change history
+| Version | Date | Change |
+|---|---|---|
+| 1.0.0 | 2026-09-14 | Breach lifecycle, temporary increases and the approval matrix |
+| 1.1.0 | 2026-10-15 | Actors from the signed-in user, checked against role and desk scope (decision 43) |

@@ -8,10 +8,12 @@ from typing import Any
 
 import pandas as pd
 
-from novera.api.errors import InvalidRequestError
+from novera.api.errors import ForbiddenError, InvalidRequestError, NotFoundError
 from novera.api.errors import RunNotFoundError as _RunNotFoundError
 from novera.domain.breaches import CloseReason
 from novera.limits import workflow as wf
+from novera.security import Action, User, oversees, require, require_on_limit
+from novera.security.permissions import require_signer
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import RunRecord
 
@@ -1025,6 +1027,10 @@ class RiskService:
             "xva_after": netting_set_xva(after, cpty, own, curve, st.funding_spread_bp),
         }
 
+    # --- identity (ADR 0006) ------------------------------------------------------------------------
+    def users(self) -> list[dict[str, Any]]:
+        return [u.model_dump(mode="json") for u in self.repo.load_users()]
+
     # --- regulatory capital ------------------------------------------------------------------------
     def capital(self, run_id: str | None = None) -> dict[str, Any]:
         r = self.resolve(run_id)
@@ -1081,14 +1087,34 @@ class RiskService:
 
 
 class RiskWriteService:
-    """Write side: breach actions and temporary increases. Opened on a writable connection."""
+    """Write side, opened on a writable connection for one signed-in user (ADR 0006). Every
+    method checks the user's role and scope, then records the user's name as the actor; the
+    workflows' own rules (approval matrix, never the requester, breach states) still apply."""
 
-    def __init__(self, repo: DuckDBRepository) -> None:
+    def __init__(self, repo: DuckDBRepository, user: User) -> None:
         self.repo = repo
+        self.user = user
+
+    @property
+    def actor(self) -> str:
+        return self.user.name
+
+    def _org(self):
+        ids = self.repo.firm_ids()
+        return self.repo.load_organisation(ids[0]) if ids else None
+
+    def _limit(self, limit_id: str):
+        lim = next((x for x in self.repo.load_limits() if x.limit_id == limit_id), None)
+        if lim is None:
+            raise NotFoundError(f"limit {limit_id} not found", context={"limit_id": limit_id})
+        return lim
+
+    def _on_breach(self, breach_id: str, action: Action) -> None:
+        b = self.repo.load_breach(breach_id)
+        require_on_limit(self.user, action, self._limit(b.limit_id), self._org())
 
     def run_full(
         self,
-        actor: str,
         reason: str = "",
         business_date: str | None = None,
         advance: bool = False,
@@ -1102,8 +1128,7 @@ class RiskWriteService:
         from novera.workflows.eod import EODConfig
         from novera.workflows.scheduler import run_manual
 
-        if not actor.strip():
-            raise InvalidRequestError("name the actor: every manual run is audited")
+        require(self.user, Action.RUN)
         bd = None
         if business_date:
             try:
@@ -1112,65 +1137,79 @@ class RiskWriteService:
                 raise InvalidRequestError(f"business_date must be YYYY-MM-DD, got {business_date!r}") from e
         ids = self.repo.firm_ids()
         cfg = cfg or EODConfig(firm_id=ids[0] if ids else "GMB")
-        job = run_manual(self.repo, actor, reason, bd, advance, cfg)
+        job = run_manual(self.repo, self.actor, reason, bd, advance, cfg)
         run = RiskService._run_dict(self.repo.load_run(job.run_id)) if job.run_id else None
         return {**job.to_dict(), "run": run}
 
-    def rerun_stage(self, run_id: str, stage: str, actor: str, reason: str = "") -> dict[str, Any]:
+    def rerun_stage(self, run_id: str, stage: str, reason: str = "") -> dict[str, Any]:
         """Re-run one EOD stage of a stored run into a new RERUN run; the parent is untouched
         (OPS-002)."""
         from novera.workflows.rerun import rerun_stage
 
+        require(self.user, Action.RERUN)
         rid = RiskService(self.repo).resolve(run_id).run_id
         try:
-            res = rerun_stage(self.repo, rid, stage, actor, reason)
+            res = rerun_stage(self.repo, rid, stage, self.actor, reason)
         except ValueError as e:
             raise InvalidRequestError(str(e)) from e
         return {**RiskService._run_dict(res.run), "rerun": res.run.summary.get("rerun", {})}
 
-    def sign_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]:
+    def _signed(self, fn, run_id: str, metric_id: str, comment: str) -> dict[str, Any]:
         from novera.workflows import signoff
 
-        return signoff.sign(self.repo, RiskService(self.repo).resolve(run_id), metric_id, actor, comment)
+        m = signoff.METRIC_BY_ID.get(metric_id)
+        if m is not None:
+            require_signer(self.user, m.signer, metric_id)
+        return fn(self.repo, RiskService(self.repo).resolve(run_id), metric_id, self.actor, comment)
 
-    def reject_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]:
+    def sign_metric(self, run_id: str, metric_id: str, comment: str = "") -> dict[str, Any]:
         from novera.workflows import signoff
 
-        return signoff.reject(self.repo, RiskService(self.repo).resolve(run_id), metric_id, actor, comment)
+        return self._signed(signoff.sign, run_id, metric_id, comment)
 
-    def set_signoff_policy(self, actor: str, required: list[str], comment: str = "") -> dict[str, Any]:
+    def reject_metric(self, run_id: str, metric_id: str, comment: str = "") -> dict[str, Any]:
         from novera.workflows import signoff
 
-        return signoff.set_policy(self.repo, actor, list(required), comment)
+        return self._signed(signoff.reject, run_id, metric_id, comment)
 
-    def set_var_setup(self, actor: str, measures: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
+    def set_signoff_policy(self, required: list[str], comment: str = "") -> dict[str, Any]:
+        from novera.workflows import signoff
+
+        require(self.user, Action.SIGNOFF_POLICY)
+        return signoff.set_policy(self.repo, self.actor, list(required), comment)
+
+    def set_var_setup(self, measures: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
         """Replace the VaR setup; validated against the stored history and audited (OPS-004)."""
         from novera.workflows import var_setup
 
-        return var_setup.set_setup(self.repo, actor, [dict(m) for m in measures], comment)
+        require(self.user, Action.VAR_SETUP)
+        return var_setup.set_setup(self.repo, self.actor, [dict(m) for m in measures], comment)
 
-    def apply_var_template(self, template: str, actor: str, comment: str = "") -> dict[str, Any]:
+    def apply_var_template(self, template: str, comment: str = "") -> dict[str, Any]:
         """Replace the VaR setup with a template (bank or hedge_fund) (OPS-004)."""
         from novera.workflows import var_setup
 
-        return var_setup.apply_template(self.repo, template, actor, comment)
+        require(self.user, Action.VAR_SETUP)
+        return var_setup.apply_template(self.repo, template, self.actor, comment)
 
-    def acknowledge(self, breach_id: str, actor: str, comment: str = "") -> dict[str, Any]:
-        b, _ = wf.acknowledge(self.repo, breach_id, actor, comment)
+    def acknowledge(self, breach_id: str, comment: str = "") -> dict[str, Any]:
+        self._on_breach(breach_id, Action.BREACH_ACKNOWLEDGE)
+        b, _ = wf.acknowledge(self.repo, breach_id, self.actor, comment)
         return b.model_dump(mode="json")
 
-    def escalate(
-        self, breach_id: str, actor: str, to: str | None = None, comment: str = ""
-    ) -> dict[str, Any]:
-        b, _ = wf.escalate(self.repo, breach_id, actor, to, comment)
+    def escalate(self, breach_id: str, to: str | None = None, comment: str = "") -> dict[str, Any]:
+        self._on_breach(breach_id, Action.BREACH_ESCALATE)
+        b, _ = wf.escalate(self.repo, breach_id, self.actor, to, comment)
         return b.model_dump(mode="json")
 
-    def comment(self, breach_id: str, actor: str, text: str) -> dict[str, Any]:
-        b, _ = wf.comment(self.repo, breach_id, actor, text)
+    def comment(self, breach_id: str, text: str) -> dict[str, Any]:
+        self._on_breach(breach_id, Action.BREACH_COMMENT)
+        b, _ = wf.comment(self.repo, breach_id, self.actor, text)
         return b.model_dump(mode="json")
 
-    def close(self, breach_id: str, actor: str, reason: str, comment: str = "") -> dict[str, Any]:
-        b, _ = wf.close(self.repo, breach_id, actor, CloseReason(reason), comment)
+    def close(self, breach_id: str, reason: str, comment: str = "") -> dict[str, Any]:
+        self._on_breach(breach_id, Action.BREACH_CLOSE)
+        b, _ = wf.close(self.repo, breach_id, self.actor, CloseReason(reason), comment)
         return b.model_dump(mode="json")
 
     def request_increase(
@@ -1178,54 +1217,62 @@ class RiskWriteService:
         limit_id: str,
         new_amount: float,
         expires_on: str,
-        requested_by: str,
         rationale: str,
         effective_from: str | None = None,
         breach_id: str | None = None,
     ) -> dict[str, Any]:
         from datetime import date as _date
 
+        require_on_limit(self.user, Action.INCREASE_REQUEST, self._limit(limit_id), self._org())
         inc, _ = wf.request_increase(
             self.repo,
             limit_id,
             new_amount,
             _date.fromisoformat(expires_on),
-            requested_by,
+            self.actor,
             rationale,
             _date.fromisoformat(effective_from) if effective_from else None,
             breach_id,
         )
         return inc.model_dump(mode="json")
 
-    def decide_increase(
-        self, increase_id: str, approver: str, approve: bool, comment: str = ""
-    ) -> dict[str, Any]:
-        inc, _ = wf.decide_increase(self.repo, increase_id, approver, approve, comment)
+    def decide_increase(self, increase_id: str, approve: bool, comment: str = "") -> dict[str, Any]:
+        """The approval matrix picks the approver by the limit's level and size; never the
+        requester (MR-008)."""
+        require(self.user, Action.INCREASE_DECIDE)
+        inc, _ = wf.decide_increase(self.repo, increase_id, self.actor, approve, comment)
         return inc.model_dump(mode="json")
 
-    def cancel_increase(self, increase_id: str, actor: str) -> dict[str, Any]:
-        inc, _ = wf.cancel_increase(self.repo, increase_id, actor)
+    def cancel_increase(self, increase_id: str) -> dict[str, Any]:
+        """The requester withdraws it, or a head of risk over the limit cancels it."""
+        inc0 = self.repo.load_increase(increase_id)
+        if inc0.requested_by != self.actor and not oversees(self.user, self._limit(inc0.limit_id)):
+            raise ForbiddenError(
+                f"{self.actor} may not cancel an increase requested by {inc0.requested_by}",
+                context={"user_id": self.user.user_id, "increase_id": increase_id},
+            )
+        inc, _ = wf.cancel_increase(self.repo, increase_id, self.actor)
         return inc.model_dump(mode="json")
 
     def propose_limit_recalibration(
-        self, actor: str, run_id: str | None = None, limit_types: list[str] | None = None
+        self, run_id: str | None = None, limit_types: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """DRAFT limit versions from a run's measures at their target utilisation (MR-017)."""
         from novera.domain.limits import LimitType
         from novera.workflows.limit_calibration import propose_recalibration
 
+        require(self.user, Action.LIMIT_RECALIBRATE)
         r = RiskService(self.repo).resolve(run_id)
         drafts, _ = propose_recalibration(
-            self.repo, r.run_id, actor, {LimitType(t) for t in limit_types or []} or None
+            self.repo, r.run_id, self.actor, {LimitType(t) for t in limit_types or []} or None
         )
         return drafts
 
-    def decide_limit_draft(
-        self, draft_id: str, approver: str, approve: bool, comment: str = ""
-    ) -> dict[str, Any]:
+    def decide_limit_draft(self, draft_id: str, approve: bool, comment: str = "") -> dict[str, Any]:
         from novera.workflows.limit_calibration import decide_draft
 
-        return decide_draft(self.repo, draft_id, approver, approve, comment)
+        require(self.user, Action.LIMIT_DRAFT_DECIDE)
+        return decide_draft(self.repo, draft_id, self.actor, approve, comment)
 
 
 def with_commentary(db_path: str, job: dict[str, Any]) -> dict[str, Any]:

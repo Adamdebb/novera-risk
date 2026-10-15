@@ -45,6 +45,7 @@ src/novera/
   regulatory/          FRTB SA and IMA, SA-CCR, SIMM-lite, BA-CVA, cash ladder (bank face)
   fund/                exposures, PB margin, factor betas, redemption stress, attribution, crowding (fund face)
   limits/              Limit definitions, utilisation, breach lifecycle, escalation
+  security/            Role accounts, personal access tokens (hashed), the role matrix each write is checked against (ADR 0006)
   data_quality/        Checks that answer "can I trust today's run?"
   workflows/           End-of-day pipeline, partial re-runs of a stage (OPS-002), sign-off (OPS-003), VaR setup (OPS-004), run registry, audit events
   storage/             Repository layer. All SQL lives here.
@@ -79,7 +80,7 @@ uv run pytest                 # tests, 4 parallel workers (pytest-xdist, ~3 min)
 uv run novera --help          # CLI
 uv run novera simulate        # simulated bank, portfolio, market data, limits
 uv run novera run eod         # governed EOD run, stores results and audit events (--business-date)
-uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase
+uv run novera breach list     # breach workflow: list, ack, escalate, close, request-/decide-increase; --actor names a known user (novera users list)
 uv run novera ask "..."       # Novera Analyst; scripted provider unless a key is set (GEMINI_API_KEY free, ANTHROPIC_API_KEY)
 uv run novera schedule --once # advance a simulated day and run EOD; `schedule` alone loops daily; --fund for the fund
 uv run novera rerun latest --stage stress --actor "Risk Control" --reason "..."   # one stage into a new RERUN run (OPS-002); Admin page does the same
@@ -98,6 +99,7 @@ uv run novera agent investigate <breach_id> | scenarios | validation | ingest [d
 uv run novera lab problems / run <name> --problems a,b --scale 2 / list   # Portfolio Lab sandboxes
 uv run novera lab run <name> ...   # sandbox at data/lab/<name>.duckdb; NOVERA_DB_PATH points the dashboard at it
 uv run novera mcp [--fund] [--allow-agents]   # MCP server over stdio (AI-004); register with `claude mcp add novera -- uv run --directory <repo> novera mcp`
+uv run novera users list / seed / token <user> / tokens / revoke <token_id>   # role accounts and personal access tokens (ADR 0006); API writes need `Authorization: Bearer <token>`
 uv run novera risk            # ad-hoc risk summary without persisting
 uv run streamlit run src/novera/ui/app.py
 uv run uvicorn novera.api.app:app --reload

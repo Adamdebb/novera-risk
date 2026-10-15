@@ -1695,6 +1695,55 @@ question rounds; the owner took every recommended option.
   `test_stored_episode_windows_do_not_move_as_the_history_grows`,
   `test_results_persisted_and_reloadable` (three backtest series).
 
+## Round 43 — Identity and permissions (2026-10-15)
+
+Context: second-look items 1 (no authentication on breach actions) and 10 (MCP over HTTP has no
+authentication). Measured first: every write took `actor` as free text (API body, CLI `--actor`,
+dashboard field), across breaches, increases, sign-off, limit drafts, the VaR setup, re-runs and
+agents. The approval matrix, "never the requester" and the named signers therefore held only if
+people typed their names honestly. The work was added to the roadmap before it started. One
+question round; the owner took every recommended option. Recorded as ADR 0006.
+
+### 43.1 Users
+- Options: role accounts from the organisation ★ · named people with roles · a handful of personas
+- Choice (owner): **role accounts**: the risk function, a head per business and desk, other
+  firm-level owners (the fund's CFO), each sign-off role a metric names, and a Viewer. Bank 27
+  users, fund 24. A user's name is the string the workflows already record. The fund's sign-off
+  role "Chief Risk Officer" became "CRO" (one person, one name).
+
+### 43.2 Tokens
+- Options: issued by the CLI and stored hashed ★ · signed JWTs · static tokens in .env
+- Choice (owner): **personal access tokens**: `novera users token` prints `nvr_…` once; the
+  database keeps the SHA-256 hash, a prefix, an expiry (90 days) and a revocation time. Times
+  are stored as naive UTC, since DuckDB's TIMESTAMPTZ needs pytz, which the project does not
+  ship.
+
+### 43.3 Permissions
+- Options: role matrix enforced ★ · identity only
+- Choice (owner): **the matrix in ADR 0006**, enforced in the write service, so the API, the
+  dashboard and the CLI agree. A limit's desk comes from its scope, not its owner string: the
+  fund's limits name the same PM two ways ("PM CREDIT_LS" and "PM Credit Long/Short").
+
+### 43.4 Scope
+- Options: writes on API and MCP, CLI names a known user ★ · everything including the CLI · API
+  writes only
+- Choice (owner): **writes on API and MCP**. Reads stay open unless
+  `NOVERA_AUTH_REQUIRED_FOR_READS`. The CLI accepts `--actor` only as a known user and stamps
+  `via: {channel: cli, os_user}` on its audit events. MCP over streamable-http verifies the same
+  tokens and refuses to start without users.
+
+- Contract change: the request bodies lose `actor`, `approver` and `requested_by`; the client
+  methods lose those arguments; `/me` and `/users` are added; `401 UNAUTHENTICATED` and
+  `403 FORBIDDEN` join the error codes. The dashboard's "Acting as" picker replaces the free-text
+  fields, and a refused action shows its reason. No figure changes, so no rebuild: the live bank,
+  fund and Lab databases were seeded with `novera users seed`.
+- Where: `security/` (users, tokens, permissions), `storage` (`app_user`, `api_token`),
+  `api/app.py` (`current_user`, `read_guard`), `api/service.py` (`RiskWriteService(repo, user)`),
+  `api/agents_api.py`, `api/client.py`, `cli.py` (`_as`, `_write`, `users` commands),
+  `mcp_server.py` (`TokenVerifier`), `ui/app.py`, `workflows/runs.py` (`set_audit_channel`).
+  Records: ADR 0006, MR-008 1.1.0, OPS-003 1.2.0, AI-004 1.1.0. Tests: `tests/test_security.py`,
+  `tests/test_api.py::test_writes_need_a_token_and_a_role_that_allows_them`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1704,8 +1753,9 @@ question rounds; the owner took every recommended option.
 
 ## Choices worth a second look
 
-1. **No authentication on breach actions** (6.3): fine for a demo, first thing a bank
-   security review will raise.
+1. **Closed in round 43** (ADR 0006): writes take the actor from a personal access token,
+   checked against a role matrix. Was: **No authentication on breach actions** (6.3). Still
+   open: no real single sign-on, and the CLI trusts the operator to name a known user.
 2. **Scripted Copilot** (7.1): the live Claude path is untested until a key is added.
 3. **Alert channels** (8.2): untested against a real Slack webhook or SMTP server.
 4. **Monte Carlo on the approximation** (9.1): a full-revaluation option would strengthen
@@ -1722,8 +1772,8 @@ question rounds; the owner took every recommended option.
    full-revaluation VaR; the earlier gap (no smile at all, 12.1) is closed.
 9. **Re-levelling stale data with a proxy family** (12.4): the basis between the stale family
    and its proxy is not measured; a bank would back-test the proxy choice.
-10. **MCP over HTTP has no authentication of its own** (13.1): the stdio default needs none;
-    the streamable-http transport must sit behind the firm's gateway.
+10. **Closed in round 43**: MCP over streamable-http verifies the platform's tokens and audits each
+    call under the token's user. Was: **MCP over HTTP has no authentication of its own** (13.1).
 11. **Templated agent drafts** (13.2): with the scripted provider the notes are traceable but
     flat; the Claude path for `draft` is untested until a key is added (same as item 2).
 12. **Lab uses production limit calibration** (13.3): small sandbox books under-utilise

@@ -1464,6 +1464,18 @@ class CSAWhatIf(ApiModel):
     xva_after: dict[str, float] | None = Field(default=None, description="The same on the what-if terms")
 
 
+# --- identity (ADR 0006) ------------------------------------------------------------------
+class UserRecord(ApiModel):
+    """A role account. ``name`` is what the audit trail and the approval matrix record."""
+
+    user_id: str
+    name: str
+    role: str
+    desks: list[str] = Field(default_factory=list)
+    businesses: list[str] = Field(default_factory=list)
+    active: bool = True
+
+
 # --- regulatory capital -------------------------------------------------------------------
 class CapitalComponent(ApiModel):
     component: str

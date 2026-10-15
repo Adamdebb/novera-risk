@@ -256,6 +256,24 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     attempts INTEGER NOT NULL,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS app_user (
+    user_id VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    role VARCHAR NOT NULL,
+    desks VARCHAR NOT NULL,
+    businesses VARCHAR NOT NULL,
+    active BOOLEAN NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_token (
+    token_id VARCHAR PRIMARY KEY,
+    token_hash VARCHAR NOT NULL UNIQUE,
+    token_prefix VARCHAR NOT NULL,
+    user_id VARCHAR NOT NULL,
+    label VARCHAR NOT NULL,
+    created_at TIMESTAMP NOT NULL,  -- UTC
+    expires_at TIMESTAMP NOT NULL,  -- UTC
+    revoked_at TIMESTAMP  -- UTC
+);
 CREATE TABLE IF NOT EXISTS market_episode (
     episode_id VARCHAR PRIMARY KEY,
     start_date DATE NOT NULL,
@@ -304,6 +322,10 @@ CREATE TABLE IF NOT EXISTS market_value (
     PRIMARY KEY (snapshot_id, factor_id)
 );
 """
+
+
+def _utc_naive(t: datetime) -> datetime:
+    return t.astimezone(UTC).replace(tzinfo=None) if t.tzinfo else t
 
 
 class DuckDBRepository:
@@ -1226,6 +1248,92 @@ class DuckDBRepository:
         return [json.loads(r[0]) for r in rows]
 
     # --- market data provenance ---------------------------------------------------------
+    # --- users and tokens (ADR 0006) --------------------------------------------------------
+    def _has_table(self, name: str) -> bool:
+        return bool(
+            self._conn.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [name]
+            ).fetchone()
+        )
+
+    def save_users(self, users: list[Any]) -> None:
+        """Insert or update role accounts; a user no longer listed keeps its row."""
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO app_user VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (u.user_id, u.name, u.role.value, ",".join(u.desks), ",".join(u.businesses), u.active)
+                for u in users
+            ],
+        )
+
+    def load_users(self) -> list[Any]:
+        from novera.security.users import Role, User
+
+        if not self._has_table("app_user"):
+            return []
+        rows = self._conn.execute(
+            "SELECT user_id, name, role, desks, businesses, active FROM app_user ORDER BY user_id"
+        ).fetchall()
+        return [
+            User(
+                user_id=r[0],
+                name=r[1],
+                role=Role(r[2]),
+                desks=tuple(x for x in r[3].split(",") if x),
+                businesses=tuple(x for x in r[4].split(",") if x),
+                active=bool(r[5]),
+            )
+            for r in rows
+        ]
+
+    def load_user(self, user_id: str) -> Any | None:
+        return next((u for u in self.load_users() if u.user_id == user_id), None)
+
+    def save_token(self, row: dict[str, Any]) -> None:
+        """Times are stored as naive UTC."""
+        row = {k: _utc_naive(v) if isinstance(v, datetime) else v for k, v in row.items()}
+        self._conn.execute(
+            "INSERT INTO api_token VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                row["token_id"],
+                row["token_hash"],
+                row["token_prefix"],
+                row["user_id"],
+                row["label"],
+                row["created_at"],
+                row["expires_at"],
+                row["revoked_at"],
+            ],
+        )
+
+    def load_token(self, token_hash: str) -> dict[str, Any] | None:
+        if not self._has_table("api_token"):
+            return None
+        cur = self._conn.execute("SELECT * FROM api_token WHERE token_hash = ?", [token_hash])
+        row = cur.fetchone()
+        return dict(zip([c[0] for c in cur.description], row, strict=True)) if row else None
+
+    def list_tokens(self, user_id: str | None = None) -> list[dict[str, Any]]:
+        """Token metadata, never the hash."""
+        if not self._has_table("api_token"):
+            return []
+        sql = (
+            "SELECT token_id, token_prefix, user_id, label, created_at, expires_at, revoked_at "
+            "FROM api_token" + (" WHERE user_id = ?" if user_id else "") + " ORDER BY created_at"
+        )
+        cur = self._conn.execute(sql, [user_id] if user_id else [])
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+
+    def revoke_token(self, token_id: str, at: datetime) -> bool:
+        """True when a live token was revoked."""
+        n = self._conn.execute(
+            "UPDATE api_token SET revoked_at = ? WHERE token_id = ? AND revoked_at IS NULL "
+            "RETURNING token_id",
+            [_utc_naive(at), token_id],
+        ).fetchall()
+        return bool(n)
+
     def save_market_episodes(self, episodes: dict[str, tuple[date, date]]) -> None:
         """The simulator's stylised episodes, from the close before each to its last day."""
         self._conn.execute("DELETE FROM market_episode")

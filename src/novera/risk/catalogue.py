@@ -427,6 +427,7 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "status",
                 "Breaches",
                 "Breach workflow and temporary limit increases",
+                version="1.1.0",
             ),
             MeasureSpec(
                 "MR-009",

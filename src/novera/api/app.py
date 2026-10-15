@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -24,11 +24,13 @@ from novera.api.errors import (
     InvalidRequestError,
     NotFoundError,
     Problem,
+    UnauthenticatedError,
     problem_from,
     translate,
 )
 from novera.api.service import RiskService, RiskWriteService, with_commentary
 from novera.config import get_settings
+from novera.security import User, user_for
 from novera.storage.duckdb_repository import DuckDBRepository
 
 settings = get_settings()
@@ -100,20 +102,45 @@ def service() -> Iterator[RiskService]:
         yield RiskService(repo)
 
 
-def write_service() -> Iterator[RiskWriteService]:
+def _bearer(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    return token.strip() if scheme.lower() == "bearer" else None
+
+
+def current_user(authorization: Annotated[str | None, Header()] = None) -> User:
+    """The user a personal access token belongs to (ADR 0006); 401 without a valid one."""
+    with DuckDBRepository(settings.db_path, read_only=True) as repo:
+        user = user_for(repo, _bearer(authorization))
+    if user is None:
+        raise UnauthenticatedError(
+            "send a personal access token: Authorization: Bearer <token> (novera users token <user>)"
+        )
+    return user
+
+
+def read_guard(request: Request, authorization: Annotated[str | None, Header()] = None) -> None:
+    """Reads are open on the local API unless NOVERA_AUTH_REQUIRED_FOR_READS is set."""
+    if settings.auth_required_for_reads and request.url.path not in ("/health", "/docs", "/openapi.json"):
+        current_user(authorization)
+
+
+def write_service(user: User = Depends(current_user)) -> Iterator[RiskWriteService]:
     with DuckDBRepository(settings.db_path) as repo:
-        yield RiskWriteService(repo)
+        yield RiskWriteService(repo, user)
+
+
+app.router.dependencies.append(Depends(read_guard))
 
 
 # --- request bodies --------------------------------------------------------------------------
 class PolicyBody(BaseModel):
-    actor: str
     required: list[str]
     comment: str = ""
 
 
 class RunBody(BaseModel):
-    actor: str
     reason: str = ""
     business_date: str | None = None
     advance: bool = False
@@ -122,24 +149,20 @@ class RunBody(BaseModel):
 class RerunBody(BaseModel):
     run_id: str = "latest"
     stage: str
-    actor: str
     reason: str = ""
 
 
 class VarSetupBody(BaseModel):
-    actor: str
     measures: list[s.VarMeasureSpec]
     comment: str = ""
 
 
 class VarTemplateBody(BaseModel):
-    actor: str
     template: str
     comment: str = ""
 
 
 class ActionBody(BaseModel):
-    actor: str = Field(min_length=1)
     comment: str = ""
     to: str | None = None
     reason: str | None = None
@@ -149,14 +172,12 @@ class IncreaseBody(BaseModel):
     limit_id: str
     new_amount: float = Field(gt=0)
     expires_on: str
-    requested_by: str = Field(min_length=1)
     rationale: str = Field(min_length=1)
     effective_from: str | None = None
     breach_id: str | None = None
 
 
 class DecisionBody(BaseModel):
-    approver: str = Field(min_length=1)
     approve: bool
     comment: str = ""
 
@@ -181,6 +202,18 @@ class AskBody(BaseModel):
 @app.get("/health", response_model=s.Health)
 def health():
     return {"status": "ok", "platform": settings.platform_name, "version": __version__}
+
+
+@app.get("/me", response_model=s.UserRecord)
+def me(user: User = Depends(current_user)):
+    """The user the token belongs to (ADR 0006)."""
+    return user.model_dump(mode="json")
+
+
+@app.get("/users", response_model=list[s.UserRecord])
+def users(svc: RiskService = Depends(service)):
+    """The role accounts; tokens are never listed here."""
+    return svc.users()
 
 
 @app.get("/runs", response_model=list[s.RunRecord])
@@ -395,14 +428,14 @@ def signoff_status(run_id: str, svc: RiskService = Depends(service)):
 def sign_metric(
     run_id: str, metric_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)
 ):
-    return svc.sign_metric(run_id, metric_id, body.actor, body.comment)
+    return svc.sign_metric(run_id, metric_id, body.comment)
 
 
 @app.post("/runs/{run_id}/signoff/{metric_id}/reject", response_model=s.SignoffStatus)
 def reject_metric(
     run_id: str, metric_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)
 ):
-    return svc.reject_metric(run_id, metric_id, body.actor, body.comment)
+    return svc.reject_metric(run_id, metric_id, body.comment)
 
 
 @app.get("/signoff/queue", response_model=list[s.SignoffQueueRow])
@@ -417,7 +450,7 @@ def signoff_policy(svc: RiskService = Depends(service)):
 
 @app.post("/admin/signoff/policy", response_model=s.SignoffPolicy)
 def set_signoff_policy(body: PolicyBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.set_signoff_policy(body.actor, body.required, body.comment)
+    return svc.set_signoff_policy(body.required, body.comment)
 
 
 # --- administration -------------------------------------------------------------------------
@@ -428,12 +461,12 @@ def var_setup(svc: RiskService = Depends(service)):
 
 @app.post("/admin/var/setup", response_model=s.VarSetup)
 def set_var_setup(body: VarSetupBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.set_var_setup(body.actor, [m.model_dump() for m in body.measures], body.comment)
+    return svc.set_var_setup([m.model_dump() for m in body.measures], body.comment)
 
 
 @app.post("/admin/var/template", response_model=s.VarSetup)
 def apply_var_template(body: VarTemplateBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.apply_var_template(body.template, body.actor, body.comment)
+    return svc.apply_var_template(body.template, body.comment)
 
 
 @app.get("/admin/run/options", response_model=s.RunOptions)
@@ -442,10 +475,10 @@ def run_options(svc: RiskService = Depends(service)):
 
 
 @app.post("/admin/run", response_model=s.ManualRun)
-def run_full(body: RunBody):
+def run_full(body: RunBody, user: User = Depends(current_user)):
     # Own connection, closed before the morning commentary opens the Analyst's (decision round 38).
     with DuckDBRepository(settings.db_path) as repo:
-        out = RiskWriteService(repo).run_full(body.actor, body.reason, body.business_date, body.advance)
+        out = RiskWriteService(repo, user).run_full(body.reason, body.business_date, body.advance)
     return with_commentary(str(settings.db_path), out)
 
 
@@ -456,7 +489,7 @@ def rerun_options(svc: RiskService = Depends(service)):
 
 @app.post("/admin/rerun", response_model=s.RerunRecord)
 def rerun_stage(body: RerunBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.rerun_stage(body.run_id, body.stage, body.actor, body.reason)
+    return svc.rerun_stage(body.run_id, body.stage, body.reason)
 
 
 # --- limit management -----------------------------------------------------------------------
@@ -478,24 +511,24 @@ def breach(breach_id: str, svc: RiskService = Depends(service)):
 
 @app.post("/breaches/{breach_id}/acknowledge", response_model=s.BreachRecord)
 def acknowledge(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.acknowledge(breach_id, body.actor, body.comment)
+    return svc.acknowledge(breach_id, body.comment)
 
 
 @app.post("/breaches/{breach_id}/escalate", response_model=s.BreachRecord)
 def escalate(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.escalate(breach_id, body.actor, body.to, body.comment)
+    return svc.escalate(breach_id, body.to, body.comment)
 
 
 @app.post("/breaches/{breach_id}/comment", response_model=s.BreachRecord)
 def comment(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.comment(breach_id, body.actor, body.comment)
+    return svc.comment(breach_id, body.comment)
 
 
 @app.post("/breaches/{breach_id}/close", response_model=s.BreachRecord)
 def close(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
     if not body.reason:
         raise InvalidRequestError("reason is required", context={"field": "reason"})
-    return svc.close(breach_id, body.actor, body.reason, body.comment)
+    return svc.close(breach_id, body.reason, body.comment)
 
 
 @app.get("/limits/drafts", response_model=list[s.LimitDraft])
@@ -504,19 +537,18 @@ def limit_drafts(status: str | None = None, svc: RiskService = Depends(service))
 
 
 class RecalibrateBody(BaseModel):
-    actor: str
     run_id: str | None = None
     limit_types: list[str] = []
 
 
 @app.post("/limits/recalibrate", response_model=list[s.LimitDraft])
 def propose_limit_recalibration(body: RecalibrateBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.propose_limit_recalibration(body.actor, body.run_id, body.limit_types)
+    return svc.propose_limit_recalibration(body.run_id, body.limit_types)
 
 
 @app.post("/limits/drafts/{draft_id}/decide", response_model=s.LimitDraft)
 def decide_limit_draft(draft_id: str, body: DecisionBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.decide_limit_draft(draft_id, body.approver, body.approve, body.comment)
+    return svc.decide_limit_draft(draft_id, body.approve, body.comment)
 
 
 @app.get("/increases", response_model=list[s.IncreaseRecord])
@@ -530,7 +562,6 @@ def request_increase(body: IncreaseBody, svc: RiskWriteService = Depends(write_s
         body.limit_id,
         body.new_amount,
         body.expires_on,
-        body.requested_by,
         body.rationale,
         body.effective_from,
         body.breach_id,
@@ -539,12 +570,12 @@ def request_increase(body: IncreaseBody, svc: RiskWriteService = Depends(write_s
 
 @app.post("/increases/{increase_id}/decide", response_model=s.IncreaseRecord)
 def decide_increase(increase_id: str, body: DecisionBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.decide_increase(increase_id, body.approver, body.approve, body.comment)
+    return svc.decide_increase(increase_id, body.approve, body.comment)
 
 
 @app.post("/increases/{increase_id}/cancel", response_model=s.IncreaseRecord)
 def cancel_increase(increase_id: str, body: ActionBody, svc: RiskWriteService = Depends(write_service)):
-    return svc.cancel_increase(increase_id, body.actor)
+    return svc.cancel_increase(increase_id)
 
 
 @app.get("/compare", response_model=s.RunComparison)
@@ -554,14 +585,14 @@ def compare(run_a: str, run_b: str, by: str = "asset_class", svc: RiskService = 
 
 # --- Analyst --------------------------------------------------------------------------------
 @app.post("/analyst/ask", response_model=s.AnalystAnswer)
-def analyst_ask(body: AskBody):
+def analyst_ask(body: AskBody, user: User = Depends(current_user)):
     from novera.ai import Analyst
 
     return Analyst(settings.db_path).ask(body.question, body.run_id, session_id=body.session_id).to_dict()
 
 
 @app.post("/analyst/commentary", response_model=s.AnalystAnswer)
-def analyst_commentary(run_id: str | None = None):
+def analyst_commentary(run_id: str | None = None, user: User = Depends(current_user)):
     from novera.ai import Analyst
 
     return Analyst(settings.db_path).commentary(run_id).to_dict()
@@ -605,7 +636,6 @@ class DocumentBody(BaseModel):
 
 class NoteDecisionBody(BaseModel):
     note_id: str
-    actor: str = Field(min_length=1)
     reason: str = ""
 
 
@@ -623,40 +653,40 @@ class LabBody(BaseModel):
     regulatory: bool = False
 
 
-def _ops():
+def _ops(user: User | None = None):
     from novera.api.agents_api import AgentOps
 
-    return AgentOps(settings.db_path)
+    return AgentOps(settings.db_path, user)
 
 
 @app.post("/agents/investigate-breach", response_model=s.AgentNote)
-def agent_investigate(body: InvestigateBody):
-    return _ops().investigate_breach(body.breach_id, body.attach)
+def agent_investigate(body: InvestigateBody, user: User = Depends(current_user)):
+    return _ops(user).investigate_breach(body.breach_id, body.attach)
 
 
 @app.post("/agents/suggest-scenarios", response_model=s.AgentNote)
-def agent_scenarios(body: ScenariosBody):
-    return _ops().suggest_scenarios(body.run_id, body.n)
+def agent_scenarios(body: ScenariosBody, user: User = Depends(current_user)):
+    return _ops(user).suggest_scenarios(body.run_id, body.n)
 
 
 @app.post("/agents/draft-validation", response_model=s.AgentNote)
-def agent_validation(body: ValidationBody):
-    return _ops().draft_validation(body.run_id, body.records, body.run_tests)
+def agent_validation(body: ValidationBody, user: User = Depends(current_user)):
+    return _ops(user).draft_validation(body.run_id, body.records, body.run_tests)
 
 
 @app.post("/agents/propose-csa", response_model=s.AgentNote)
-def agent_propose_csa(body: DocumentBody):
-    return _ops().propose_csa(body.path)
+def agent_propose_csa(body: DocumentBody, user: User = Depends(current_user)):
+    return _ops(user).propose_csa(body.path)
 
 
 @app.post("/agents/approve-csa", response_model=s.NoteDecision)
-def agent_approve_csa(body: NoteDecisionBody):
-    return _ops().approve_csa(body.note_id, body.actor)
+def agent_approve_csa(body: NoteDecisionBody, user: User = Depends(current_user)):
+    return _ops(user).approve_csa(body.note_id)
 
 
 @app.post("/agents/reject-csa", response_model=s.NoteDecision)
-def agent_reject_csa(body: NoteDecisionBody):
-    return _ops().reject_csa(body.note_id, body.actor, body.reason)
+def agent_reject_csa(body: NoteDecisionBody, user: User = Depends(current_user)):
+    return _ops(user).reject_csa(body.note_id, reason=body.reason)
 
 
 @app.get("/agents/notes", response_model=list[s.AgentNote])
@@ -670,8 +700,8 @@ def lab_catalogue():
 
 
 @app.post("/lab/run", response_model=s.LabRecord)
-def lab_run(body: LabBody):
-    return _ops().run_lab(body.model_dump())
+def lab_run(body: LabBody, user: User = Depends(current_user)):
+    return _ops(user).run_lab(body.model_dump())
 
 
 @app.get("/lab", response_model=list[s.LabRecord])
@@ -747,7 +777,9 @@ def backtest(run_id: str, svc: RiskService = Depends(service)):
 
 
 @app.post("/runs/{run_id}/risk-pack", response_model=s.RiskPackFiles)
-def risk_pack(run_id: str, pdf: bool = True, svc: RiskService = Depends(service)):
+def risk_pack(
+    run_id: str, pdf: bool = True, svc: RiskService = Depends(service), user: User = Depends(current_user)
+):
     return svc.risk_pack(run_id, str(settings.data_dir / "reports"), pdf)
 
 

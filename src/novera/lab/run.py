@@ -257,6 +257,9 @@ def run_lab(spec: LabSpec, settings: Settings | None = None) -> LabResult:
             repo.save_limits(build_fund_limits(org, cp, fund))
         else:
             repo.save_limits(build_limits(org, cp, spec.business_date))
+        from novera.security import seed_users
+
+        seed_users(repo, org.firm.firm_id)
         repo.save_portfolio_snapshot(gen.snapshot)
         repo.save_risk_factors(md.universe)
         repo.save_market_history(md.history)

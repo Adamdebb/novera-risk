@@ -70,6 +70,22 @@ class InvalidRequestError(ApiError):
     title = "Validation failed"
 
 
+class UnauthenticatedError(ApiError):
+    """No token, or one that is unknown, expired or revoked (ADR 0006)."""
+
+    status = 401
+    code = "UNAUTHENTICATED"
+    title = "Authentication required"
+
+
+class ForbiddenError(ApiError):
+    """The signed-in user's role does not allow the action on this object (ADR 0006)."""
+
+    status = 403
+    code = "FORBIDDEN"
+    title = "Not permitted"
+
+
 class Problem(BaseModel):
     """RFC 9457 Problem Details, plus ``code`` so clients branch on a stable token."""
 
@@ -89,8 +105,16 @@ _BY_CODE: dict[str, type[ApiError]] = {
     NotFoundError.code: NotFoundError,
     ConflictError.code: ConflictError,
     InvalidRequestError.code: InvalidRequestError,
+    UnauthenticatedError.code: UnauthenticatedError,
+    ForbiddenError.code: ForbiddenError,
 }
-_BY_STATUS: dict[int, type[ApiError]] = {404: NotFoundError, 409: ConflictError, 422: InvalidRequestError}
+_BY_STATUS: dict[int, type[ApiError]] = {
+    401: UnauthenticatedError,
+    403: ForbiddenError,
+    404: NotFoundError,
+    409: ConflictError,
+    422: InvalidRequestError,
+}
 
 
 def translate(exc: BaseException) -> ApiError | None:

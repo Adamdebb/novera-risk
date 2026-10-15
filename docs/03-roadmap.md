@@ -173,6 +173,10 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       EURIBOR curves as GIRR and SIMM risk factors; the swap moves to acceptable simplification
       in MV-001 (round 33). The strike smile on the swaption cube came first (round 21)
 - [ ] React dashboard: screen by screen, each once its API response has stopped changing
+- [x] Identity and permissions (round 43): role accounts seeded from the organisation, personal
+      access tokens stored hashed, the actor of every API and MCP write taken from the token and
+      checked against a role matrix (approvals, four-eyes, desk scope); the dashboard's user picker
+      stands in for the firm's single sign-on, and the CLI names a known user (ADR 0006)
       for a full phase; morning overview and limits first
 
 ## Injected problems in the simulated portfolio

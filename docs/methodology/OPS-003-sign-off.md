@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.2.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.workflows.signoff`, `GET /runs/{run_id}/signoff`, `POST .../signoff/{metric}/sign` and `/reject`, `GET/POST /admin/signoff/policy`, `GET /signoff/queue`, `novera signoff` |
@@ -25,7 +25,7 @@ next to the run; it never edits a stored result (rule 5).
 | CONCENTRATION | Concentration and liquidity | MR-012 | Head of Market Risk | no | both |
 | COUNTERPARTY | Counterparty exposure and CVA | CR-001 | Head of Counterparty Risk | yes | both |
 | CAPITAL | Regulatory capital | REG-001 | Head of Regulatory Reporting | no | bank |
-| FUND | Fund measures | HF-001 | Chief Risk Officer | yes | fund |
+| FUND | Fund measures | HF-001 | CRO | yes | fund |
 
 Each metric names the run-summary keys it covers; those values are frozen with the signature
 so the record shows what was signed, even if a later re-run shows different numbers.
@@ -56,8 +56,9 @@ policy, never stored as a snapshot.
   signature that completes the release writes the release row (who, when, whether any
   signature was an override) and a RUN_RELEASED event. Rejecting a required metric on a
   released run deletes the row and writes RUN_RELEASE_WITHDRAWN.
-- Actors are named, not authenticated (decision 6.3); the expected signer is shown, not
-  enforced.
+- The actor is the signed-in user (ADR 0006): a metric is signed or rejected only by the signer
+  it names, or by the CRO; the policy is set by the Head of Market Risk or the CRO. The fund's
+  measures name the CRO (was "Chief Risk Officer", the same person under another name).
 
 ## Where it shows
 The "Sign-off" page: release status, every metric with its value, status, signer and comment,
@@ -66,8 +67,8 @@ EOD runs. Every page header shows the run's release status next to its verdict. 
 page holds the policy.
 
 ## Assumptions and limitations
-No authentication, so segregation of duties (signer differs from the person who fixed the
-data) is a convention. No reminders or deadlines. A policy change does not re-open a run whose
+Segregation of duties between the signer and the person who fixed the data is a convention:
+roles are checked, not who changed the data. No reminders or deadlines. A policy change does not re-open a run whose
 release row exists; it changes the computed status, and the row stays as the historical
 record. Optional metrics can be signed but never affect release.
 
@@ -82,3 +83,4 @@ override, policy change, audit events, the run untouched), `test_signoff_endpoin
 |---------|------|--------|--------|
 | 1.0.0 | 2026-09-16 | Sign-off metrics, policy, release status, page and Admin section (decision 24.1) | Novera |
 | 1.1.0 | 2026-09-27 | PARTIAL runs signable; metrics of a failed stage UNAVAILABLE (decision 32.4) | Novera |
+| 1.2.0 | 2026-10-15 | Named signers enforced from the signed-in user (decision 43, ADR 0006) | Novera |

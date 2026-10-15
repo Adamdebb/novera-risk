@@ -23,6 +23,7 @@ from typing import Any
 from novera import __version__
 from novera.ai.tools import Tool, build_tools
 from novera.config import Settings, get_settings
+from novera.security import Action, User, require, user_for
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import AuditEvent
 
@@ -35,11 +36,53 @@ tools or omit it for the latest run. Money is in millions of the reporting curre
 (fields ending in _m). Cite run ids and trade ids in answers."""
 
 
+class TokenVerifier:
+    """Checks a bearer token against the platform's hashed personal access tokens (ADR 0006),
+    the same ones the API accepts."""
+
+    def __init__(self, db_path: str) -> None:
+        self.db_path = db_path
+
+    async def verify_token(self, token: str):
+        from mcp.server.auth.provider import AccessToken
+
+        with DuckDBRepository(self.db_path, read_only=True) as repo:
+            user = user_for(repo, token)
+        if user is None:
+            return None
+        return AccessToken(
+            token=token, client_id=user.user_id, scopes=[user.role.value], subject=user.user_id
+        )
+
+
+def _caller(db_path: str) -> User | None:
+    """The user whose token made this HTTP call; None over stdio (the local operator)."""
+    from mcp.server.auth.middleware.auth_context import get_access_token
+
+    tok = get_access_token()
+    if tok is None:
+        return None
+    with DuckDBRepository(db_path, read_only=True) as repo:
+        return repo.load_user(tok.client_id)
+
+
 def _audit(
-    db_path: str, settings: Settings, name: str, args: dict[str, Any], seconds: float, error: bool
+    db_path: str,
+    settings: Settings,
+    name: str,
+    args: dict[str, Any],
+    seconds: float,
+    error: bool,
+    user: User | None = None,
 ) -> None:
     ev = AuditEvent.now(
-        "mcp", "MCP_TOOL_CALL", name, arguments=args, seconds=round(seconds, 3), is_error=error
+        user.name if user else "mcp",
+        "MCP_TOOL_CALL",
+        name,
+        arguments=args,
+        seconds=round(seconds, 3),
+        is_error=error,
+        transport="streamable-http" if user else "stdio",
     )
     try:
         with DuckDBRepository(db_path) as repo:
@@ -52,6 +95,7 @@ def _audit(
                 json.dumps(
                     {
                         "at": datetime.now(UTC).isoformat(),
+                        "actor": user.name if user else "mcp",
                         "tool": name,
                         "arguments": args,
                         "seconds": seconds,
@@ -68,7 +112,10 @@ def _wrap(tool: Tool, db_path: str, settings: Settings):
     def call(*a: Any, **kw: Any) -> dict[str, Any]:
         t0 = time.perf_counter()
         error = False
+        user = _caller(db_path)
         try:
+            if user is not None and tool.name in WRITE_TOOLS:
+                require(user, Action.AGENT_RUN)
             out = tool.fn(*a, **kw)
             if isinstance(out, dict) and "error" in out:
                 error = True
@@ -77,13 +124,22 @@ def _wrap(tool: Tool, db_path: str, settings: Settings):
             error = True
             return {"error": f"{type(e).__name__}: {e}"}
         finally:
-            _audit(db_path, settings, tool.name, kw or {"args": list(a)}, time.perf_counter() - t0, error)
+            _audit(
+                db_path, settings, tool.name, kw or {"args": list(a)}, time.perf_counter() - t0, error, user
+            )
 
     call.__name__ = tool.name
     return call
 
 
-def build_server(db_path: str | None = None, allow_agents: bool = False, settings: Settings | None = None):
+def build_server(
+    db_path: str | None = None,
+    allow_agents: bool = False,
+    settings: Settings | None = None,
+    http_url: str | None = None,
+):
+    """``http_url`` (the server's own URL) switches token checking on, for the streamable-http
+    transport: every call then needs a personal access token (ADR 0006)."""
     from mcp.server.mcpserver import MCPServer
 
     settings = settings or get_settings()
@@ -91,10 +147,20 @@ def build_server(db_path: str | None = None, allow_agents: bool = False, setting
     with DuckDBRepository(db_path, read_only=True) as repo:
         firm = repo.list_firm_ids()
         firm_name = repo.load_organisation(firm[0]).firm.name if firm else "the firm"
+    auth: dict[str, Any] = {}
+    if http_url:
+        from mcp.server.auth.settings import AuthSettings
+        from pydantic import AnyHttpUrl
+
+        auth = {
+            "token_verifier": TokenVerifier(db_path),
+            "auth": AuthSettings(issuer_url=AnyHttpUrl(http_url), resource_server_url=AnyHttpUrl(http_url)),
+        }
     server = MCPServer(
         name=f"{settings.platform_name} risk",
         instructions=INSTRUCTIONS.format(platform=settings.platform_name, firm=firm_name),
         version=__version__,
+        **auth,
     )
     for tool in build_tools(db_path):
         if tool.name in WRITE_TOOLS and not allow_agents:
@@ -115,8 +181,22 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--db", default=None, help="Database path; default NOVERA_DB_PATH")
     p.add_argument("--allow-agents", action="store_true", help="Expose the agent tool (writes notes)")
     p.add_argument("--transport", default="stdio", choices=["stdio", "streamable-http"])
+    p.add_argument("--host", default="127.0.0.1", help="streamable-http only")
+    p.add_argument("--port", type=int, default=8765, help="streamable-http only")
     ns = p.parse_args(argv)
-    build_server(ns.db, ns.allow_agents).run(transport=ns.transport)
+    if ns.transport == "stdio":
+        build_server(ns.db, ns.allow_agents).run(transport="stdio")
+        return
+    settings = get_settings()
+    with DuckDBRepository(str(ns.db or settings.db_path), read_only=True) as repo:
+        if not repo.load_users():
+            raise SystemExit(
+                "MCP over HTTP needs users and tokens: run `novera users seed`, then `novera users token`"
+            )
+    url = f"http://{ns.host}:{ns.port}"
+    build_server(ns.db, ns.allow_agents, settings, http_url=url).run(
+        transport="streamable-http", host=ns.host, port=ns.port
+    )
 
 
 if __name__ == "__main__":
