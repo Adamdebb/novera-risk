@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.limits.monitoring.monitor` |
@@ -27,6 +27,11 @@ OK otherwise; NO_DATA when the measure could not be computed.
 ## Scope
 A hierarchy node (firm, business, desk, book, trader, legal entity, asset class,
 counterparty) with optional currency and asset-class filters on the trade set.
+
+## Amounts and versions (1.1.0)
+Amounts are set from a target utilisation (MR-017) and change only through an approved
+recalibration draft or a temporary increase (MR-008). A recalibration keeps the superseded version,
+so a run on an earlier date is monitored against the limit in force on that date.
 
 ## Limitations
 Standalone VaR ignores diversification with the rest of the firm by design. Concentration

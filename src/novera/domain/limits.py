@@ -57,6 +57,11 @@ class Limit(BaseModel):
     limit_type: LimitType
     scope: LimitScope
     amount: float = Field(gt=0, description="Absolute limit in reporting currency or units")
+    appetite: float | None = Field(
+        default=None,
+        gt=0,
+        description="Designed amount, the risk appetite; calibration stays within a band around it (MR-017)",
+    )
     warning_threshold: float = Field(default=0.8, gt=0, le=1, description="Fraction of amount")
     owner: str = Field(description="Accountable person or role, e.g. Head of Rates")
     approver: str = ""

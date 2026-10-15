@@ -101,6 +101,7 @@ class EODConfig:
     include_historical_stress: bool = True
     pnl_abs_tolerance: float = 50_000.0
     actor: str = "eod-scheduler"
+    alerts: bool = True  # False only for a limit-calibration dry run (decision 40.2): never dispatch
     counterparty: bool | None = None  # None: follow settings.exposure_enabled
     regulatory: bool | None = None  # None: follow settings.regulatory_enabled
     exposure_paths: int | None = None  # None: settings.exposure_paths
@@ -497,7 +498,7 @@ def run_eod(
         if failed:
             run.summary["failed_stages"] = failed
         run.finish("PARTIAL" if failed else "COMPLETED")
-        if settings.alerts_enabled:
+        if settings.alerts_enabled and cfg.alerts:
             try:
                 with _timed(timings, "alerts"):
                     sent = dispatch(repo, alerts_from_run(result, sync), channels_from_settings(settings))

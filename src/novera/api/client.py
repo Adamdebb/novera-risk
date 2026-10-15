@@ -62,6 +62,13 @@ class RiskClient(Protocol):
     ) -> dict[str, Any]: ...
     def morning_commentary(self, run_id: str | None = None) -> dict[str, Any]: ...
     def signoff_status(self, run_id: str | None = None) -> dict[str, Any]: ...
+    def limit_drafts(self, status: str | None = None) -> list[dict[str, Any]]: ...
+    def propose_limit_recalibration(
+        self, actor: str, run_id: str | None = None, limit_types: list[str] | None = None
+    ) -> list[dict[str, Any]]: ...
+    def decide_limit_draft(
+        self, draft_id: str, approver: str, approve: bool, comment: str = ""
+    ) -> dict[str, Any]: ...
     def signoff_policy(self) -> dict[str, Any]: ...
     def signoff_queue(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def sign_metric(self, run_id: str, metric_id: str, actor: str, comment: str = "") -> dict[str, Any]: ...
@@ -90,6 +97,8 @@ WRITE_METHODS = {
     "set_signoff_policy",
     "set_var_setup",
     "apply_var_template",
+    "propose_limit_recalibration",
+    "decide_limit_draft",
 }
 ANALYST_METHODS = {"ask", "commentary", "analyst_history", "analyst_provider"}
 PACK_METHODS = {"risk_pack"}
@@ -337,6 +346,17 @@ class HttpClient:
 
     def close(self, breach_id, actor, reason, comment=""):
         return self._post(f"/breaches/{breach_id}/close", actor=actor, reason=reason, comment=comment)
+
+    def limit_drafts(self, status=None):
+        return self._get("/limits/drafts", status=status)
+
+    def propose_limit_recalibration(self, actor, run_id=None, limit_types=None):
+        return self._post("/limits/recalibrate", actor=actor, run_id=run_id, limit_types=limit_types or [])
+
+    def decide_limit_draft(self, draft_id, approver, approve, comment=""):
+        return self._post(
+            f"/limits/drafts/{draft_id}/decide", approver=approver, approve=approve, comment=comment
+        )
 
     def increases(self, status=None, limit_id=None):
         return self._get("/increases", status=status, limit_id=limit_id)

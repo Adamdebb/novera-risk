@@ -14,6 +14,8 @@ run_app = typer.Typer(no_args_is_help=True, help="Governed risk runs.")
 app.add_typer(run_app, name="run")
 breach_app = typer.Typer(no_args_is_help=True, help="Breach workflow: list, acknowledge, escalate, close.")
 app.add_typer(breach_app, name="breach")
+limits_app = typer.Typer(no_args_is_help=True, help="Limit calibration from target utilisation (MR-017).")
+app.add_typer(limits_app, name="limits")
 agent_app = typer.Typer(
     no_args_is_help=True, help="Agents: investigate, scenarios, validation, ingest (AI-002/003)."
 )
@@ -80,6 +82,9 @@ def simulate(
     ),
     db: str = typer.Option(
         None, help="Database path; default NOVERA_DB_PATH, or NOVERA_FUND_DB_PATH for hedge_fund"
+    ),
+    calibrate: bool = typer.Option(
+        True, help="Set the limits from their target utilisation on a day-1 dry run (MR-017, about one EOD)"
     ),
 ) -> None:
     """Build the simulated bank, portfolio and market data, store them, and print a summary."""
@@ -187,6 +192,16 @@ def simulate(
         if md is not None:
             for p in md.planted:
                 typer.echo(f"  - {p}")
+    if calibrate and md is not None:
+        from novera.workflows.limit_calibration import seed_limits
+
+        typer.echo("calibrating limits on a day-1 dry run (alerts off) ...")
+        props = seed_limits(db_path, org.firm.firm_id)
+        set_ = [p for p in props if p.new_amount]
+        typer.echo(
+            f"limits: {len(set_)} set from their target, {sum(p.story for p in set_)} of them story limits; "
+            f"{len(props) - len(set_)} left as they were"
+        )
 
 
 @app.command()
@@ -1124,3 +1139,81 @@ def lab_list() -> None:
         det = x.get("detections") or []
         hits = sum(1 for d in det if d["detected"])
         typer.echo(f"{x['name']:<20} {x.get('run_id') or '-':<24} {hits}/{len(det)} detected")
+
+
+@limits_app.command("calibrate")
+def limits_calibrate(
+    run_id: str = typer.Option("latest", help="Reference run whose measures set the amounts"),
+    actor: str = typer.Option(..., help="Who proposes the recalibration (audited, cannot approve it)"),
+    types: str = typer.Option(
+        "", help="Comma-separated limit types to recalibrate, e.g. VAR,EXPECTED_SHORTFALL"
+    ),
+    fund: bool = typer.Option(False, help="Use the hedge-fund database"),
+) -> None:
+    """Propose DRAFT limit versions from a run's measures at their target utilisation, effective
+    the next business day; limits in breach are left alone. Approve with `novera limits approve`."""
+    from novera.api.service import RiskService
+    from novera.domain.limits import LimitType
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.limit_calibration import propose_recalibration
+
+    wanted = {LimitType(t.strip()) for t in types.split(",") if t.strip()} or None
+    with DuckDBRepository(_db(fund)) as repo:
+        rid = RiskService(repo).resolve(run_id).run_id
+        drafts, left = propose_recalibration(repo, rid, actor, wanted)
+    for d in drafts:
+        typer.echo(
+            f"{d['draft_id']}  {d['limit_id']:<28} {d['old_amount']:>16,.4g} -> {d['new_amount']:>16,.4g}"
+            f"  (target {d['target']:.0%}, from {d['effective_from']})"
+        )
+    typer.echo(f"{len(drafts)} drafts proposed on run {rid}; {len(left)} limits left as they were")
+
+
+@limits_app.command("drafts")
+def limits_drafts(status: str = typer.Option("PENDING"), fund: bool = typer.Option(False)) -> None:
+    """List limit recalibration drafts."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        rows = repo.load_limit_drafts(status=status or None)
+    for d in rows:
+        typer.echo(
+            f"{d['draft_id']}  {d['status']:<9} {d['limit_id']:<28} {d['old_amount']:>16,.4g} -> "
+            f"{d['new_amount']:>16,.4g}  by {d['requested_by']}"
+        )
+    if not rows:
+        typer.echo(f"no {status.lower()} drafts")
+
+
+@limits_app.command("approve")
+def limits_approve(
+    draft_id: str,
+    actor: str = typer.Option(...),
+    comment: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Approve a recalibration draft (the limit's approver; never the proposer)."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.limit_calibration import decide_draft
+
+    with DuckDBRepository(_db(fund)) as repo:
+        d = decide_draft(repo, draft_id, actor, True, comment)
+    typer.echo(
+        f"{d['limit_id']} now {d['new_amount']:,.4g} from {d['effective_from']}; old version kept in history"
+    )
+
+
+@limits_app.command("reject")
+def limits_reject(
+    draft_id: str,
+    actor: str = typer.Option(...),
+    comment: str = typer.Option(...),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Reject a recalibration draft with a comment."""
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.limit_calibration import decide_draft
+
+    with DuckDBRepository(_db(fund)) as repo:
+        d = decide_draft(repo, draft_id, actor, False, comment)
+    typer.echo(f"{d['limit_id']} draft rejected; the limit is unchanged")

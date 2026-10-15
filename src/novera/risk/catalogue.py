@@ -395,6 +395,16 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "utilisation",
                 "Limit management",
                 "Limit utilisation and breach status",
+                version="1.1.0",
+            ),
+            MeasureSpec(
+                "MR-017",
+                "Limit calibration",
+                "Limit amounts from a target utilisation by type on a reference run: seeded when the "
+                "firm is created, recalibrated only through approved drafts.",
+                "reporting currency or units",
+                "Limit management",
+                "Limit calibration from a target utilisation",
             ),
             MeasureSpec(
                 "MR-008",

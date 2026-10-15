@@ -1457,6 +1457,88 @@ counterparty exposure and no capital. One question round; the owner took every r
   53% to 62%. On the 15th: XVA 15.13m (CVA 1.19m, DVA 4.32m, FCA 1.68m, MVA 16.58m); capital adds
   0.72m for CCP trade exposure and 21.0m for the default funds.
 
+## Round 40 — Limits calibrated from a target utilisation (2026-10-14)
+
+Context: second-look items 5 and 18. Every limit amount was typed into `simulation/limits.py`
+and tuned by hand so day 1 shows the four planted breaches; every model change since has moved
+utilisations and needed a breach check. The owner asked whether calibration would run every day;
+it must not: a limit that follows positions never breaches. Fixed rules agreed before the round:
+calibration never runs from the EOD or the scheduler; it refuses to touch a limit in breach (that
+stays an increase request); the planted breaches carry explicit target utilisations. One
+question round; the owner took every recommended option.
+
+### 40.1 Reference
+- Options: the day-1 EOD run ★ · a historical percentile of the measure
+- Choice (owner): **the day-1 run**. Positions are stored for three days only, so a historical
+  percentile would re-measure today's book on past markets (market moves, not desk activity) at
+  the cost of hours of VaR runs.
+
+### 40.2 How it takes effect
+- Options: seed APPROVED, later recalibrations as DRAFTs through the approval matrix ★ · apply both
+  directly
+- Choice (owner): **seed approved, recalibrate as drafts**: a later `novera limits calibrate`
+  proposes DRAFT versions that the limit's approver signs off under the existing matrix
+  (`APPROVERS_BY_LEVEL`: desk-level limits Head of Market Risk or CRO, business and firm limits CRO,
+  counterparty limits Head of Counterparty Risk or CRO; never the proposer).
+
+### 40.3 History
+- Options: keep the old version ★ · overwrite
+- Choice (owner): **keep it**: an approved recalibration ends the old version and starts the new
+  one the next business day; old amounts stay visible.
+
+### 40.4 Targets
+- Options: a table by limit type ★ · one target · the owner's figures
+- Choice (owner): **a table by type**: VaR, ES and stressed VaR 75%; sensitivities 70%;
+  concentration 70%; stress loss 60%; counterparty and CCP 60%; fund leverage and margin 70%.
+
+### 40.5 Scope
+- Options: bank and fund ★ · bank only
+- Choice (owner): **both**.
+- Choice (default): seeding needs a measure before any run exists, so `novera simulate` runs a day-1
+  EOD on a throwaway copy of the database (alerts off, `EODConfig.alerts`), reads its limit table
+  and sets the limits; the real day-1 run then reproduces the measures (about one EOD more to
+  build a firm; `--no-calibrate` skips it). The limit table was keyed by limit id alone, so
+  superseded versions go to a new `limit_version` table and drafts to `limit_draft`;
+  `load_limits(on)` reads the version in force on the date. Story targets are the day-1
+  utilisations of the demo before calibration (bank 1.99, 1.65, 1.50, 1.38, 1.08 breaching and
+  0.98, 0.92, 0.85 crossing later; fund 2.52, 1.61 and 0.95).
+
+### 40.6 Calibration within the appetite
+- Found on the first rebuild: day 1 opened as designed (5 breaches, 4 warnings instead of 20),
+  but day 2 showed 10 bank breaches and the fund 4. Pure usage calibration had thrown away the
+  scale of each desk: a desk using 0.8% of its designed limit on day 1 got a limit 80 times
+  smaller (HY_CREDIT_STRESS 30m to 0.375m, then 884% on day 3; SINGLE_NAME_EQ_STRESS 120m to
+  2.25m; G10_FX_DELTA 6m to 0.9m), so a few new trades breached it. Nearest-quarter rounding also
+  rounded some limits down, opening EM_RATES_VAR at 84% against a 75% target.
+- Options: a band around the designed appetite ★ · a floor only · the maximum of days 1 and 2 ·
+  drop seeding
+- Choice (owner): **a band of 50% to 200% of the designed amount** (floor raised to 100% in 40.7), kept as `Limit.appetite`: the
+  hand-set amounts are the risk appetite, set top-down, and calibration moves each limit towards
+  its target only within the band. Rounding is now always up, so no limit opens above its target.
+  Story limits stay exact.
+- Where: `limits/calibration.py` (`propose`, `round_amount`, `APPETITE_BAND`), the `appetite`
+  field on `Limit`, MR-017. Test `test_calibration_stays_within_the_appetite_band`.
+
+### 40.7 The floor of the band
+- Found on the second rebuild: the fund back to its three breaches and the bank's stress limits
+  fixed, but three quiet day-1 desks floored at half their appetite grew over days 2 and 3 to about
+  52% to 64% of their designed amount and breached the halved limit (EM_RATES_DV01_BRL 126%,
+  G10_FX_DELTA 104%, INDEX_EQ_VEGA 128%): the same manufactured breach, smaller.
+- Options: floor at 100% of appetite ★ · floor at 75% · keep 50% and accept three new breaches
+- Choice (owner): **floor at the appetite**, cap at double: `limit = max(appetite, usage / target)`,
+  capped at 2× appetite. Calibration never cuts a limit; a quiet desk behaves exactly as designed,
+  a desk running hot earns headroom.
+- Result of the third rebuild: every limit seeded (bank 81, 8 of them story limits; fund 35, 3), the
+  same story breaches (bank 5, 7 and 8 over the three days; fund 2 then 3), and bank warnings down
+  from about twenty a day to 3, 1 and 1.
+
+- Where (40.1 to 40.5): `limits/calibration.py` (`TARGETS`, `STORY_TARGETS`, `propose`, `round_amount`),
+  `workflows/limit_calibration.py` (`seed_limits`, `propose_recalibration`, `decide_draft`),
+  `novera simulate --calibrate`, `novera limits calibrate | drafts | approve | reject`,
+  `GET /limits/drafts`, `POST /limits/recalibrate`, `POST /limits/drafts/{id}/decide`, the
+  Calibration tab of Limit management, MR-017 1.0.0 (new), MR-006 1.1.0. Tests:
+  `tests/test_limit_calibration.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).
@@ -1472,7 +1554,7 @@ counterparty exposure and no capital. One question round; the owner took every r
 3. **Alert channels** (8.2): untested against a real Slack webhook or SMTP server.
 4. **Monte Carlo on the approximation** (9.1): a full-revaluation option would strengthen
    the model-risk story for option books.
-5. **Limit calibration by hand** (4.3): any generator change moves the utilisations;
+5. **Closed in round 40** (MR-017). Was: **Limit calibration by hand** (4.3): any generator change moves the utilisations;
    consider calibrating limits from a target utilisation instead.
 6. **Extension years are calm** (20.1): the two earlier years carry no stress episode and
    the backtest still uses 250 + 250 days; a longer backtest and an older third episode are
@@ -1510,7 +1592,9 @@ counterparty exposure and no capital. One question round; the owner took every r
     noise dominate the drift for seed 42 (the 20% drawdown test measures peak to trough over
     the whole history). A cleaner episode needs a stronger drift or a lower multiplier, which
     changes the core history and so every calibrated limit; deferred for that reason.
-18. **Limit amounts do not follow the VaR measure** (25.4): loading a template that changes
+18. **Addressed in round 40**: a VaR template switch is followed by a recalibration draft of the VaR
+    and ES limits (`novera limits calibrate --types VAR,EXPECTED_SHORTFALL`). Still open: calibration
+    resizes existing limits only, and no stressed-VaR limit is seeded yet. Was: **Limit amounts do not follow the VaR measure** (25.4): loading a template that changes
     the LIMIT VaR row leaves the seeded amounts where they were, so utilisations jump or
     collapse; the stressed-VaR limit type has no seeded limits at all. A calibration step
     from a target utilisation would make template switches comparable.

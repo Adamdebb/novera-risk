@@ -5469,6 +5469,122 @@
         "title": "LimitChangeRow",
         "type": "object"
       },
+      "LimitDraft": {
+        "additionalProperties": true,
+        "description": "A proposed recalibration of one limit (decision round 40, MR-017).",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "current": {
+            "title": "Current",
+            "type": "number"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "effective_from": {
+            "title": "Effective From",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "limit_id": {
+            "title": "Limit Id",
+            "type": "string"
+          },
+          "new_amount": {
+            "title": "New Amount",
+            "type": "number"
+          },
+          "old_amount": {
+            "title": "Old Amount",
+            "type": "number"
+          },
+          "reference_run": {
+            "title": "Reference Run",
+            "type": "string"
+          },
+          "requested_at": {
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "status": {
+            "description": "PENDING, APPROVED, REJECTED or WITHDRAWN",
+            "title": "Status",
+            "type": "string"
+          },
+          "story": {
+            "default": false,
+            "title": "Story",
+            "type": "boolean"
+          },
+          "target": {
+            "title": "Target",
+            "type": "number"
+          }
+        },
+        "required": [
+          "draft_id",
+          "limit_id",
+          "status",
+          "requested_by",
+          "requested_at",
+          "reference_run",
+          "current",
+          "target",
+          "old_amount",
+          "new_amount",
+          "effective_from"
+        ],
+        "title": "LimitDraft",
+        "type": "object"
+      },
       "LimitHierarchy": {
         "additionalProperties": true,
         "properties": {
@@ -7964,6 +8080,38 @@
           "kind"
         ],
         "title": "ProxyAction",
+        "type": "object"
+      },
+      "RecalibrateBody": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "limit_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Limit Types",
+            "type": "array"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "actor"
+        ],
+        "title": "RecalibrateBody",
         "type": "object"
       },
       "Reconciliation": {
@@ -15674,6 +15822,145 @@
         "summary": "Lab Detail"
       }
     },
+    "/limits/drafts": {
+      "get": {
+        "operationId": "limit_drafts_limits_drafts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LimitDraft"
+                  },
+                  "title": "Response Limit Drafts Limits Drafts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Limit Drafts"
+      }
+    },
+    "/limits/drafts/{draft_id}/decide": {
+      "post": {
+        "operationId": "decide_limit_draft_limits_drafts__draft_id__decide_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Decide Limit Draft"
+      }
+    },
     "/limits/hierarchy": {
       "get": {
         "operationId": "limit_hierarchy_limits_hierarchy_get",
@@ -15738,6 +16025,68 @@
           }
         },
         "summary": "Limit Hierarchy"
+      }
+    },
+    "/limits/recalibrate": {
+      "post": {
+        "operationId": "propose_limit_recalibration_limits_recalibrate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecalibrateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LimitDraft"
+                  },
+                  "title": "Response Propose Limit Recalibration Limits Recalibrate Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Propose Limit Recalibration"
       }
     },
     "/market-data/provenance": {

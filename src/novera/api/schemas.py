@@ -879,6 +879,27 @@ class BreachActionRecord(ApiModel):
     close_reason: str | None = None
 
 
+class LimitDraft(ApiModel):
+    """A proposed recalibration of one limit (decision round 40, MR-017)."""
+
+    draft_id: str
+    limit_id: str
+    status: str = Field(description="PENDING, APPROVED, REJECTED or WITHDRAWN")
+    requested_by: str
+    requested_at: str
+    reference_run: str
+    current: float
+    target: float
+    story: bool = False
+    old_amount: float
+    new_amount: float
+    effective_from: str
+    decided_by: str | None = None
+    decided_at: str | None = None
+    comment: str | None = None
+    limit: dict[str, Any] | None = None
+
+
 class IncreaseRecord(ApiModel):
     increase_id: str
     limit_id: str

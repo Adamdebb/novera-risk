@@ -498,6 +498,27 @@ def close(breach_id: str, body: ActionBody, svc: RiskWriteService = Depends(writ
     return svc.close(breach_id, body.actor, body.reason, body.comment)
 
 
+@app.get("/limits/drafts", response_model=list[s.LimitDraft])
+def limit_drafts(status: str | None = None, svc: RiskService = Depends(service)):
+    return svc.limit_drafts(status)
+
+
+class RecalibrateBody(BaseModel):
+    actor: str
+    run_id: str | None = None
+    limit_types: list[str] = []
+
+
+@app.post("/limits/recalibrate", response_model=list[s.LimitDraft])
+def propose_limit_recalibration(body: RecalibrateBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.propose_limit_recalibration(body.actor, body.run_id, body.limit_types)
+
+
+@app.post("/limits/drafts/{draft_id}/decide", response_model=s.LimitDraft)
+def decide_limit_draft(draft_id: str, body: DecisionBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.decide_limit_draft(draft_id, body.approver, body.approve, body.comment)
+
+
 @app.get("/increases", response_model=list[s.IncreaseRecord])
 def increases(status: str | None = None, limit_id: str | None = None, svc: RiskService = Depends(service)):
     return svc.increases(status, limit_id)

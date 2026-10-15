@@ -635,6 +635,10 @@ class RiskService:
         d["increases"] = [i.model_dump(mode="json") for i in self.repo.load_increases(limit_id=b.limit_id)]
         return d
 
+    def limit_drafts(self, status: str | None = None) -> list[dict[str, Any]]:
+        """Limit recalibration drafts, newest first (MR-017)."""
+        return self.repo.load_limit_drafts(status=status)
+
     def increases(self, status: str | None = None, limit_id: str | None = None) -> list[dict[str, Any]]:
         out = []
         limits = {lim.limit_id: lim for lim in self.repo.load_limits()}
@@ -1197,6 +1201,26 @@ class RiskWriteService:
     def cancel_increase(self, increase_id: str, actor: str) -> dict[str, Any]:
         inc, _ = wf.cancel_increase(self.repo, increase_id, actor)
         return inc.model_dump(mode="json")
+
+    def propose_limit_recalibration(
+        self, actor: str, run_id: str | None = None, limit_types: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """DRAFT limit versions from a run's measures at their target utilisation (MR-017)."""
+        from novera.domain.limits import LimitType
+        from novera.workflows.limit_calibration import propose_recalibration
+
+        r = RiskService(self.repo).resolve(run_id)
+        drafts, _ = propose_recalibration(
+            self.repo, r.run_id, actor, {LimitType(t) for t in limit_types or []} or None
+        )
+        return drafts
+
+    def decide_limit_draft(
+        self, draft_id: str, approver: str, approve: bool, comment: str = ""
+    ) -> dict[str, Any]:
+        from novera.workflows.limit_calibration import decide_draft
+
+        return decide_draft(self.repo, draft_id, approver, approve, comment)
 
 
 def with_commentary(db_path: str, job: dict[str, Any]) -> dict[str, Any]:

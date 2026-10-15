@@ -18,6 +18,7 @@ EFFECTIVE = date(2026, 1, 1)
 # Peak PFE 95 limits on the OTC clearing houses, reporting currency (decision 39.4).
 CCP_LIMITS: dict[str, float] = {"CCP_LCH": 625e6, "CCP_ICE": 150e6}  # about 60% on the demo (39.5)
 
+
 def _lim(
     lid: str,
     lt: LimitType,

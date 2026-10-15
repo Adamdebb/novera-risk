@@ -2742,7 +2742,9 @@ elif page == "Reference data":
 
 elif page == "Limit management":
     header("Limit management")
-    tab_h, tab_u, tab_b, tab_i = st.tabs(["Hierarchy", "Utilisation", "Breaches", "Increases"])
+    tab_h, tab_u, tab_b, tab_i, tab_c = st.tabs(
+        ["Hierarchy", "Utilisation", "Breaches", "Increases", "Calibration"]
+    )
     with tab_h:
         lh = load("limit_hierarchy", run_id)
         rows = lh["rows"]
@@ -2918,6 +2920,47 @@ elif page == "Limit management":
         st.caption("The breach workflow stays on the Breaches page until it moves into this module.")
     with tab_i:
         st.caption("Temporary limit increases stay on the Breaches page until they move into this module.")
+    with tab_c:
+        st.caption(
+            "Limits are set from a target utilisation by type (MR-017): seeded when the firm is created, "
+            "recalibrated only by a named proposal that the limit's approver signs off, never by the daily "
+            "run, and never on a limit in breach. An approved draft starts the next business day; the old "
+            "version stays in the history."
+        )
+        who = st.text_input("Your name or role", value="", key="cal_actor")
+        types = st.text_input(
+            "Limit types to recalibrate (blank = all)", value="", placeholder="VAR,EXPECTED_SHORTFALL"
+        )
+        if st.button("Propose recalibration on this run", disabled=not who.strip()):
+            out = client.propose_limit_recalibration(
+                who.strip(), run_id, [t.strip() for t in types.split(",") if t.strip()]
+            )
+            st.success(f"{len(out)} drafts proposed")
+        drafts = client.limit_drafts("PENDING")
+        if drafts:
+            dd = df(drafts)[
+                [
+                    "draft_id",
+                    "limit_id",
+                    "old_amount",
+                    "new_amount",
+                    "target",
+                    "requested_by",
+                    "effective_from",
+                ]
+            ]
+            st.dataframe(dd, hide_index=True, use_container_width=True)
+            pick = st.selectbox("Draft", [d["draft_id"] for d in drafts], key="cal_pick")
+            note = st.text_input("Comment", key="cal_note")
+            a, b = st.columns(2)
+            if a.button("Approve", disabled=not who.strip()):
+                client.decide_limit_draft(pick, who.strip(), True, note)
+                st.success(f"{pick} approved")
+            if b.button("Reject", disabled=not (who.strip() and note.strip())):
+                client.decide_limit_draft(pick, who.strip(), False, note)
+                st.success(f"{pick} rejected")
+        else:
+            st.info("No recalibration drafts awaiting approval.")
 
 elif page == "Trade extract":
     header("Trade extract")

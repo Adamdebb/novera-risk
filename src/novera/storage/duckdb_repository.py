@@ -76,6 +76,21 @@ CREATE TABLE IF NOT EXISTS risk_limit (
     effective_to DATE,
     payload JSON NOT NULL
 );
+CREATE TABLE IF NOT EXISTS limit_version (
+    limit_id VARCHAR NOT NULL,
+    effective_from DATE NOT NULL,
+    effective_to DATE,
+    payload JSON NOT NULL,
+    PRIMARY KEY (limit_id, effective_from)
+);
+CREATE TABLE IF NOT EXISTS limit_draft (
+    draft_id VARCHAR PRIMARY KEY,
+    limit_id VARCHAR NOT NULL,
+    status VARCHAR NOT NULL,
+    requested_by VARCHAR NOT NULL,
+    requested_at TIMESTAMP NOT NULL,
+    payload JSON NOT NULL
+);
 CREATE TABLE IF NOT EXISTS portfolio_snapshot (
     snapshot_id VARCHAR PRIMARY KEY,
     business_date DATE NOT NULL,
@@ -439,15 +454,72 @@ class DuckDBRepository:
         )
 
     def load_limits(self, on: date | None = None) -> list[Limit]:
+        """Current limits, or the versions in force ``on`` a date: the current row when it is in
+        force, else the superseded version that was (decision 40.3)."""
         if on is None:
             rows = self._conn.execute("SELECT payload FROM risk_limit ORDER BY limit_id").fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT payload FROM risk_limit WHERE status = 'APPROVED' AND effective_from <= ? "
-                "AND (effective_to IS NULL OR effective_to >= ?) ORDER BY limit_id",
+            return [Limit(**json.loads(p)) for (p,) in rows]
+        rows = self._conn.execute(
+            "SELECT payload FROM risk_limit WHERE status = 'APPROVED' AND effective_from <= ? "
+            "AND (effective_to IS NULL OR effective_to >= ?) ORDER BY limit_id",
+            [on, on],
+        ).fetchall()
+        current = {lim.limit_id: lim for lim in (Limit(**json.loads(p)) for (p,) in rows)}
+        if self._has_table("limit_version"):
+            for (p,) in self._conn.execute(
+                "SELECT payload FROM limit_version WHERE effective_from <= ? "
+                "AND (effective_to IS NULL OR effective_to >= ?)",
                 [on, on],
-            ).fetchall()
+            ).fetchall():
+                lim = Limit(**json.loads(p))
+                current.setdefault(lim.limit_id, lim)
+        return [current[k] for k in sorted(current)]
+
+    def _has_table(self, name: str) -> bool:
+        return bool(
+            self._conn.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [name]
+            ).fetchone()
+        )
+
+    def supersede_limit(self, old: Limit, new: Limit) -> None:
+        """Keep ``old`` (with its end date) in the version history and make ``new`` current."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO limit_version VALUES (?, ?, ?, ?)",
+            [old.limit_id, old.effective_from, old.effective_to, old.model_dump_json()],
+        )
+        self.save_limits([new])
+
+    def limit_versions(self, limit_id: str) -> list[Limit]:
+        if not self._has_table("limit_version"):
+            return []
+        rows = self._conn.execute(
+            "SELECT payload FROM limit_version WHERE limit_id = ? ORDER BY effective_from", [limit_id]
+        ).fetchall()
         return [Limit(**json.loads(p)) for (p,) in rows]
+
+    def save_limit_draft(self, d: dict) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO limit_draft VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                d["draft_id"],
+                d["limit_id"],
+                d["status"],
+                d["requested_by"],
+                d["requested_at"],
+                json.dumps(d, default=str),
+            ],
+        )
+
+    def load_limit_drafts(self, status: str | None = None) -> list[dict]:
+        if not self._has_table("limit_draft"):
+            return []
+        q = (
+            "SELECT payload FROM limit_draft"
+            + (" WHERE status = ?" if status else "")
+            + " ORDER BY requested_at DESC, limit_id"
+        )
+        return [json.loads(r[0]) for r in self._conn.execute(q, [status] if status else []).fetchall()]
 
     # --- portfolio snapshots -------------------------------------------------------
     def save_portfolio_snapshot(self, snapshot: PortfolioSnapshot) -> str:
