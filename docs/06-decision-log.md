@@ -1539,6 +1539,27 @@ question round; the owner took every recommended option.
   Calibration tab of Limit management, MR-017 1.0.0 (new), MR-006 1.1.0. Tests:
   `tests/test_limit_calibration.py`.
 
+## Round 40b — Build and run time (2026-10-15)
+
+Context: each development round took 30 to 50 minutes of rebuild and tests. The owner asked how to
+avoid it and took three measures together.
+
+- **Parallel tests**: `pytest-xdist`, four workers by file (`-n 4 --dist loadfile` in the pytest
+  options; eight cores but 8 GB of RAM, each worker builds its own fixtures). Full suite about 20
+  minutes in one process, 2.5 minutes in parallel, 70 seconds after the next item.
+- **Rebuild only when the world changes**: a full demo rebuild runs when a round changes market
+  history, the trade generator, limits or broad pricing; other rounds are checked with targeted
+  tests or a single-stage re-run, and the owner is told which.
+- **Faster discount factors**: profiling one counterparty run (100 paths, one worker, 232 s) put
+  83% of the time in `ZeroCurve.df`/`zero`, 15.7 million calls of about 12 µs, numpy's array
+  machinery spent on one number at a time. A plain-Python path for a single number (same formula,
+  linear in r·t, flat outside the nodes) takes 0.3 µs and agrees with the array path to one
+  rounding unit. The bank's counterparty step fell from 361 s to 42 s with results equal to the
+  stored run within 1e-13 relative; the rest of the EOD benefits too. Vectorising the pricers
+  across paths was left for later: the remaining time is spread across the swap pricer's loops.
+- Where: `market_data/curves.py`, `pyproject.toml`, test
+  `test_zero_curve_scalar_fast_path_matches_the_array_path`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming).

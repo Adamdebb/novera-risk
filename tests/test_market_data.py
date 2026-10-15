@@ -210,3 +210,17 @@ def test_tenor_basis_is_drawn_last_and_widens_in_a_crisis() -> None:
         assert set(full.series) - set(cut.series) == added
         for fid, path in cut.series.items():
             np.testing.assert_array_equal(full.series[fid], path, err_msg=fid)
+
+
+def test_zero_curve_scalar_fast_path_matches_the_array_path() -> None:
+    """Pricers ask for one discount factor at a time; the plain-Python path for a single number
+    must agree with the numpy path to rounding, inside, between and outside the nodes."""
+    rng = np.random.default_rng(0)
+    c = ZeroCurve(
+        "USD", np.array([1 / 12, 0.25, 0.5, 1, 2, 3, 5, 7, 10, 15, 20, 30]), rng.uniform(-0.01, 0.08, 12)
+    )
+    ts = np.concatenate([[0.0, -1.0, 1e-9, 1 / 12, 30.0, 45.0], rng.uniform(0, 40, 2000), c.tenors])
+    assert np.allclose([c.df(float(t)) for t in ts], c.df(ts), rtol=0, atol=1e-15)
+    pos = ts[ts > 0]
+    assert np.allclose([c.zero(float(t)) for t in pos], c.zero(pos), rtol=0, atol=1e-15)
+    assert c.df(0.0) == 1.0 and c.df(-2.0) == 1.0
