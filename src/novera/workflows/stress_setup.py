@@ -2,8 +2,7 @@
 them feed the stress-loss limits (OPS-005, decision round 46).
 
 - **Defaults.** Until the library is stored, the built-ins run (``built_in_definitions``): the
-  hypothetical rules and the stylised episodes, all feeding limits. A database that predates
-  the store therefore produces exactly what it produced before.
+  14 hypothetical rule sets, all feeding limits. The stylised episodes ran too until round 47c.
 - **Seeding.** The first write stores the built-ins as version 1, APPROVED, with the writer as
   the person who adopted them, and starts their review clock.
 - **Four eyes.** Every change is a DRAFT version. A different person, the Head of Market Risk
@@ -37,6 +36,7 @@ from novera.risk.stress_definitions import (
     TAGS,
     ScenarioDefinition,
     built_in_definitions,
+    category_of,
     episode_windows,
     validate,
 )
@@ -157,6 +157,7 @@ def _row(r: dict[str, Any], today: date) -> dict[str, Any]:
         "reviewed_by": r.get("reviewed_by"),
         "reviewed_at": r.get("reviewed_at"),
         "review_overdue": bool(due_d and due_d < today),
+        "category": category_of(d),
     }
 
 
@@ -408,6 +409,22 @@ def upgrade_built_ins(repo: DuckDBRepository, actor: str, note: str = "") -> lis
                 actor,
                 d.to_dict(),
                 note or "built-in library update: the scenario now moves every factor (MR-018)",
+            )
+        )
+    # Built-ins the code no longer ships (the stylised episodes since round 47c): retire them.
+    current = {d.scenario_id for d in defaults(repo)}
+    for sid, cur in approved.items():
+        if cur.source != "BUILT_IN" or sid in current or not cur.enabled:
+            continue
+        if any(r["status"] == "DRAFT" for r in _latest(repo, sid)):
+            continue
+        retired = {k: v for k, v in cur.to_dict().items() if k not in _NOT_PROPOSED}
+        out.append(
+            propose(
+                repo,
+                actor,
+                {**retired, "enabled": False},
+                note or "built-in library update: no longer a built-in scenario; retire it",
             )
         )
     return out

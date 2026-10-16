@@ -13,6 +13,7 @@ PCA_COLS = ["pca", "component", "sigmas"]
 LIST_COLS = [
     "scenario_id",
     "name",
+    "category",
     "kind",
     "goal",
     "version",

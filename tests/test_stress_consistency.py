@@ -177,11 +177,23 @@ def test_calibrated_crises_and_built_in_upgrades_through_four_eyes(tmp_path):
             if r["scenario_id"] in CONSISTENT_BUILT_INS:
                 r["definition"] = {**r["definition"], "expand": False, "version": 1}
                 r["version"] = 1
+        # ... and the stylised episodes it held before round 47c.
+        episodes = [d for d in built_in_definitions(list(md.episodes), legacy=True) if d.kind == "HISTORICAL"]
+        assert episodes
+        rows += [
+            {**rows[0], "scenario_id": d.scenario_id, "version": 1, "definition": d.to_dict()}
+            for d in episodes
+        ]
         repo._conn.execute("DELETE FROM stress_scenario")  # noqa: SLF001 - rewrite the fixture rows
         repo.save_stress_scenarios(rows)
         ups = rc.upgrade_stress_built_ins()
-        assert {u["scenario_id"] for u in ups} == set(CONSISTENT_BUILT_INS)
-        assert all(u["status"] == "DRAFT" and u["expand"] and u["version"] == 2 for u in ups)
+        assert {u["scenario_id"] for u in ups} == set(CONSISTENT_BUILT_INS) | {
+            d.scenario_id for d in episodes
+        }
+        consistent = [u for u in ups if u["scenario_id"] in CONSISTENT_BUILT_INS]
+        assert all(u["status"] == "DRAFT" and u["expand"] and u["version"] == 2 for u in consistent)
+        retire = [u for u in ups if u["scenario_id"] not in CONSISTENT_BUILT_INS]
+        assert all(u["kind"] == "HISTORICAL" and not u["enabled"] and u["version"] == 2 for u in retire)
         assert rc.upgrade_stress_built_ins() == []  # open drafts are not proposed twice
         cro.decide_stress_scenario("global_risk_off", 2, True, "consistent")
         # Calibrated crises: drafts only, approximate, run once approved.
@@ -194,8 +206,19 @@ def test_calibrated_crises_and_built_in_upgrades_through_four_eyes(tmp_path):
         named = next(c for c in lib["categories"] if c["category"] == "NAMED_CRISIS")["scenarios"]
         covid = next(s for s in named if s["scenario_id"] == "covid_2020")
         assert covid["status"] == "CALIBRATED" and covid["in_daily_run"] and covid["consistent"]
-        hyp = next(c for c in lib["categories"] if c["category"] == "HYPOTHETICAL")["scenarios"]
-        assert "covid_2020" not in {s["scenario_id"] for s in hyp}
+        others = {
+            s["scenario_id"]
+            for c in lib["categories"]
+            if c["category"] != "NAMED_CRISIS"
+            for s in c["scenarios"]
+        }
+        assert "covid_2020" not in others
+        fwd = next(c for c in lib["categories"] if c["category"] == "FORWARD_LOOKING")["scenarios"]
+        # Only global risk-off's upgrade was approved: the inflation shock is still the standalone
+        # version 1 and reads as single-factor until its own upgrade is approved.
+        assert {s["scenario_id"] for s in fwd} == {"global_risk_off"}
+        single = next(c for c in lib["categories"] if c["category"] == "SINGLE_FACTOR")["scenarios"]
+        assert "inflation_shock" in {s["scenario_id"] for s in single}
         assert "covid_2020" in {d["scenario_id"] for d in stress_setup.definitions_for_run(repo)}
         # Plausibility for the approver: every active scenario, the drafts and the ruler.
         p = RiskService(repo).stress_plausibility()

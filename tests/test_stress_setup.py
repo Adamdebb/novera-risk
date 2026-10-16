@@ -85,7 +85,8 @@ def _frames(repo, run_id):
 
 
 def test_built_ins_are_the_library_the_engine_always_ran(world):
-    """The built-in definitions resolve to exactly the scenarios of the old code path."""
+    """The current built-ins are the 14 rule sets (the stylised episodes stopped running in round
+    47c); the legacy library a pre-OPS-005 run ran is reproduced exactly for its re-run."""
     from novera.risk.stress_definitions import CONSISTENT_BUILT_INS, Expander
 
     hist, md = world["hist"], world["md"]
@@ -93,7 +94,7 @@ def test_built_ins_are_the_library_the_engine_always_ran(world):
     windows = episode_windows(hist, md.episodes)
     ex = Expander(hist, md.snapshot, universe, windows)
     resolved, unresolved = resolve(built_in_definitions(list(windows)), windows, expander=ex)
-    old = list(HYPOTHETICAL_LIBRARY) + historical_episodes(hist, md.episodes)
+    old = list(HYPOTHETICAL_LIBRARY)
     assert not unresolved and len(resolved) == len(old)
     assert all(r.definition.goal == "LIMIT" and r.definition.source == "BUILT_IN" for r in resolved)
     for r, o in zip(resolved, old, strict=True):
@@ -101,14 +102,17 @@ def test_built_ins_are_the_library_the_engine_always_ran(world):
             # Round 47: the rules are unchanged and the scenario now gives every shock explicitly.
             assert r.scenario.rules == o.rules and r.scenario.shocks is not None and r.definition.version == 2
         else:
-            assert r.scenario == o  # curve and basis sensitivities and the episodes: as always
+            assert r.scenario == o  # curve and basis sensitivities: as always
+    # The legacy library: every rule set standalone, then the episodes, exactly as before.
+    legacy, _ = resolve(built_in_definitions(list(windows), legacy=True), windows, expander=ex)
+    assert [r.scenario for r in legacy] == old + historical_episodes(hist, md.episodes)
     # A database without stored windows falls back to the offsets, as before (decision 42.4).
     fb, _ = resolve(
-        built_in_definitions(list(episode_windows(hist, None))), episode_windows(hist, None), expander=ex
+        built_in_definitions(list(episode_windows(hist, None)), legacy=True), episode_windows(hist, None)
     )
     assert [r.scenario for r in fb][len(HYPOTHETICAL_LIBRARY) :] == historical_episodes(hist, {})
     # Round trip through the stored form.
-    d = resolved[-1].definition
+    d = legacy[-1].definition
     assert ScenarioDefinition.from_dict(d.to_dict()) == d
 
 
@@ -164,8 +168,8 @@ def test_store_reproduces_the_run_and_governs_the_library(world):
         assert st0["source"] == "defaults" and st0["summary"]["limit"] == st0["summary"]["scenarios"]
         assert base.run.summary["worst_stress"] == base.run.summary["worst_stress_all"]
         recorded = base.run.config["stress_scenarios"]
-        assert [d["scenario_id"] for d in recorded][-1] in world["md"].episodes
-        assert all(d["review_due"] is None for d in recorded) and recorded[-1]["resolved_window"]
+        assert not {d["scenario_id"] for d in recorded} & set(world["md"].episodes)  # 47c: no episodes
+        assert all(d["review_due"] is None for d in recorded) and len(recorded) == len(HYPOTHETICAL_LIBRARY)
         summ = repo.load_run_frame(base.run.run_id, "stress_summary")
         assert set(summ["goal"]) == {"LIMIT"} and set(summ["version"]) == {1, 2}  # v2: consistent (round 47)
 
@@ -257,7 +261,7 @@ def test_store_reproduces_the_run_and_governs_the_library(world):
 
         # The library page lists the stored scenarios with their governance facts.
         lib = RiskService(repo).stress_library()
-        hyp = next(c for c in lib["categories"] if c["category"] == "INDIVIDUAL_FACTOR")["scenarios"]
+        hyp = next(c for c in lib["categories"] if c["category"] == "SINGLE_FACTOR")["scenarios"]
         row = next(s for s in hyp if s["scenario_id"] == "jpy_carry_unwind")
         assert row["status"] == "DISABLED" and not row["in_daily_run"] and row["version"] == 3
 

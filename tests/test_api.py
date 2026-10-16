@@ -197,18 +197,19 @@ def test_http_endpoints(client):
     lib = client.get("/reference/stress-library").json()
     assert lib["record"] == "MR-005"
     cats = {c["category"]: c for c in lib["categories"]}
-    assert [c["category"] for c in lib["categories"]] == [
-        "INDIVIDUAL_FACTOR",
-        "HYPOTHETICAL",
-        "STYLISED_HISTORICAL",
-        "NAMED_CRISIS",
+    assert [(c["category"], c["title"]) for c in lib["categories"]] == [
+        ("NAMED_CRISIS", "Historical real crises"),
+        ("FORWARD_LOOKING", "Hypothetical forward-looking scenarios"),
+        ("MULTI_FACTOR", "Multi-factor scenarios"),
+        ("SINGLE_FACTOR", "Single-factor scenarios"),
     ]
-    assert cats["NAMED_CRISIS"]["title"] == "Historical real crises"
-    assert cats["INDIVIDUAL_FACTOR"]["title"] == "Individual factor stress"
-    hyp = {x["scenario_id"]: x for x in cats["INDIVIDUAL_FACTOR"]["scenarios"]}
-    assert {"usd_rates_up_100", "usd_steepener", "usd_funding_squeeze"} <= set(hyp)
-    assert "global_risk_off" in {x["scenario_id"] for x in cats["HYPOTHETICAL"]["scenarios"]}
-    assert len(hyp) == 6 and len(cats["HYPOTHETICAL"]["scenarios"]) == 8
+    hyp = {x["scenario_id"]: x for x in cats["SINGLE_FACTOR"]["scenarios"]}
+    assert {"usd_rates_up_100", "usd_steepener", "usd_funding_squeeze"} <= set(hyp) and len(hyp) == 6
+    assert {x["scenario_id"] for x in cats["FORWARD_LOOKING"]["scenarios"]} == {
+        "global_risk_off",
+        "inflation_shock",
+    }
+    assert len(cats["MULTI_FACTOR"]["scenarios"]) == 6
     assert hyp["usd_rates_up_100"]["shocks"][0]["size"] == 100.0
     basis = hyp["eur_basis_wider_20"]["shocks"][0]
     assert basis["unit"] == "bp" and basis["size"] == pytest.approx(20.0)
@@ -218,10 +219,6 @@ def test_http_endpoints(client):
     assert hyp["usd_rates_up_100"]["shocks"][0]["unit"] == "bp" and hyp["usd_rates_up_100"]["in_daily_run"]
     steep = hyp["usd_steepener"]["shocks"]
     assert steep[0]["tenors"] == "1M, 3M, 6M, 1Y, 2Y" and steep[0]["size"] == -50.0
-    styl = cats["STYLISED_HISTORICAL"]["scenarios"]
-    assert [x["scenario_id"] for x in styl] == ["stylised_risk_off_crash", "stylised_rates_shock"]
-    spx = next(sh for sh in styl[0]["shocks"] if sh["target"] == "EQIDX:SPX")
-    assert spx["kind"] == "REALISED" and spx["unit"] == "%" and spx["size"] < -15
     crises = {x["scenario_id"]: x for x in cats["NAMED_CRISIS"]["scenarios"]}
     assert len(crises) == 14 and not any(x["in_daily_run"] for x in crises.values())
     assert crises["covid_2020"]["status"] == "NOT_COVERED" and crises["covid_2020"]["shocks"] == []
@@ -829,5 +826,5 @@ def test_stress_setup_endpoints(client, tokens):
     rows = client.get("/runs/latest/stress", params={"by": "asset_class"}).json()
     assert rows and {x["goal"] for x in rows} == {"LIMIT"}
     lib = client.get("/reference/stress-library").json()
-    ind = next(c for c in lib["categories"] if c["category"] == "INDIVIDUAL_FACTOR")["scenarios"]
+    ind = next(c for c in lib["categories"] if c["category"] == "SINGLE_FACTOR")["scenarios"]
     assert next(s for s in ind if s["scenario_id"] == "em_fx_selloff")["goal"] == "INFORMATION"

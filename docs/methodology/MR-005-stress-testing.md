@@ -29,30 +29,18 @@ Built-ins: USD rates +100bp; global rates +100bp; USD steepener and flattener; E
 cross-currency basis −25bp, EUR, JPY and CHF −40bp); EUR/USD −10%;
 equity −20% with vol +15; credit +150bp; oil −30%; BTC −50%; vol +10 points; global
 risk-off (composite); inflation shock (composite). Historical: the simulator's stylised
-inflation bear, risk-off crash and rates shock, on the windows stored with the history (SIM-001).
+inflation bear, risk-off crash and rates shock, on the windows stored with the history
+(SIM-001), until round 47c; since then the historical category holds the real crises only.
 
 ### Categories on the "Stress library" page
-`GET /reference/stress-library` and the dashboard page list every scenario in four
-categories with the shocks it applies:
+`GET /reference/stress-library` and the dashboard page list every scenario in four categories
+(decision 47c), each placed by `category_of`:
 
-1. **Individual factor stress** (the six standalone built-ins and any standalone scenario the
-   firm approves): one factor, curve or basis moves and every other factor stays where it is.
-2. **Hypothetical** (the eight consistent built-ins and any consistent scenario the firm
-   approves): the rules set the key moves and every other factor follows under stressed
-   correlations (MR-018).
-
-   Both categories show the rules of the approved versions with their goal, version, tags,
-   severity and review date: bp for rates and spreads, vol points for surfaces, per cent for
-   everything else, and the curve nodes a rule is limited to. Sizes are assumptions in the
-   range regulators and desks use; none is measured from a real market move.
-3. **Stylised historical episodes** (3, in the daily run): the simulator's windows, shown as
-   the realised move of fourteen headline factors (S&P 500, Euro Stoxx, USD 2Y and 10Y, EUR
-   10Y, EUR/USD, USD/JPY, CDX IG and HY, SPX 3M vol, USD 1Y10Y swaption vol, Brent, gold,
-   Bitcoin) between the window's first and last day.
-4. **Historical real crises** (14 since round 47): 2008 GFC, 2011 euro sovereign, 2013 taper
+1. **Historical real crises** (14 since round 47): 2008 GFC, 2011 euro sovereign, 2013 taper
    tantrum, 2015 franc de-peg, 2015 China, 2016 Brexit, 2018 Volmageddon, 2020 COVID, 2020
    negative oil, 2022 rates shock, 2022 gilt and LDI crisis, 2023 banking stress, 2024 yen
-   carry unwind and 2025 tariff shock. Each carries a status:
+   carry unwind and 2025 tariff shock, plus any historical window the firm adds. Each crisis
+   carries a status:
    - NOT_COVERED: the stored history does not reach the window.
    - SYNTHETIC_WINDOW: the history covers the window, but no factor on those dates was fetched
      from a real source.
@@ -61,6 +49,25 @@ categories with the shocks it applies:
      event.
    - CALIBRATED: the crisis's replay (approximate headline moves, every other factor under
      stressed correlations, MR-018) has been approved and runs daily.
+2. **Hypothetical forward-looking scenarios**: consistent scenarios tagged MACRO or
+   GEOPOLITICAL, stories of what could happen next with a catalyst. Built-ins: global risk-off
+   and the inflation shock.
+3. **Multi-factor scenarios**: any other consistent scenario. One market moves by a set amount
+   and every other market follows under stressed correlations. These are the generic, stable
+   set the stress-loss limits read. Built-ins: EUR/USD −10%, equity crash with vol, credit
+   +150bp, oil −30%, BTC −50%, vol +10.
+4. **Single-factor scenarios**: standalone scenarios, where one factor, curve or basis moves and
+   every other factor stays where it is. Built-ins: USD and global +100bp, USD steepener and
+   flattener, EURIBOR basis, USD funding squeeze.
+
+Categories 2 to 4 show the rules of the approved versions with their goal, version, tags,
+severity and review date: bp for rates and spreads, vol points for surfaces, per cent for
+everything else, and the curve nodes a rule is limited to. Sizes are assumptions in the range
+regulators and desks use; none is measured from a real market move.
+
+The simulator's three stylised episodes ran as scenarios until round 47c. Their windows still
+mark the stressed regime for consistent scenarios, the stressed-VaR window and the risk ruler,
+but they no longer run as stress tests.
 
 ## Prior art
 Ideas for reverse stress testing, correlation breakdown and liquidity-adjusted stress are

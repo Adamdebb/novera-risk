@@ -710,7 +710,7 @@ elif page == "Stress library":
                 if shocks.empty:
                     st.caption("No shocks to show: the window is outside the stored history.")
                 else:
-                    rule_based = cat["category"] in ("HYPOTHETICAL", "INDIVIDUAL_FACTOR")
+                    rule_based = cat["category"] in ("FORWARD_LOOKING", "MULTI_FACTOR", "SINGLE_FACTOR")
                     if rule_based:
                         label = "Shock rule"
                     elif sc["status"] == "CALIBRATED":

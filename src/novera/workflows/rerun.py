@@ -336,7 +336,8 @@ class _Inputs:
         stored = self.repo.load_market_episodes()
         if recorded is None:
             windows = episode_windows(self.history, stored)
-            recorded = [{**d.to_dict(), "review_due": None} for d in built_in_definitions(list(windows))]
+            legacy = built_in_definitions(list(windows), legacy=True)  # what it ran
+            recorded = [{**d.to_dict(), "review_due": None} for d in legacy]
         return run_stress_definitions(
             self.pf, self.history, recorded, stored, self.cfg.include_historical_stress
         )

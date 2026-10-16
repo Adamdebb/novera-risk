@@ -226,11 +226,16 @@ def _episode_name(episode_id: str) -> str:
     return episode_id.replace("_", " ").title()
 
 
-def built_in_definitions(episode_ids: list[str]) -> list[ScenarioDefinition]:
-    """The built-in library: every hypothetical rule set, then one definition per stylised
-    episode, in that order, all feeding limits. Since round 47 the eight market shocks and
-    composites are consistent (version 2, ``CONSISTENT_BUILT_INS``); the curve and basis
-    sensitivities and the episodes are as the engine always ran them."""
+def built_in_definitions(
+    episode_ids: list[str] | None = None, legacy: bool = False
+) -> list[ScenarioDefinition]:
+    """The built-in library: every hypothetical rule set, all feeding limits. Since round 47
+    the eight market shocks and composites are consistent (version 2, ``CONSISTENT_BUILT_INS``);
+    the curve and basis sensitivities run as the engine always ran them.
+
+    Since round 47c the stylised episodes of the simulated history are no longer scenarios
+    (their windows still define the stressed regime). ``legacy`` returns the library a run made
+    before round 46 ran, for its re-run: every rule set standalone, then the episodes."""
     out = [
         ScenarioDefinition(
             sc.scenario_id,
@@ -240,18 +245,20 @@ def built_in_definitions(episode_ids: list[str]) -> list[ScenarioDefinition]:
             description=sc.description
             + (
                 " · every other factor moves with it (stressed correlations)"
-                if sc.scenario_id in CONSISTENT_BUILT_INS
+                if sc.scenario_id in CONSISTENT_BUILT_INS and not legacy
                 else ""
             ),
             rules=tuple(_rule_dict(r) for r in sc.rules),
-            expand=sc.scenario_id in CONSISTENT_BUILT_INS,
+            expand=sc.scenario_id in CONSISTENT_BUILT_INS and not legacy,
             tags=_BUILT_IN_TAGS.get(sc.scenario_id, ()),
             source="BUILT_IN",
-            version=2 if sc.scenario_id in CONSISTENT_BUILT_INS else 1,
+            version=2 if sc.scenario_id in CONSISTENT_BUILT_INS and not legacy else 1,
             position=i,
         )
         for i, sc in enumerate(HYPOTHETICAL_LIBRARY)
     ]
+    if not legacy:
+        return out
     n = len(out)
     out += [
         ScenarioDefinition(
@@ -264,9 +271,36 @@ def built_in_definitions(episode_ids: list[str]) -> list[ScenarioDefinition]:
             source="BUILT_IN",
             position=n + j,
         )
-        for j, eid in enumerate(episode_ids)
+        for j, eid in enumerate(episode_ids or [])
     ]
     return out
+
+
+SINGLE_FACTOR, MULTI_FACTOR, FORWARD_LOOKING, HISTORICAL_CRISIS = (
+    "SINGLE_FACTOR",
+    "MULTI_FACTOR",
+    "FORWARD_LOOKING",
+    "NAMED_CRISIS",
+)
+CATEGORY_TITLES = {
+    HISTORICAL_CRISIS: "Historical real crises",
+    FORWARD_LOOKING: "Hypothetical forward-looking scenarios",
+    MULTI_FACTOR: "Multi-factor scenarios",
+    SINGLE_FACTOR: "Single-factor scenarios",
+}
+_NARRATIVE_TAGS = {"MACRO", "GEOPOLITICAL"}
+
+
+def category_of(d: ScenarioDefinition) -> str:
+    """Where a scenario belongs in the library (decision 47c): a real crisis replay, calibrated or
+    on a historical window; a standalone shock (single-factor); a consistent scenario with a
+    macroeconomic or geopolitical story, tagged MACRO or GEOPOLITICAL (forward-looking); any
+    other consistent scenario (multi-factor)."""
+    if d.source == "CALIBRATED" or d.kind == "HISTORICAL":
+        return HISTORICAL_CRISIS
+    if not d.expand:
+        return SINGLE_FACTOR
+    return FORWARD_LOOKING if _NARRATIVE_TAGS & set(d.tags) else MULTI_FACTOR
 
 
 def episode_windows(

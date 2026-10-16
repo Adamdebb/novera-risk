@@ -208,24 +208,20 @@ def test_stress_library_catalogue(world):
 
     lib = stress_library(world["hist"], list(world["pf"].universe.values()))
     cats = {c["category"]: c for c in lib["categories"]}
-    assert (
-        cats["HYPOTHETICAL"]["count"] + cats["INDIVIDUAL_FACTOR"]["count"] == len(HYPOTHETICAL_LIBRARY)
-        and cats["STYLISED_HISTORICAL"]["count"] == 2
-    )
-    rules = {r["scenario_id"]: r["shocks"] for r in cats["HYPOTHETICAL"]["scenarios"]}
+    counts = {k: c["count"] for k, c in cats.items()}
+    assert counts == {"NAMED_CRISIS": 14, "FORWARD_LOOKING": 2, "MULTI_FACTOR": 6, "SINGLE_FACTOR": 6}
+    assert sum(counts.values()) - 14 == len(HYPOTHETICAL_LIBRARY)  # the episodes no longer run (47c)
+    rules = {r["scenario_id"]: r["shocks"] for r in cats["MULTI_FACTOR"]["scenarios"]}
     assert rules["credit_wider_150"][0]["unit"] == "bp" and rules["credit_wider_150"][0]["size"] == 150.0
     vol = next(s for s in rules["equity_crash_20_vol_15"] if s["target"] == "VOL:")
     assert vol["unit"] == "vol points" and vol["size"] == 15.0
-    crash = cats["STYLISED_HISTORICAL"]["scenarios"][0]
-    assert crash["status"] == "IN_RUN" and crash["shock_count"] == len(HEADLINE_FACTORS)
-    usd10 = next(s for s in crash["shocks"] if s["target"] == "IR:USD:10Y")
-    assert usd10["unit"] == "bp" and usd10["size"] < 0  # rates fall in the risk-off crash
+    assert len(HEADLINE_FACTORS) == 14
     crises = cats["NAMED_CRISIS"]["scenarios"]
     first = date.fromisoformat(lib["history"]["start"])
     for c in crises:  # 14 windows; any the synthetic year reaches is covered but synthetic
         covered = date.fromisoformat(c["window_start"]) >= first
         assert c["status"] == ("SYNTHETIC_WINDOW" if covered else "NOT_COVERED") and not c["in_daily_run"]
-    assert lib["summary"]["scenarios"] == len(HYPOTHETICAL_LIBRARY) + 2 + 14
+    assert lib["summary"]["scenarios"] == len(HYPOTHETICAL_LIBRARY) + 14
 
 
 def test_weighted_tail_measures_and_fixed_window(world, sens):

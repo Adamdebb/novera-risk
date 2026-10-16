@@ -1990,6 +1990,44 @@ the built-ins in place rather than add twins.
   geopolitical scenarios, and drafting forward-looking narratives.
 - Where: `risk/stress_catalogue.py` (`CATEGORIES`), the Stress library page, MR-005.
 
+## Round 47c — Four kinds of stress test; the stylised episodes stop running (2026-10-16)
+
+- **Asked by the owner:** the library's categories follow four kinds of stress test, in this
+  order. Each scenario is placed by `category_of`:
+
+  | Category | What it holds |
+  |---|---|
+  | **Historical real crises** | Calibrated replays, and any historical window the firm adds |
+  | **Hypothetical forward-looking scenarios** | Consistent scenarios tagged MACRO or GEOPOLITICAL: global risk-off and the inflation shock |
+  | **Multi-factor scenarios** | Every other consistent scenario: the six market shocks |
+  | **Single-factor scenarios** | Standalone scenarios: the six curve and basis tests |
+
+  This replaces round 47b's "Individual factor stress" and "Hypothetical". The owner chose the
+  names after reading what the sources call the multi-factor kind ("anticipatory scenarios",
+  RiskMetrics 1999; "market-driven" or "conditional stress testing", BlackRock 2024; "scenario
+  analysis", Goldman Sachs 2013; "cross-asset and multi-factor stress tests", AI suggestion 2).
+- **Asked by the owner:** remove the stylised historical episodes, since the library has other
+  stress tests. They no longer run as scenarios. Their windows still mark the stressed regime
+  for consistent scenarios, the stressed-VaR window and the risk ruler.
+  - A library stored before this round receives retirement drafts (`novera stress-setup
+    upgrade`).
+  - A run made before round 46 still re-runs on the library it ran: rules standalone, then the
+    episodes (`built_in_definitions(legacy=True)`). This also fixes a gap left by round 47,
+    where such a re-run would have used the consistent built-ins.
+- Rebuilt with the recipe of 33.3. The bank keeps 5, 7 and 9 breaches and the fund 2 and 3, the
+  same lists. VaR is unchanged. Coverage the episodes provided is gone:
+  - METALS_STRESS falls from 59% to 0% (no remaining scenario hurts the metals desk);
+    SINGLE_NAME_EQ_STRESS stays at 0%; EM_RATES_STRESS falls from 24% to 6%.
+  - The fund's worst stress falls from the inflation bear (−207m) to credit +150bp (−124m), and
+    FUND_STRESS from 59% to 41%.
+  - Left for the owner: forward-looking narratives and a metals or single-name scenario would
+    restore that coverage.
+- Previous databases (round 47) are in `data/backup-2026-10-16-round47/`.
+- Where: `risk/stress_definitions.py` (`category_of`, `CATEGORY_TITLES`,
+  `built_in_definitions(legacy=)`), `risk/stress_catalogue.py`, `workflows/stress_setup.py`
+  (retirement in `upgrade_built_ins`), `workflows/rerun.py`, the Stress library and Admin pages,
+  MR-005.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names

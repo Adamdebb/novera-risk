@@ -16,7 +16,7 @@ from novera.market_data.risk_factors import RiskFactor
 from novera.risk.scenario_covariance import HEADLINE_FACTORS
 from novera.risk.scenarios import episode_shocks
 from novera.risk.stress import ShockRule, StressScenario
-from novera.risk.stress_definitions import built_in_definitions, episode_windows
+from novera.risk.stress_definitions import built_in_definitions, category_of, episode_windows
 
 RECORD = "MR-005"
 
@@ -26,46 +26,44 @@ RECORD = "MR-005"
 
 CATEGORIES: tuple[dict[str, Any], ...] = (
     {
-        "category": "INDIVIDUAL_FACTOR",
-        "title": "Individual factor stress",
-        "description": (
-            "Standalone shocks: one factor, curve or basis moves by a set amount and every other "
-            "factor stays where it is, so the result isolates the book's exposure to that one move. "
-            "Sizes are assumptions in the range regulators and desks use."
-        ),
-        "in_daily_run": True,
-    },
-    {
-        "category": "HYPOTHETICAL",
-        "title": "Hypothetical",
-        "description": (
-            "Forward-looking scenarios: the rules set the key moves and every other factor moves "
-            "with them under stressed correlations (consistent scenarios, MR-018). Instantaneous, "
-            "full revaluation, no liquidity horizon and no rebalancing. Sizes are assumptions, not "
-            "measured from a real market move."
-        ),
-        "in_daily_run": True,
-    },
-    {
-        "category": "STYLISED_HISTORICAL",
-        "title": "Stylised historical episodes",
-        "description": (
-            "The simulator's synthetic crisis windows, replayed as the observed move of every "
-            "factor between the window's first and last day. They carry the full cross-asset "
-            "correlation of the synthetic history but are calibrated to look like a crisis, not "
-            "to any real one (SIM-001)."
-        ),
-        "in_daily_run": True,
-    },
-    {
         "category": "NAMED_CRISIS",
         "title": "Historical real crises",
         "description": (
-            "Fourteen real windows since 2008. A window replays as a stress when the stored history "
-            "covers it with real data; until then a crisis runs as a calibrated replay once its "
-            "headline moves are approved (MR-018): status CALIBRATED."
+            "Fourteen real crises since 2008, and any historical window the firm adds. A crisis "
+            "replays as the observed move of every factor when the stored history holds it with "
+            "real data; until then it runs as a calibrated replay once its headline moves are "
+            "approved (MR-018): status CALIBRATED."
         ),
         "in_daily_run": False,
+    },
+    {
+        "category": "FORWARD_LOOKING",
+        "title": "Hypothetical forward-looking scenarios",
+        "description": (
+            "Stories of what could happen next, with a catalyst: the rules set the key moves and "
+            "every other factor follows under stressed correlations (MR-018). Tagged MACRO or "
+            "GEOPOLITICAL; written and reviewed by the risk function."
+        ),
+        "in_daily_run": True,
+    },
+    {
+        "category": "MULTI_FACTOR",
+        "title": "Multi-factor scenarios",
+        "description": (
+            "One market moves by a set amount and every other market follows under stressed "
+            "correlations (conditional stress testing, MR-018). Generic and stable: the set the "
+            "stress-loss limits are built to read."
+        ),
+        "in_daily_run": True,
+    },
+    {
+        "category": "SINGLE_FACTOR",
+        "title": "Single-factor scenarios",
+        "description": (
+            "Standalone shocks: one factor, curve or basis moves by a set amount and every other "
+            "factor stays where it is, so the result isolates the book's exposure to that move."
+        ),
+        "in_daily_run": True,
     },
 )
 
@@ -242,9 +240,8 @@ def stress_library(
     if definitions is None:
         windows = episode_windows(history, episodes) if history is not None else {}
         definitions = [{"definition": d, "review_due": None} for d in built_in_definitions(list(windows))]
-    hypothetical = []
-    individual = []
-    stylised = []
+    by_cat: dict[str, list[dict[str, Any]]] = {c["category"]: [] for c in CATEGORIES}
+    replays: list[dict[str, Any]] = []
     windows = episode_windows(history, episodes) if history is not None and dates else {}
     calibrated: dict[str, dict[str, Any]] = {}
     for row in definitions:
@@ -257,10 +254,8 @@ def stress_library(
         if d.kind == "HYPOTHETICAL":
             sc = d.to_scenario()
             shocks = [describe_rule(r) for r in sc.rules] + [describe_pca(r) for r in d.pca_rules()]
-            cat = "HYPOTHETICAL" if d.expand else "INDIVIDUAL_FACTOR"  # standalone: nothing else moves
-            (hypothetical if d.expand else individual).append(
-                _scenario_row(sc, cat, d.enabled, status, shocks, **gov)
-            )
+            cat = category_of(d)
+            by_cat[cat].append(_scenario_row(sc, cat, d.enabled, status, shocks, **gov))
             continue
         w = windows.get(d.episode_id) if d.episode_id else None
         if w is None and d.window_start and d.window_end:
@@ -268,10 +263,8 @@ def stress_library(
         if w is None or history is None:
             continue
         sc = d.to_scenario(w)
-        stylised.append(
-            _scenario_row(
-                sc, "STYLISED_HISTORICAL", d.enabled, status, _window_shocks(history, *w, by_id), **gov
-            )
+        replays.append(  # a historical window the firm added: listed with the real crises
+            _scenario_row(sc, "NAMED_CRISIS", d.enabled, status, _window_shocks(history, *w, by_id), **gov)
         )
 
     crises = []
@@ -305,12 +298,7 @@ def stress_library(
             _scenario_row(sc, "NAMED_CRISIS", in_run, status, shocks, real_share=share, note=note, **extra)
         )
 
-    rows = {
-        "INDIVIDUAL_FACTOR": individual,
-        "HYPOTHETICAL": hypothetical,
-        "STYLISED_HISTORICAL": stylised,
-        "NAMED_CRISIS": crises,
-    }
+    rows = {**by_cat, "NAMED_CRISIS": crises + replays}
     return {
         "record": RECORD,
         "history": {
