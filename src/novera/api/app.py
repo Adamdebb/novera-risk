@@ -537,6 +537,11 @@ def draft_stress_crises(svc: RiskWriteService = Depends(write_service)):
     return svc.draft_stress_crises()
 
 
+@app.post("/admin/stress/narratives", response_model=list[s.StressScenarioVersion])
+def draft_stress_narratives(svc: RiskWriteService = Depends(write_service)):
+    return svc.draft_stress_narratives()
+
+
 @app.post("/admin/stress/proposals", response_model=s.StressScenarioVersion)
 def propose_stress_scenario(body: StressProposalBody, svc: RiskWriteService = Depends(write_service)):
     return svc.propose_stress_scenario(body.definition.model_dump(), body.note)

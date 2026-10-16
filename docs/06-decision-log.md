@@ -2028,6 +2028,63 @@ the built-ins in place rather than add twins.
   (retirement in `upgrade_built_ins`), `workflows/rerun.py`, the Stress library and Admin pages,
   MR-005.
 
+## Round 47d — Forward-looking narratives for metals and single names (2026-10-16)
+
+Context: after round 47c no LIMIT scenario hurt the metals desk (METALS_STRESS 0%) or the
+single-name equity desk (0%). The owner asked for a starter set of forward-looking narratives that
+also covers metals and single names. The set was sized against the latest bank and fund runs:
+- the bank is long metals (gold +6.1m per 1%, silver +3.2m) and short metals vol, short TTE, SAP
+  and NESN, long MSFT and BA, and has sold TEVA protection;
+- the fund is long NVDA (+3.2m per 1%), short JPM, ASML and BA, short silver and copper, and long
+  gold.
+
+So metals are stressed in both directions. Nine narratives are in `risk/narratives.py`, listed in
+MR-018 1.1.0. Each is tagged MACRO or GEOPOLITICAL, so it is filed as forward-looking.
+
+| Narrative | Bank (m) | Fund (m) | z |
+|---|---|---|---|
+| Gold unwind on a real-rates repricing | −420 (metals −216) | 0 (long gold offsets short silver) | 2.4 |
+| China industrial slump | −279 | +44 | 1.5 |
+| Central-bank credibility shock (EXTREME) | −39 | −44 (commodity trend −68) | 4.3 |
+| Export controls on industrial metals | +185 | −103 | 2.3 |
+| AI capex reversal | +57 | −81 (US long/short −105) | 1.5 |
+| European rearmament rally | +83 (single-name equity −18) | −28 | 1.4 |
+| US bank deregulation rally | −105 | −23 | 1.4 |
+| Pharma tariff shock (after resizing) | −89 | +23 | 1.6 |
+| Gulf supply shock | +47 | +25 | 3.3 |
+
+The pharma narrative first used TEVA CDS +300bp. That move is 6.6 standard deviations on the
+name's history, and the expansion carried it into USD/ZAR −24% and the Nikkei −22%. It was cut to
++150bp, with DAX and Nikkei pinned. MR-018 now lists the leak of idiosyncratic shocks as a
+limitation.
+
+### 47d.1 The demo databases
+- Options: draft into both ★ · draft and approve · leave the databases alone
+- Choice (owner): **draft into both**. Risk Control enters the nine narratives as INFORMATION
+  drafts in the bank and the fund (`novera stress-setup narratives`, `POST
+  /admin/stress/narratives`, a button on the Admin page). Nothing runs until HoMR or the CRO
+  approves.
+
+### 47d.2 Closing the metals and single-name gaps
+- Options: INFORMATION until round 58 ★ · promote now and recalibrate · promote and keep the breach
+- Choice (owner): **promote now and recalibrate**, for the gold unwind and the European rally on
+  the bank.
+- Found while acting on it: the recalibration cannot absorb the gold unwind.
+  - The metals desk would lose −216m against an 80m limit (270%).
+  - Recalibration leaves a limit in breach alone; it calls for an increase request (decision 40.7).
+  - Even without a breach, recalibration caps a limit at twice its appetite (160m).
+  - Promoting it therefore makes METALS_STRESS a breach either way.
+- Taken back to the owner before any limit or LIMIT promotion changes; the outcome is recorded
+  below when chosen.
+
+### 47d.3 Sizes
+- Options: keep as drafted ★ · soften the extremes below z 3 · the owner edits
+- Choice (owner): **keep as drafted**. The approver can propose new versions.
+
+- Where: `risk/narratives.py`, `workflows/stress_setup.py` (`draft_narratives`),
+  `api/service.py`, `api/app.py`, `api/client.py`, `cli.py`, `ui/stress_setup.py`, MR-018 1.1.0,
+  `tests/test_stress_consistency.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names

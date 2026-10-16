@@ -86,6 +86,7 @@ class RiskClient(Protocol):
     def stress_plausibility(self) -> dict[str, Any]: ...
     def upgrade_stress_built_ins(self, note: str = "") -> list[dict[str, Any]]: ...
     def draft_stress_crises(self) -> list[dict[str, Any]]: ...
+    def draft_stress_narratives(self) -> list[dict[str, Any]]: ...
     def rerun_stage(self, run_id: str, stage: str, reason: str = "") -> dict[str, Any]: ...
     def me(self) -> dict[str, Any]: ...
     def users(self) -> list[dict[str, Any]]: ...
@@ -112,6 +113,7 @@ WRITE_METHODS = {
     "seed_stress_library",
     "upgrade_stress_built_ins",
     "draft_stress_crises",
+    "draft_stress_narratives",
     "propose_limit_recalibration",
     "decide_limit_draft",
 }
@@ -385,6 +387,9 @@ class HttpClient:
 
     def draft_stress_crises(self):
         return self._post("/admin/stress/crises")
+
+    def draft_stress_narratives(self):
+        return self._post("/admin/stress/narratives")
 
     def rerun_stage(self, run_id, stage, reason=""):
         return self._post("/admin/rerun", run_id=run_id, stage=stage, reason=reason)

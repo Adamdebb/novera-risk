@@ -186,7 +186,7 @@ def render_stress_setup(client: Any) -> None:
         else:
             st.caption(plaus.get("reason") or "Plausibility is not available.")
 
-    b1, b2 = st.columns(2)
+    b1, b2, b3 = st.columns(3)
     if b1.button(
         "Propose the built-in updates",
         help="Drafts of built-ins whose code version is newer than the stored one",
@@ -204,6 +204,17 @@ def render_stress_setup(client: Any) -> None:
         try:
             out = client.draft_stress_crises()
             st.success(f"{len(out)} calibrated crises drafted; verify each figure before approving.")
+            st.cache_data.clear()
+            st.rerun()
+        except ApiError as e:
+            st.error(str(e))
+    if b3.button(
+        "Draft the forward-looking narratives",
+        help="9 stories covering metals, single names and macro, with judgement sizes to review",
+    ):
+        try:
+            out = client.draft_stress_narratives()
+            st.success(f"{len(out)} narratives drafted; check each plausibility score before approving.")
             st.cache_data.clear()
             st.rerun()
         except ApiError as e:

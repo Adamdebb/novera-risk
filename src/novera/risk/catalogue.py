@@ -132,10 +132,12 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Consistent scenarios and plausibility",
                 "Every factor a scenario's rules leave out takes its conditional expectation given the "
                 "rules' anchors under stressed correlations; PCA curve shapes; scenario z-score, "
-                "exceedance and the risk ruler; calibrated replays of named crises.",
+                "exceedance and the risk ruler; calibrated replays of named crises; forward-looking "
+                "narratives.",
                 "shock units, z-score",
                 "Stress",
                 "Consistent scenarios and plausibility",
+                version="1.1.0",
             ),
             MeasureSpec(
                 "MR-007",

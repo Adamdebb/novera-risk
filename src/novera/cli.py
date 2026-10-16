@@ -771,6 +771,19 @@ def stress_setup_crises(
     )
 
 
+@stress_setup_app.command("narratives")
+def stress_setup_narratives(
+    actor: str = typer.Option("risk-control", help="Risk Control or a head of risk proposes"),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Draft the forward-looking narratives (metals, single names, macro) for a second person."""
+    out = _write(fund, actor, lambda svc: svc.draft_stress_narratives())
+    typer.echo(
+        f"{len(out)} forward-looking narratives drafted"
+        + "".join(f"\n  DRAFT {d['scenario_id']} {d['name']}" for d in out)
+    )
+
+
 @stress_setup_app.command("plausibility")
 def stress_setup_plausibility(fund: bool = typer.Option(False)) -> None:
     """How extreme each scenario and draft is (z-score, exceedance) and the risk ruler (MR-018)."""

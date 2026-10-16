@@ -230,3 +230,60 @@ def test_calibrated_crises_and_built_in_upgrades_through_four_eyes(tmp_path):
             "component": 2,
             "sigmas": 1.0,
         }
+
+
+def test_forward_looking_narratives_are_valid_and_cover_metals_and_single_names(mkt):
+    """The starter narratives (decision 47d) run as consistent scenarios, file under
+    forward-looking, and between them shock every metal and several single names."""
+    from novera.risk.narratives import NARRATIVES
+    from novera.risk.stress_definitions import FORWARD_LOOKING, category_of
+
+    fids = list(mkt["universe"])
+    assert len({n.scenario_id for n in NARRATIVES}) == len(NARRATIVES) == 9
+    for n in NARRATIVES:
+        d = ScenarioDefinition.from_dict(n.definition())
+        assert d.source == "USER" and d.expand and d.goal == "INFORMATION" and d.narrative and d.catalyst
+        assert category_of(d) == FORWARD_LOOKING, n.scenario_id
+        assert validate(d, fids, [], None) == [], n.scenario_id
+        shocks, info = mkt["ex"].explain(d)
+        assert info["z_score"] > 0 and len(shocks) == len(fids)
+    named = {f for n in NARRATIVES for f, _ in n.moves}
+    assert {"CMD:GOLD:1M", "CMD:SILVER:1M", "CMD:COPPER:1M", "CMD:ALUMINIUM:1M"} <= named
+    assert len({f for f in named if f.startswith("EQ:")}) >= 8 and "CDS:TEVA" in named
+    # precious metals are stressed in both directions: the bank is long, the fund short silver
+    signs = {(f, v > 0) for n in NARRATIVES for f, v in n.moves if f in ("CMD:GOLD:1M", "CMD:SILVER:1M")}
+    assert {(f, up) for f in ("CMD:GOLD:1M", "CMD:SILVER:1M") for up in (True, False)} <= signs
+
+
+def test_narratives_enter_as_drafts_and_run_once_approved(tmp_path):
+    from novera.api.service import RiskService, RiskWriteService
+    from novera.security import seed_users
+    from novera.simulation import build_global_macro_bank
+    from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows import stress_setup
+
+    md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=1.0, seed=3))
+    org = build_global_macro_bank()
+    with DuckDBRepository(tmp_path / "n.duckdb") as repo:
+        repo.init_schema()
+        repo.save_organisation(org)
+        seed_users(repo, org.firm.firm_id)
+        repo.save_risk_factors(md.universe)
+        repo.save_market_history(md.history)
+        repo.save_market_episodes(md.episodes)
+        repo.save_market_snapshot(md.snapshot)
+        users = {u.user_id: u for u in repo.load_users()}
+        rc, cro = RiskWriteService(repo, users["risk-control"]), RiskWriteService(repo, users["cro"])
+        cro.seed_stress_library("starter")
+        drafts = rc.draft_stress_narratives()
+        assert len(drafts) == 9 and all(d["status"] == "DRAFT" and d["goal"] == "INFORMATION" for d in drafts)
+        assert all("judgement" in d["note"] for d in drafts)
+        assert rc.draft_stress_narratives() == []
+        assert "gold_real_rates_unwind" not in {
+            d["scenario_id"] for d in stress_setup.definitions_for_run(repo)
+        }
+        cro.decide_stress_scenario("gold_real_rates_unwind", 1, True, "size agreed with the metals desk")
+        assert "gold_real_rates_unwind" in {d["scenario_id"] for d in stress_setup.definitions_for_run(repo)}
+        lib = RiskService(repo).stress_library()
+        fwd = next(c for c in lib["categories"] if c["category"] == "FORWARD_LOOKING")["scenarios"]
+        assert "gold_real_rates_unwind" in {s["scenario_id"] for s in fwd}

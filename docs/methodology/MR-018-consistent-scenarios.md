@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
-| Code | `novera.risk.scenario_covariance`, `novera.risk.stress_definitions.Expander`, `novera.risk.crisis_tables`; `GET /admin/stress/plausibility`, `POST /admin/stress/upgrade`, `POST /admin/stress/crises`; `novera stress-setup plausibility | upgrade | crises` |
+| Code | `novera.risk.scenario_covariance`, `novera.risk.stress_definitions.Expander`, `novera.risk.crisis_tables`, `novera.risk.narratives`; `GET /admin/stress/plausibility`, `POST /admin/stress/upgrade`, `POST /admin/stress/crises`, `POST /admin/stress/narratives`; `novera stress-setup plausibility | upgrade | crises | narratives` |
 | Last validated | 2026-10-16 |
 
 ## Definition
@@ -102,6 +102,27 @@ is filled under stressed correlations, which also stands in for factors that did
 - An approved crisis shows as CALIBRATED in the stress library, and as REAL once fetched history
   covers its window.
 
+**Forward-looking narratives (decision 47d).** A starter set of nine stories (`narratives.py`),
+each a narrative, a catalyst, and 7 to 10 headline moves over 20 or 40 business days, expanded
+like a crisis. They are tagged MACRO or GEOPOLITICAL, so the library files them as
+forward-looking. They fill the coverage round 47c left open:
+
+| Narrative | Headline moves | Aimed at |
+|---|---|---|
+| Gold unwind on a real-rates repricing | gold −18%, silver −28%, metals vol up, US 10Y +75bp | the bank's long metals |
+| China industrial slump | copper −25%, aluminium −18%, ZAR, AUD, BRL weaker | the bank's long base metals |
+| Central-bank credibility shock (EXTREME, 40 days) | gold +25%, silver +40%, curve steeper, USD −7% | the fund's short silver |
+| Export controls on industrial metals | aluminium +25%, copper +20%, silver +20% | the fund's short copper and silver |
+| AI capex reversal | NVDA −40%, ASML −25%, MSFT −15%, NDX −18% | the fund's long NVDA, the bank's long MSFT |
+| European rearmament rally | SIE +22%, SAP +15%, TTE +10%, DAX +15%, Bund +50bp | the bank's short European names |
+| US bank deregulation rally (MODERATE) | JPM +22%, BNP +12%, US curve steeper | the fund's short JPM |
+| Pharma tariff shock (MODERATE) | TEVA CDS +150bp, NESN −8%, PFE −6% | the bank's TEVA protection sold |
+| Gulf supply shock | Brent +40%, TTE, SHEL and XOM about +20% | the bank's short energy majors |
+
+- The sizes are judgement, not data. They enter only as INFORMATION drafts from Risk Control.
+- The approver reads the plausibility z-score of each draft before approving (four eyes, OPS-005).
+- A narrative feeds a stress-loss limit only once promoted to LIMIT (framework section I).
+
 ## Assumptions
 - **Stressed correlations.** Correlations in a stress move the way they moved on the stored
   stress days. On the synthetic history those days come from the simulator's episodes and its
@@ -122,6 +143,12 @@ is filled under stressed correlations, which also stands in for factors that did
 - **No hard rule (decision 47.4).** Plausibility informs the approver; nothing blocks or warns.
 - **Approximate crisis figures.** They are rounded from published market moves and must be
   verified.
+- **Judgement sizes for narratives.** Nothing anchors a narrative's moves to data. Its z-score
+  and the desks it hits are the approver's checks.
+- **Idiosyncratic shocks leak through correlations.** A large single-name move, such as a CDS
+  +300bp, is many standard deviations on that name's history. The expansion then carries it into
+  indices and currencies through simulated correlations. Narratives therefore keep single-name
+  anchors moderate and pin the indices they care about.
 
 ## Validation tests
 `tests/test_stress_consistency.py`:
@@ -130,8 +157,10 @@ is filled under stressed correlations, which also stands in for factors that did
   crash, the z-delta naming the inconsistent anchor;
 - the SIMILAR fallback;
 - PCA order and signs;
-- validity of every built-in and crisis table;
-- crisis drafts and built-in upgrades through four eyes, and the plausibility view.
+- validity of every built-in, crisis table and narrative, each narrative filed as forward-looking,
+  and metals covered in both directions;
+- crisis drafts and built-in upgrades through four eyes, and the plausibility view;
+- narrative drafts through four eyes: INFORMATION only, not run until approved.
 
 `tests/test_stress_setup.py`: a stage re-run reproduces consistent scenarios exactly, and
 seeding does not change the results.
@@ -140,3 +169,4 @@ seeding does not change the results.
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-10-16 | Conditional expansion, PCA shapes, plausibility and risk ruler, calibrated named crises (decision 47) | Novera |
+| 1.1.0 | 2026-10-16 | Starter set of nine forward-looking narratives covering metals and single names (decision 47d) | Novera |

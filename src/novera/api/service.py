@@ -1343,6 +1343,13 @@ class RiskWriteService:
         require(self.user, Action.STRESS_PROPOSE)
         return stress_setup.draft_crises(self.repo, self.actor)
 
+    def draft_stress_narratives(self) -> list[dict[str, Any]]:
+        """Drafts of the forward-looking narratives the library does not hold (decision 47d)."""
+        from novera.workflows import stress_setup
+
+        require(self.user, Action.STRESS_PROPOSE)
+        return stress_setup.draft_narratives(self.repo, self.actor)
+
     def seed_stress_library(self, note: str = "") -> dict[str, Any]:
         """Store the built-in library as approved version 1 and start its review clock."""
         from novera.workflows import stress_setup

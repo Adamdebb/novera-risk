@@ -441,6 +441,15 @@ def draft_crises(repo: DuckDBRepository, actor: str) -> list[dict[str, Any]]:
     ]
 
 
+def draft_narratives(repo: DuckDBRepository, actor: str) -> list[dict[str, Any]]:
+    """Enter every forward-looking narrative of the starter set the library does not hold yet as
+    an INFORMATION draft from ``actor`` (decision 47d); the approver judges each size."""
+    from novera.risk.narratives import DRAFT_NOTE, NARRATIVES
+
+    have = {r["scenario_id"] for r in repo.load_stress_scenarios()}
+    return [propose(repo, actor, n.definition(), DRAFT_NOTE) for n in NARRATIVES if n.scenario_id not in have]
+
+
 def plausibility(repo: DuckDBRepository) -> dict[str, Any]:
     """How extreme each approved scenario and each draft is (MR-018): z-score, exceedance,
     correlation z-score, anchor detail, and the risk ruler that places scenarios and the stored
