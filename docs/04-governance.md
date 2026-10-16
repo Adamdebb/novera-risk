@@ -32,6 +32,14 @@ two-year historical VaR and a stressed VaR on limits, a hedge fund a 95% exponen
 weighted one-year VaR. Every change names an actor and is audited; every run records the
 matrix it produced, so a stored run is read and re-run on its own matrix, never on today's.
 
+## The stress library
+Stress scenarios are versioned records (OPS-005). Every change is a draft, and a second person
+approves it: the Head of Market Risk or the CRO, never the proposer. Only approved versions run.
+Risk Control and the heads of risk propose any scenario. Desk and business heads propose
+information scenarios for their area. A scenario either feeds the stress-loss limits (LIMIT) or
+is reported only (INFORMATION). Each is due for review every three months; an overdue one still
+runs and the run's data-quality report names it. Every run records the definitions it ran.
+
 ## Sign-off and release
 After a run persists, named people sign the metrics the firm's policy requires (OPS-003).
 The value seen is frozen with the signature, every sign, rejection and policy change is an

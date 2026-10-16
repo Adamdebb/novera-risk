@@ -210,3 +210,12 @@ def test_admin_runs_configuration_offers_the_full_run(app):
     next(r for r in app.radio if r.label == "What to run").set_value("One stage of a stored run").run()
     assert not app.exception, [e.value for e in app.exception]
     assert any("Re-runs so far" in h.value for h in app.subheader)
+
+
+def test_admin_stress_scenarios_configuration(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Admin").run()
+    next(sb for sb in app.selectbox if sb.label == "Configuration").set_value("Stress scenarios").run()
+    assert not app.exception, [e.value for e in app.exception]
+    labels = {m.label for m in app.metric}
+    assert {"In the daily run", "Feed limits", "Information", "Open drafts", "Reviews overdue"} <= labels
+    assert any("Approved scenarios" in h.value for h in app.subheader)

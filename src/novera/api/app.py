@@ -157,6 +157,27 @@ class VarSetupBody(BaseModel):
     comment: str = ""
 
 
+class StressProposalBody(BaseModel):
+    definition: s.StressDefinitionSpec
+    note: str = ""
+
+
+class StressDecisionBody(BaseModel):
+    scenario_id: str
+    version: int
+    approve: bool
+    note: str = ""
+
+
+class StressReviewBody(BaseModel):
+    scenario_id: str
+    note: str = ""
+
+
+class StressSeedBody(BaseModel):
+    note: str = ""
+
+
 class VarTemplateBody(BaseModel):
     template: str
     comment: str = ""
@@ -494,6 +515,31 @@ def var_setup(svc: RiskService = Depends(service)):
 @app.post("/admin/var/setup", response_model=s.VarSetup)
 def set_var_setup(body: VarSetupBody, svc: RiskWriteService = Depends(write_service)):
     return svc.set_var_setup([m.model_dump() for m in body.measures], body.comment)
+
+
+@app.get("/admin/stress/setup", response_model=s.StressSetup)
+def stress_setup(svc: RiskService = Depends(service)):
+    return svc.stress_setup()
+
+
+@app.post("/admin/stress/proposals", response_model=s.StressScenarioVersion)
+def propose_stress_scenario(body: StressProposalBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.propose_stress_scenario(body.definition.model_dump(), body.note)
+
+
+@app.post("/admin/stress/decisions", response_model=s.StressScenarioVersion)
+def decide_stress_scenario(body: StressDecisionBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.decide_stress_scenario(body.scenario_id, body.version, body.approve, body.note)
+
+
+@app.post("/admin/stress/reviews", response_model=s.StressScenarioVersion)
+def review_stress_scenario(body: StressReviewBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.review_stress_scenario(body.scenario_id, body.note)
+
+
+@app.post("/admin/stress/seed", response_model=s.StressSetup)
+def seed_stress_library(body: StressSeedBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.seed_stress_library(body.note)
 
 
 @app.post("/admin/var/template", response_model=s.VarSetup)

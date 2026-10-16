@@ -774,3 +774,52 @@ def test_risk_by_region_and_country(client):
         for geo_c in (r["country"] for r in dm)
     )
     assert client.get("/runs/latest/stress", params={"by": "region"}).json()
+
+
+def test_stress_setup_endpoints(client, tokens):
+    """OPS-005 over HTTP: the library, a four-eyes proposal and decision, a review, and the
+    run's stress rows carrying the goal of each scenario."""
+    st = client.get("/admin/stress/setup").json()
+    assert st["record"] == "OPS-005" and st["summary"]["limit"] == st["summary"]["in_daily_run"]
+    assert "HYPOTHETICAL" in st["options"]["kinds"] and "CROWDING" in st["options"]["tags"]
+    definition = {
+        "scenario_id": "em_fx_selloff",
+        "name": "EM FX sell-off",
+        "kind": "HYPOTHETICAL",
+        "goal": "INFORMATION",
+        "rules": [{"prefix": "FX:USDMXN", "size": 0.12}, {"prefix": "FX:USDZAR", "size": 0.15}],
+        "tags": ["FX"],
+    }
+    assert client.post("/admin/stress/proposals", json={"definition": definition}).status_code == 401
+    bad = client.post(
+        "/admin/stress/proposals",
+        json={"definition": {**definition, "rules": [{"prefix": "NOPE:", "size": 0.1}]}},
+        **as_(tokens, "risk-control"),
+    )
+    assert bad.status_code == 409 and "matches no risk factor" in bad.json()["detail"]
+    r = client.post(
+        "/admin/stress/proposals",
+        json={"definition": definition, "note": "EM desk asked"},
+        **as_(tokens, "risk-control"),
+    )
+    assert (
+        r.status_code == 200 and r.json()["status"] == "DRAFT" and r.json()["proposed_by"] == "Risk Control"
+    )
+    body = {"scenario_id": "em_fx_selloff", "version": 1, "approve": True}
+    assert client.post("/admin/stress/decisions", json=body, **as_(tokens, "risk-control")).status_code == 403
+    ok = client.post("/admin/stress/decisions", json=body, **as_(tokens, "head-of-market-risk"))
+    assert ok.status_code == 200 and ok.json()["status"] == "APPROVED" and ok.json()["review_due"]
+    rv = client.post("/admin/stress/reviews", json={"scenario_id": "em_fx_selloff"}, **as_(tokens, "cro"))
+    assert rv.status_code == 200 and rv.json()["reviewed_by"] == "CRO"
+    st = client.get("/admin/stress/setup").json()
+    assert st["source"] == "stored" and st["summary"]["information"] == 1
+    events = client.get("/audit", params={"subject": "stress_setup"}).json()
+    assert {"STRESS_LIBRARY_SEEDED", "STRESS_SCENARIO_APPROVED", "STRESS_SCENARIO_REVIEWED"} <= {
+        e["event_type"] for e in events
+    }
+    # The stored run predates the change: its rows say every scenario fed limits.
+    rows = client.get("/runs/latest/stress", params={"by": "asset_class"}).json()
+    assert rows and {x["goal"] for x in rows} == {"LIMIT"}
+    lib = client.get("/reference/stress-library").json()
+    hyp = next(c for c in lib["categories"] if c["category"] == "HYPOTHETICAL")["scenarios"]
+    assert next(s for s in hyp if s["scenario_id"] == "em_fx_selloff")["goal"] == "INFORMATION"

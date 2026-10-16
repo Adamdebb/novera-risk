@@ -191,6 +191,21 @@ CREATE TABLE IF NOT EXISTS var_setup (
     actor VARCHAR NOT NULL,
     updated_at VARCHAR NOT NULL
 );
+CREATE TABLE IF NOT EXISTS stress_scenario (
+    scenario_id VARCHAR NOT NULL,
+    version INTEGER NOT NULL,
+    status VARCHAR NOT NULL,
+    definition JSON NOT NULL,
+    proposed_by VARCHAR NOT NULL,
+    proposed_at VARCHAR NOT NULL,
+    decided_by VARCHAR,
+    decided_at VARCHAR,
+    note VARCHAR,
+    review_due DATE,
+    reviewed_by VARCHAR,
+    reviewed_at VARCHAR,
+    PRIMARY KEY (scenario_id, version)
+);
 CREATE TABLE IF NOT EXISTS signoff_policy (
     metric_id VARCHAR PRIMARY KEY,
     required BOOLEAN NOT NULL,
@@ -1183,6 +1198,48 @@ class DuckDBRepository:
         ]
         rows = self._conn.execute(f"SELECT {', '.join(cols)} FROM var_setup ORDER BY position").fetchall()
         return [dict(zip(cols, r, strict=True)) for r in rows]
+
+    _STRESS_COLS = (
+        "scenario_id",
+        "version",
+        "status",
+        "definition",
+        "proposed_by",
+        "proposed_at",
+        "decided_by",
+        "decided_at",
+        "note",
+        "review_due",
+        "reviewed_by",
+        "reviewed_at",
+    )
+
+    def save_stress_scenarios(self, rows: list[dict]) -> None:
+        """Insert or replace scenario versions (OPS-005); ``definition`` is a dict."""
+        self._conn.executemany(
+            f"INSERT OR REPLACE INTO stress_scenario VALUES ({', '.join('?' * len(self._STRESS_COLS))})",
+            [
+                tuple(
+                    json.dumps(r["definition"], default=str) if c == "definition" else r.get(c)
+                    for c in self._STRESS_COLS
+                )
+                for r in rows
+            ],
+        )
+
+    def load_stress_scenarios(self) -> list[dict]:
+        """Every stored version of every scenario, oldest version first."""
+        if not self._has_table("stress_scenario"):
+            return []
+        rows = self._conn.execute(
+            f"SELECT {', '.join(self._STRESS_COLS)} FROM stress_scenario ORDER BY scenario_id, version"
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(zip(self._STRESS_COLS, r, strict=True))
+            d["definition"] = json.loads(d["definition"])
+            out.append(d)
+        return out
 
     def save_signoff_policy(self, rows: list[dict]) -> None:
         self._conn.executemany(

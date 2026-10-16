@@ -38,6 +38,11 @@ var_setup_app = typer.Typer(
     no_args_is_help=True, help="The VaR measures produced daily, for limits or information (OPS-004)."
 )
 app.add_typer(var_setup_app, name="var-setup")
+stress_setup_app = typer.Typer(
+    no_args_is_help=True,
+    help="The stress scenario library: versions, four-eyes approval, LIMIT or INFORMATION (OPS-005).",
+)
+app.add_typer(stress_setup_app, name="stress-setup")
 
 
 @app.callback()
@@ -314,17 +319,16 @@ def risk(
     from novera.pricing.collateral import CollateralMap
     from novera.pricing.valuation import value_portfolio
     from novera.risk import (
-        HYPOTHETICAL_LIBRARY,
         Portfolio,
         compare,
         compute_sensitivities,
         historical_var,
-        run_stress,
         stress_table,
         taylor_var,
     )
-    from novera.risk.stress import historical_episodes
+    from novera.risk.stress_definitions import run_stress_definitions
     from novera.storage.duckdb_repository import DuckDBRepository
+    from novera.workflows.stress_setup import definitions_for_run
 
     if workers:
         os.environ["NOVERA_WORKERS"] = str(workers)
@@ -339,6 +343,7 @@ def risk(
         universe = {f.factor_id: f for f in repo.load_risk_factors()}
         hist = MarketHistory.from_long(repo.load_market_history())
         episodes = repo.load_market_episodes()
+        definitions = definitions_for_run(repo)
         limits = repo.load_limits(on=market.as_of)
         collateral = CollateralMap.from_reference(*repo.load_netting_sets())
     m = 1e6
@@ -377,13 +382,13 @@ def risk(
     typer.echo("  Largest DV01 books (k per bp):")
     for (desk, ccy), _ in dv.abs().sort_values(ascending=False).head(4).items():
         typer.echo(f"    {desk:<16}{ccy}  {dv[(desk, ccy)] / 1e3:>9,.1f}")
-    scen = list(HYPOTHETICAL_LIBRARY) + historical_episodes(hist, episodes)
-    st = run_stress(pf, scen, hist)
+    sr = run_stress_definitions(pf, hist, definitions, episodes)
+    st = sr.results
     typer.echo("  Stress (m):")
     for _, r in stress_table(st, val).head(6).iterrows():
         typer.echo(f"    {r['name']:<28} {r['total'] / m:>9.1f}")
     if limits:
-        table = monitor(limits, RiskInputs(val, sens, hs, st), market.as_of)
+        table = monitor(limits, RiskInputs(val, sens, hs, sr.limit_results), market.as_of)
         counts = table["status"].value_counts().to_dict()
         typer.echo(f"  Limits: {len(table)} monitored — " + ", ".join(f"{k} {v}" for k, v in counts.items()))
         for _, r in table[table.status.isin(["BREACH", "WARNING"])].iterrows():
@@ -665,6 +670,92 @@ def var_setup_template(
     """Replace the VaR setup with a template; the next EOD run produces those measures."""
     st = _write(fund, actor, lambda svc: svc.apply_var_template(name, comment))
     _print_var_setup(st)
+
+
+def _print_stress_setup(st: dict) -> None:
+    sm = st["summary"]
+    typer.echo(
+        f"Stress library ({st['source']}): {sm['in_daily_run']} in the daily run, {sm['limit']} feed limits, "
+        f"{sm['information']} information, {sm['drafts']} drafts, {sm['review_overdue']} reviews overdue "
+        f"(business date {st['business_date']})"
+    )
+    for s_ in st["scenarios"]:
+        flags = "" if s_["enabled"] else " (disabled)"
+        flags += " REVIEW OVERDUE" if s_["review_overdue"] else ""
+        typer.echo(
+            f"  {s_['scenario_id']:<26} v{s_['version']:<3} {s_['goal']:<12} {s_['kind']:<13} "
+            f"due {s_['review_due'] or '-':<10} {s_['name']}{flags}"
+        )
+    for d in st["drafts"]:
+        typer.echo(
+            f"  DRAFT {d['scenario_id']} v{d['version']} {d['goal']} by {d['proposed_by']}: {d['note'] or ''}"
+        )
+
+
+@stress_setup_app.command("show")
+def stress_setup_show(fund: bool = typer.Option(False)) -> None:
+    """Show the approved scenarios, their goal, version and review date, and open drafts."""
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        _print_stress_setup(RiskService(repo).stress_setup())
+
+
+@stress_setup_app.command("seed")
+def stress_setup_seed(
+    actor: str = typer.Option("head-of-market-risk", help="Head of Market Risk or CRO adopts the built-ins"),
+    note: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Store the built-in library as approved version 1 and start its review clock."""
+    _print_stress_setup(_write(fund, actor, lambda svc: svc.seed_stress_library(note)))
+
+
+@stress_setup_app.command("propose")
+def stress_setup_propose(
+    file: str = typer.Argument(..., help="JSON file with one scenario definition"),
+    actor: str = typer.Option(..., help="Risk Control, a head of risk, or a desk or business head"),
+    note: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Propose a new scenario or a new version of one, as a DRAFT for a second person to decide."""
+    import json
+
+    path = Path(file)
+    if not path.exists():
+        raise typer.BadParameter(f"no such file {file}")
+    definition = json.loads(path.read_text())
+    d = _write(fund, actor, lambda svc: svc.propose_stress_scenario(definition, note))
+    typer.echo(f"DRAFT {d['scenario_id']} v{d['version']} ({d['goal']}) proposed by {d['proposed_by']}")
+
+
+@stress_setup_app.command("decide")
+def stress_setup_decide(
+    scenario_id: str = typer.Argument(...),
+    version: int = typer.Argument(...),
+    approve: bool = typer.Option(..., "--approve/--reject"),
+    actor: str = typer.Option(..., help="Head of Market Risk or CRO, never the proposer"),
+    note: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Approve or reject a draft (four eyes)."""
+    d = _write(fund, actor, lambda svc: svc.decide_stress_scenario(scenario_id, version, approve, note))
+    typer.echo(f"{d['scenario_id']} v{d['version']} {d['status']} by {d['decided_by']}")
+
+
+@stress_setup_app.command("review")
+def stress_setup_review(
+    scenario_id: str = typer.Argument(...),
+    actor: str = typer.Option(..., help="Head of Market Risk or CRO"),
+    note: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Confirm an approved scenario still fits; the next review falls due three months on."""
+    d = _write(fund, actor, lambda svc: svc.review_stress_scenario(scenario_id, note))
+    typer.echo(
+        f"{d['scenario_id']} v{d['version']} reviewed by {d['reviewed_by']}; next due {d['review_due']}"
+    )
 
 
 @breach_app.command("list")

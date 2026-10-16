@@ -193,7 +193,12 @@ def build_pack(repo: DuckDBRepository, run_id: str | None, out_dir: Path, pdf: b
         ),
         (
             "Stress",
-            _table(stress[["name", "kind", "total"]] if len(stress) else stress, money_cols=("total",)),
+            _table(
+                stress[[c for c in ("name", "kind", "goal", "total") if c in stress.columns]]
+                if len(stress)
+                else stress,
+                money_cols=("total",),
+            ),
         ),
         (
             "Limits: breaches and warnings",

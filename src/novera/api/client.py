@@ -76,6 +76,13 @@ class RiskClient(Protocol):
     def var_setup(self) -> dict[str, Any]: ...
     def set_var_setup(self, measures: list[dict[str, Any]], comment: str = "") -> dict[str, Any]: ...
     def apply_var_template(self, template: str, comment: str = "") -> dict[str, Any]: ...
+    def stress_setup(self) -> dict[str, Any]: ...
+    def propose_stress_scenario(self, definition: dict[str, Any], note: str = "") -> dict[str, Any]: ...
+    def decide_stress_scenario(
+        self, scenario_id: str, version: int, approve: bool, note: str = ""
+    ) -> dict[str, Any]: ...
+    def review_stress_scenario(self, scenario_id: str, note: str = "") -> dict[str, Any]: ...
+    def seed_stress_library(self, note: str = "") -> dict[str, Any]: ...
     def rerun_stage(self, run_id: str, stage: str, reason: str = "") -> dict[str, Any]: ...
     def me(self) -> dict[str, Any]: ...
     def users(self) -> list[dict[str, Any]]: ...
@@ -96,6 +103,10 @@ WRITE_METHODS = {
     "set_signoff_policy",
     "set_var_setup",
     "apply_var_template",
+    "propose_stress_scenario",
+    "decide_stress_scenario",
+    "review_stress_scenario",
+    "seed_stress_library",
     "propose_limit_recalibration",
     "decide_limit_draft",
 }
@@ -339,6 +350,27 @@ class HttpClient:
 
     def apply_var_template(self, template, comment=""):
         return self._post("/admin/var/template", template=template, comment=comment)
+
+    def stress_setup(self):
+        return self._get("/admin/stress/setup")
+
+    def propose_stress_scenario(self, definition, note=""):
+        return self._post("/admin/stress/proposals", definition=dict(definition), note=note)
+
+    def decide_stress_scenario(self, scenario_id, version, approve, note=""):
+        return self._post(
+            "/admin/stress/decisions",
+            scenario_id=scenario_id,
+            version=int(version),
+            approve=bool(approve),
+            note=note,
+        )
+
+    def review_stress_scenario(self, scenario_id, note=""):
+        return self._post("/admin/stress/reviews", scenario_id=scenario_id, note=note)
+
+    def seed_stress_library(self, note=""):
+        return self._post("/admin/stress/seed", note=note)
 
     def rerun_stage(self, run_id, stage, reason=""):
         return self._post("/admin/rerun", run_id=run_id, stage=stage, reason=reason)

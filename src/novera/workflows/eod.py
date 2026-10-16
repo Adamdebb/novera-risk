@@ -42,7 +42,6 @@ from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import value_portfolio
 from novera.regulatory import run_regulatory
 from novera.risk import (
-    HYPOTHETICAL_LIBRARY,
     Portfolio,
     VaRConfig,
     compute_sensitivities,
@@ -52,9 +51,7 @@ from novera.risk import (
     liquidity,
     live_backtest,
     look_through,
-    run_stress,
     static_backtest,
-    stress_table,
 )
 from novera.risk import sensitivities as sens_mod
 from novera.risk import stress as stress_mod
@@ -65,7 +62,7 @@ from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
 from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
-from novera.risk.stress import historical_episodes
+from novera.risk.stress_definitions import run_stress_definitions, stress_headline
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
@@ -99,6 +96,9 @@ class EODConfig:
     """The VaR measures to produce (OPS-004); None reads the stored setup, or the defaults."""
     workers: int | None = None
     include_historical_stress: bool = True
+    stress_scenarios: list[dict[str, Any]] | None = None
+    """The stress definitions to run (OPS-005); None reads the approved library, or the
+    built-ins. The run records the definitions it ran, with the dates historical ones replayed."""
     pnl_abs_tolerance: float = 50_000.0
     actor: str = "eod-scheduler"
     alerts: bool = True  # False only for a limit-calibration dry run (decision 40.2): never dispatch
@@ -113,6 +113,7 @@ class EODConfig:
             "var": self.var.__dict__,
             "var_measures": self.var_measures,
             "include_historical_stress": self.include_historical_stress,
+            "stress_scenarios": self.stress_scenarios,
             "pnl_abs_tolerance": self.pnl_abs_tolerance,
             "counterparty": self.counterparty,
             "regulatory": self.regulatory,
@@ -185,6 +186,10 @@ def run_eod(
 
         cfg = replace(cfg, var_measures=[m.to_dict() for m in measures_for_run(repo)])
     measures = [VaRMeasure.from_dict(m) for m in cfg.var_measures or []]
+    if cfg.stress_scenarios is None:
+        from novera.workflows.stress_setup import definitions_for_run
+
+        cfg = replace(cfg, stress_scenarios=definitions_for_run(repo))
     timings: dict[str, float] = {}
     events: list[AuditEvent] = []
 
@@ -268,15 +273,21 @@ def run_eod(
         bt_live = live_backtest(repo.list_runs(run_type="EOD", limit=1000) + [], headline.measure.confidence)
         bt_history = history_backtest(pf, sens, history, market.as_of, headline.measure.confidence)
     with _timed(timings, "stress"):
-        scenarios = list(HYPOTHETICAL_LIBRARY)
-        if cfg.include_historical_stress:
-            scenarios += historical_episodes(history, repo.load_market_episodes())
-        stress = run_stress(pf, scenarios, history)
+        st_run = run_stress_definitions(
+            pf,
+            history,
+            cfg.stress_scenarios or [],
+            repo.load_market_episodes(),
+            cfg.include_historical_stress,
+        )
+        stress, limit_stress = st_run.results, st_run.limit_results
+        run.config["stress_scenarios"] = st_run.recorded
+        dq.findings += st_run.findings(market.as_of)
     with _timed(timings, "limits"):
         limit_table = (
             monitor(
                 limits,
-                RiskInputs(val.table, sens, hs, stress, limit_var=var_set.limit_inputs()),
+                RiskInputs(val.table, sens, hs, limit_stress, limit_var=var_set.limit_inputs()),
                 market.as_of,
                 base_amounts,
                 increase_ids,
@@ -354,8 +365,7 @@ def run_eod(
     sync = sync_breaches(repo, run.run_id, market.as_of, first_pass) if persist else None
     if sync is not None:
         events += sync.events
-    st = stress_table(stress, val.table)
-    worst = st.iloc[0] if len(st) else None
+    worst_summary = stress_headline(stress, limit_stress, val.table)
     run.summary = {
         "owner": run.summary.get("owner"),
         "pv": pf.total_pv,
@@ -371,9 +381,7 @@ def run_eod(
         "liquidity_flags": len(liq.flags),
         "lookthrough_flags": len(lookthrough.flags),
         "fund_holdings": int(lookthrough.holdings["trade_id"].nunique()) if len(lookthrough.holdings) else 0,
-        "worst_stress_id": worst["scenario_id"] if worst is not None else None,
-        "worst_stress_name": worst["name"] if worst is not None else None,
-        "worst_stress": float(worst["total"]) if worst is not None else None,
+        **worst_summary,
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
@@ -489,7 +497,7 @@ def run_eod(
                         val.table,
                         sens,
                         hs,
-                        stress,
+                        limit_stress,
                         counterparty_pfe=pfe,
                         fund_metrics=fund_metrics,
                         limit_var=var_set.limit_inputs(),
@@ -650,16 +658,23 @@ def persist_var(repo, rid: str, var_set: MeasureSet, runs_dir: Path | None = Non
         chal.result.pnl.to_parquet(d / "var_pnl_delta_gamma_vega.parquet")
 
 
-def persist_stress(repo, rid: str, stress: list) -> None:
-    stress_rows = pd.concat(
-        [
-            r.pnl.rename("pnl")
-            .reset_index()
-            .rename(columns={"index": "trade_id"})
-            .assign(scenario_id=r.scenario.scenario_id)
-            for r in stress
-        ],
-        ignore_index=True,
+def persist_stress(repo, rid: str, stress: list, recorded: list | None = None) -> None:
+    """Scenario P&L by trade, and one summary row per scenario with the goal and version of
+    the definition the run ran (OPS-005)."""
+    meta = {d["scenario_id"]: d for d in recorded or []}
+    stress_rows = (
+        pd.concat(
+            [
+                r.pnl.rename("pnl")
+                .reset_index()
+                .rename(columns={"index": "trade_id"})
+                .assign(scenario_id=r.scenario.scenario_id)
+                for r in stress
+            ],
+            ignore_index=True,
+        )
+        if stress
+        else pd.DataFrame(columns=["scenario_id", "trade_id", "pnl"])  # every scenario disabled
     )
     repo.save_run_frame(rid, "stress", stress_rows[["scenario_id", "trade_id", "pnl"]])
     repo.save_run_frame(
@@ -673,9 +688,13 @@ def persist_stress(repo, rid: str, stress: list) -> None:
                     "kind": r.scenario.kind,
                     "description": r.scenario.description,
                     "total": r.total,
+                    "goal": meta.get(r.scenario.scenario_id, {}).get("goal", "LIMIT"),
+                    "version": int(meta.get(r.scenario.scenario_id, {}).get("version") or 1),
+                    "source": meta.get(r.scenario.scenario_id, {}).get("source", "BUILT_IN"),
                 }
                 for r in stress
-            ]
+            ],
+            columns=["scenario_id", "name", "kind", "description", "total", "goal", "version", "source"],
         ),
     )
 
@@ -739,7 +758,7 @@ def _persist(
     repo.save_run_frame(rid, "valuation", valuation)
     repo.save_run_frame(rid, "sensitivities", sens)
     persist_var(repo, rid, var_set, runs_dir)
-    persist_stress(repo, rid, stress)
+    persist_stress(repo, rid, stress, run.config.get("stress_scenarios"))
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

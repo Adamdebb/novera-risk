@@ -98,7 +98,16 @@ class RunFigures(ApiModel):
     fund_holdings: int | None = None
     worst_stress_id: str | None = None
     worst_stress_name: str | None = None
-    worst_stress: float | None = None
+    worst_stress: float | None = Field(
+        default=None, description="Worst loss of the scenarios that feed limits"
+    )
+    worst_stress_all_id: str | None = None
+    worst_stress_all_name: str | None = None
+    worst_stress_all: float | None = Field(
+        default=None, description="Worst loss of every scenario the run produced, information included"
+    )
+    stress_scenarios: int | None = None
+    stress_limit_scenarios: int | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -253,6 +262,12 @@ class StressRow(Row):
     kind: str
     description: str | None = None
     total: float
+    goal: str | None = Field(
+        default=None,
+        description="LIMIT (feeds stress-loss limits) or INFORMATION; absent on runs before OPS-005",
+    )
+    version: int | None = None
+    source: str | None = Field(default=None, description="BUILT_IN or USER")
 
 
 class PnLStep(ApiModel):
@@ -637,6 +652,83 @@ class VarSetup(ApiModel):
     base_window_days: int
 
 
+class StressRuleSpec(ApiModel):
+    """One shock rule of a hypothetical scenario, in engine units (MR-005)."""
+
+    prefix: str = Field(description="Factor id or family prefix, e.g. IR:USD: or EQIDX:SPX")
+    size: float = Field(
+        default=0.0, description="Decimal for rates (0.01 = +100bp), bp for CDS, fraction for prices"
+    )
+    vol_points: float | None = Field(
+        default=None, description="Absolute vol points for VOL: surfaces (0.10 = +10)"
+    )
+    tenor_filter: list[str] | None = Field(default=None, description="Curve nodes the rule is limited to")
+
+
+class StressDefinitionSpec(ApiModel):
+    """A stress scenario as proposed: what it shocks and how it is governed (OPS-005)."""
+
+    scenario_id: str
+    name: str
+    kind: str = Field(description="HYPOTHETICAL or HISTORICAL")
+    goal: str = Field(default="INFORMATION", description="LIMIT or INFORMATION")
+    description: str = ""
+    rules: list[StressRuleSpec] = Field(default_factory=list)
+    episode_id: str | None = Field(default=None, description="HISTORICAL: a stylised episode of the history")
+    window_start: str | None = Field(default=None, description="HISTORICAL: fixed window start, YYYY-MM-DD")
+    window_end: str | None = None
+    enabled: bool = True
+    tags: list[str] = Field(default_factory=list)
+    severity: str = "SEVERE"
+    narrative: str = ""
+    catalyst: str = ""
+    area: str | None = Field(default=None, description="Desk or business the scenario was written for")
+
+
+class StressScenarioVersion(StressDefinitionSpec):
+    """One version of a scenario with its approval and review state."""
+
+    version: int
+    source: str
+    position: int
+    resolved_window: list[str] | None = None
+    status: str = Field(description="DRAFT, APPROVED, REJECTED or SUPERSEDED")
+    proposed_by: str | None = None
+    proposed_at: str | None = None
+    decided_by: str | None = None
+    decided_at: str | None = None
+    note: str | None = None
+    review_due: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    review_overdue: bool = False
+
+
+class StressSetupOptions(ApiModel):
+    goals: list[str]
+    kinds: list[str]
+    severities: list[str]
+    tags: list[str]
+    episodes: list[str]
+
+
+class StressSetup(ApiModel):
+    """The stress scenario library: approved versions in run order, open drafts and decided
+    history. Record OPS-005."""
+
+    record: str
+    source: str = Field(description="stored, or defaults when the built-in library has not been stored")
+    business_date: str
+    review_months: int
+    scenarios: list[StressScenarioVersion]
+    drafts: list[StressScenarioVersion]
+    history: list[StressScenarioVersion]
+    summary: dict[str, int]
+    options: StressSetupOptions
+    history_start: str | None = None
+    history_end: str | None = None
+
+
 class JobRecord(ApiModel):
     job_id: str
     started_at: str
@@ -717,6 +809,13 @@ class StressScenarioSpec(ApiModel):
     shock_count: int
     real_share: float | None = None
     note: str | None = None
+    goal: str | None = Field(default=None, description="LIMIT or INFORMATION (OPS-005)")
+    version: int | None = None
+    source: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    severity: str | None = None
+    enabled: bool | None = None
+    review_due: str | None = None
 
 
 class StressCategory(ApiModel):
@@ -1817,6 +1916,8 @@ class FundReport(ApiModel):
     es: float | None = None
     worst_stress: float | None = None
     worst_stress_name: str | None = None
+    worst_stress_all: float | None = None
+    worst_stress_all_name: str | None = None
     exposure_strategy: list[ExposureRow] = Field(default_factory=list)
     exposure_asset_class: list[ExposureRow] = Field(default_factory=list)
     margin_pb: list[MarginByBroker] = Field(default_factory=list)

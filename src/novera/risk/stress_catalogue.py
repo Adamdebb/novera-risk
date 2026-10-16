@@ -14,12 +14,8 @@ from novera.market_data.crises import CRISES
 from novera.market_data.history import MarketHistory
 from novera.market_data.risk_factors import RiskFactor
 from novera.risk.scenarios import episode_shocks
-from novera.risk.stress import (
-    HYPOTHETICAL_LIBRARY,
-    ShockRule,
-    StressScenario,
-    historical_episodes,
-)
+from novera.risk.stress import ShockRule, StressScenario
+from novera.risk.stress_definitions import built_in_definitions, episode_windows
 
 RECORD = "MR-005"
 
@@ -193,14 +189,34 @@ def _scenario_row(
     }
 
 
+def _governance(row: dict[str, Any] | None) -> dict[str, Any]:
+    """Goal, version and review facts of a stored definition (OPS-005) for a library row."""
+    if row is None:
+        return {}
+    d = row["definition"]
+    due = row.get("review_due")
+    due_s = due.isoformat() if isinstance(due, date) else due
+    return {
+        "goal": d.goal,
+        "version": d.version,
+        "source": d.source,
+        "tags": list(d.tags),
+        "severity": d.severity,
+        "enabled": d.enabled,
+        "review_due": due_s,
+    }
+
+
 def stress_library(
     history: MarketHistory | None,
     universe: list[RiskFactor],
     provenance: pd.DataFrame | None = None,
     episodes: dict[str, tuple[date, date]] | None = None,
+    definitions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The library by category. ``history`` may hold only the headline factors; its dates
-    decide which historical windows are covered."""
+    decide which historical windows are covered. ``definitions`` are the approved versions of
+    the stored library (``stress_setup.active``); without them the built-ins are listed."""
     by_id = {f.factor_id: f for f in universe}
     dates = history.dates if history is not None else []
     first, last = (dates[0], dates[-1]) if dates else (None, None)
@@ -208,20 +224,35 @@ def stress_library(
         int(provenance["factor_id"].nunique()) if provenance is not None and not provenance.empty else 0
     )
 
-    hypothetical = [
-        _scenario_row(sc, "HYPOTHETICAL", True, "IN_RUN", [describe_rule(r) for r in sc.rules])
-        for sc in HYPOTHETICAL_LIBRARY
-    ]
-
+    if definitions is None:
+        windows = episode_windows(history, episodes) if history is not None else {}
+        definitions = [{"definition": d, "review_due": None} for d in built_in_definitions(list(windows))]
+    hypothetical = []
     stylised = []
-    if history is not None and dates:
-        for sc in historical_episodes(history, episodes):
-            assert sc.episode is not None
-            stylised.append(
+    windows = episode_windows(history, episodes) if history is not None and dates else {}
+    for row in definitions:
+        d = row["definition"]
+        status = "IN_RUN" if d.enabled else "DISABLED"
+        gov = _governance(row)
+        if d.kind == "HYPOTHETICAL":
+            sc = d.to_scenario()
+            hypothetical.append(
                 _scenario_row(
-                    sc, "STYLISED_HISTORICAL", True, "IN_RUN", _window_shocks(history, *sc.episode, by_id)
+                    sc, "HYPOTHETICAL", d.enabled, status, [describe_rule(r) for r in sc.rules], **gov
                 )
             )
+            continue
+        w = windows.get(d.episode_id) if d.episode_id else None
+        if w is None and d.window_start and d.window_end:
+            w = (date.fromisoformat(d.window_start), date.fromisoformat(d.window_end))
+        if w is None or history is None:
+            continue
+        sc = d.to_scenario(w)
+        stylised.append(
+            _scenario_row(
+                sc, "STYLISED_HISTORICAL", d.enabled, status, _window_shocks(history, *w, by_id), **gov
+            )
+        )
 
     crises = []
     for sid, name, start, end in CRISES:

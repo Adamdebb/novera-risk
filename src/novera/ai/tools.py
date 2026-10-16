@@ -148,14 +148,17 @@ def build_tools(db_path: str) -> list[Tool]:
             r = s.resolve(run_id)
             rows = s.stress(r.run_id, by=by, desk_id=desk_id)
         out = []
+        meta = ("scenario_id", "name", "kind", "description", "total", "goal", "version", "source")
         for x in rows:
-            groups = {
-                k: _m(v)
-                for k, v in x.items()
-                if k not in ("scenario_id", "name", "kind", "description", "total")
-            }
+            groups = {k: _m(v) for k, v in x.items() if k not in meta}
             out.append(
-                {"scenario": x["name"], "kind": x["kind"], "total_m": _m(x["total"]), f"by_{by}_m": groups}
+                {
+                    "scenario": x["name"],
+                    "kind": x["kind"],
+                    "goal": x.get("goal") or "LIMIT",  # LIMIT feeds stress-loss limits (OPS-005)
+                    "total_m": _m(x["total"]),
+                    f"by_{by}_m": groups,
+                }
             )
         return {"run_id": r.run_id, "scenarios": out}
 

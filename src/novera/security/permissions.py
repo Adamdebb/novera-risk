@@ -25,6 +25,9 @@ class Action(StrEnum):
     SIGN_METRIC = "sign or reject a metric"
     SIGNOFF_POLICY = "change the sign-off policy"
     VAR_SETUP = "change the VaR setup"
+    STRESS_PROPOSE = "propose a stress scenario"
+    STRESS_DECIDE = "approve or reject a stress scenario"
+    STRESS_REVIEW = "review a stress scenario"
     LIMIT_RECALIBRATE = "propose a limit recalibration"
     LIMIT_DRAFT_DECIDE = "decide a limit draft"
     BREACH_ACKNOWLEDGE = "acknowledge this breach"
@@ -51,6 +54,9 @@ FIRM_WIDE: dict[Action, set[Role]] = {
     Action.RERUN: _OPERATORS,
     Action.SIGNOFF_POLICY: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.VAR_SETUP: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
+    Action.STRESS_PROPOSE: {Role.RISK_CONTROL, *_HEADS_OF_RISK},
+    Action.STRESS_DECIDE: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
+    Action.STRESS_REVIEW: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.LIMIT_RECALIBRATE: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.LIMIT_DRAFT_DECIDE: _APPROVERS,
     Action.INCREASE_DECIDE: _APPROVERS,
@@ -129,3 +135,23 @@ def require_signer(user: User, signer: str, metric_id: str) -> None:
     """A run metric is signed by the role it names (OPS-003), or by the CRO."""
     if user.name != signer and user.role is not Role.CRO:
         raise _denied(user, Action.SIGN_METRIC, metric_id=metric_id, signer=signer)
+
+
+def require_stress_proposal(user: User, goal: str, current_goal: str | None) -> str | None:
+    """Who may propose a stress scenario (decision 46.2): the risk function, any goal; a desk or
+    business head, for information only and never a change to a scenario that feeds limits.
+    Returns the area a head writes for (their desks or business), None for the risk function."""
+    if user.role in FIRM_WIDE[Action.STRESS_PROPOSE]:
+        return None
+    if user.role in (Role.DESK_HEAD, Role.BUSINESS_HEAD):
+        if goal != "INFORMATION":
+            raise _denied(
+                user, Action.STRESS_PROPOSE, reason="desk and business heads propose INFORMATION scenarios"
+            )
+        if current_goal == "LIMIT":
+            raise _denied(
+                user, Action.STRESS_PROPOSE, reason="the scenario feeds limits; the risk function changes it"
+            )
+        area = user.businesses if user.role is Role.BUSINESS_HEAD and user.businesses else user.desks
+        return ",".join(area) if area else None
+    raise _denied(user, Action.STRESS_PROPOSE)

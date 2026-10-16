@@ -171,6 +171,13 @@ if page == "Overview":
     )
     c5.metric("P&L today", money(sm.get("pnl_total"), digits=2))
     c6.metric("Data quality", f"{verdict_colour} {sm['dq_verdict']}", f"{sm['dq_findings']} findings")
+    if sm.get("worst_stress_all_id") and sm.get("worst_stress_all_id") != sm.get("worst_stress_id"):
+        st.caption(
+            f"Worst stress is the worst of the {sm.get('stress_limit_scenarios')} scenarios that feed "
+            "limits. "
+            f"Of all {sm.get('stress_scenarios')} scenarios, information included, the worst is "
+            f"{sm['worst_stress_all_name']} at {money(sm['worst_stress_all'])} (OPS-005)."
+        )
 
     left, right = st.columns([3, 2])
     with left:
@@ -633,12 +640,19 @@ elif page == "Stress":
     )
     stt = df(load("stress", run_id, by=by))
     if not stt.empty:
-        cols = [c for c in stt.columns if c not in ("scenario_id", "name", "kind", "description", "total")]
-        show = stt[["name", "kind", "total", *cols]].copy()
+        meta = ["scenario_id", "name", "kind", "description", "total", "goal", "version", "source"]
+        cols = [c for c in stt.columns if c not in meta]
+        if "goal" not in stt.columns:  # runs made before the stress setup: every scenario fed limits
+            stt["goal"] = "LIMIT"
+        show = stt[["name", "kind", "goal", "total", *cols]].copy()
         for c in ["total", *cols]:
             show[c] = show[c] / M
         st.dataframe(
             show.round(1).rename(columns={"total": "total (m)"}), use_container_width=True, hide_index=True
+        )
+        st.caption(
+            "Goal LIMIT: the scenario feeds the stress-loss limits. INFORMATION: reported only, until "
+            "the risk function promotes it (OPS-005, Admin → Stress scenarios)."
         )
         pick = st.selectbox("Scenario", stt["name"])
         row = stt[stt["name"] == pick].iloc[0]
@@ -702,7 +716,7 @@ elif page == "Admin":
         "Operational configurations for risk control. Every action names an actor and is written "
         "to the audit trail. Nothing here edits a stored run."
     )
-    config = st.selectbox("Configuration", ["VaR measures", "Sign-off policy", "Runs"])
+    config = st.selectbox("Configuration", ["VaR measures", "Stress scenarios", "Sign-off policy", "Runs"])
     if config == "VaR measures":
         from novera.api.errors import ApiError
 
@@ -828,6 +842,10 @@ elif page == "Admin":
                 "- Measures sharing scenarios and compute share one P&L matrix, so an ES row next to "
                 "a VaR row costs nothing."
             )
+    elif config == "Stress scenarios":
+        from novera.ui.stress_setup import render_stress_setup
+
+        render_stress_setup(client)
     elif config == "Sign-off policy":
         from novera.api.errors import ApiError
 
@@ -1385,6 +1403,12 @@ elif page == "Fund":
     c2.metric("Gross leverage", f"{sm['gross_leverage']:.2f}x", f"net {sm['net_leverage']:.2f}x")
     c3.metric("VaR 99% 1d", f"{(fd['var'] or 0) / nav:.2%} of NAV", money(fd["var"], digits=1))
     c4.metric("Worst stress", f"{(fd['worst_stress'] or 0) / nav:.1%} of NAV", fd["worst_stress_name"])
+    if fd.get("worst_stress_all_name") and fd.get("worst_stress_all_name") != fd.get("worst_stress_name"):
+        st.caption(
+            f"Of every scenario, information included, the worst is {fd['worst_stress_all_name']} at "
+            f"{(fd['worst_stress_all'] or 0) / nav:.1%} of NAV; the figure above reads the scenarios that "
+            "feed limits (OPS-005)."
+        )
     c5.metric(
         "PB margin", f"{sm['margin_to_nav']:.1%} of NAV", f"largest broker {sm['largest_pb_share']:.0%}"
     )

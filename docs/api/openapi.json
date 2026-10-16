@@ -4756,6 +4756,28 @@
             ],
             "title": "Worst Stress"
           },
+          "worst_stress_all": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Stress All"
+          },
+          "worst_stress_all_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Stress All Name"
+          },
           "worst_stress_name": {
             "anyOf": [
               {
@@ -10028,6 +10050,28 @@
               }
             ]
           },
+          "stress_limit_scenarios": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Limit Scenarios"
+          },
+          "stress_scenarios": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Scenarios"
+          },
           "stressed_var": {
             "anyOf": [
               {
@@ -10136,7 +10180,42 @@
                 "type": "null"
               }
             ],
+            "description": "Worst loss of the scenarios that feed limits",
             "title": "Worst Stress"
+          },
+          "worst_stress_all": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Worst loss of every scenario the run produced, information included",
+            "title": "Worst Stress All"
+          },
+          "worst_stress_all_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Stress All Id"
+          },
+          "worst_stress_all_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Stress All Name"
           },
           "worst_stress_id": {
             "anyOf": [
@@ -11379,6 +11458,152 @@
         "title": "StressCategory",
         "type": "object"
       },
+      "StressDecisionBody": {
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "version",
+          "approve"
+        ],
+        "title": "StressDecisionBody",
+        "type": "object"
+      },
+      "StressDefinitionSpec": {
+        "additionalProperties": true,
+        "description": "A stress scenario as proposed: what it shocks and how it is governed (OPS-005).",
+        "properties": {
+          "area": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Desk or business the scenario was written for",
+            "title": "Area"
+          },
+          "catalyst": {
+            "default": "",
+            "title": "Catalyst",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "episode_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "HISTORICAL: a stylised episode of the history",
+            "title": "Episode Id"
+          },
+          "goal": {
+            "default": "INFORMATION",
+            "description": "LIMIT or INFORMATION",
+            "title": "Goal",
+            "type": "string"
+          },
+          "kind": {
+            "description": "HYPOTHETICAL or HISTORICAL",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "narrative": {
+            "default": "",
+            "title": "Narrative",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/StressRuleSpec"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "severity": {
+            "default": "SEVERE",
+            "title": "Severity",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "HISTORICAL: fixed window start, YYYY-MM-DD",
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "name",
+          "kind"
+        ],
+        "title": "StressDefinitionSpec",
+        "type": "object"
+      },
       "StressLibrary": {
         "additionalProperties": true,
         "description": "The stress library by category with the shocks each scenario applies, and for\nhistorical windows the realised moves of headline factors. Record MR-005.",
@@ -11416,6 +11641,41 @@
         "title": "StressLibrary",
         "type": "object"
       },
+      "StressProposalBody": {
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/StressDefinitionSpec"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "definition"
+        ],
+        "title": "StressProposalBody",
+        "type": "object"
+      },
+      "StressReviewBody": {
+        "properties": {
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario_id"
+        ],
+        "title": "StressReviewBody",
+        "type": "object"
+      },
       "StressRow": {
         "additionalProperties": true,
         "description": "One scenario; when grouped, each group's P&L is an extra field named after the group.",
@@ -11431,6 +11691,18 @@
             ],
             "title": "Description"
           },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "LIMIT (feeds stress-loss limits) or INFORMATION; absent on runs before OPS-005",
+            "title": "Goal"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -11443,9 +11715,32 @@
             "title": "Scenario Id",
             "type": "string"
           },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "BUILT_IN or USER",
+            "title": "Source"
+          },
           "total": {
             "title": "Total",
             "type": "number"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
           }
         },
         "required": [
@@ -11455,6 +11750,55 @@
           "total"
         ],
         "title": "StressRow",
+        "type": "object"
+      },
+      "StressRuleSpec": {
+        "additionalProperties": true,
+        "description": "One shock rule of a hypothetical scenario, in engine units (MR-005).",
+        "properties": {
+          "prefix": {
+            "description": "Factor id or family prefix, e.g. IR:USD: or EQIDX:SPX",
+            "title": "Prefix",
+            "type": "string"
+          },
+          "size": {
+            "default": 0.0,
+            "description": "Decimal for rates (0.01 = +100bp), bp for CDS, fraction for prices",
+            "title": "Size",
+            "type": "number"
+          },
+          "tenor_filter": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Curve nodes the rule is limited to",
+            "title": "Tenor Filter"
+          },
+          "vol_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Absolute vol points for VOL: surfaces (0.10 = +10)",
+            "title": "Vol Points"
+          }
+        },
+        "required": [
+          "prefix"
+        ],
+        "title": "StressRuleSpec",
         "type": "object"
       },
       "StressScenarioSpec": {
@@ -11467,6 +11811,29 @@
           "description": {
             "title": "Description",
             "type": "string"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "LIMIT or INFORMATION (OPS-005)",
+            "title": "Goal"
           },
           "in_daily_run": {
             "title": "In Daily Run",
@@ -11503,9 +11870,31 @@
             ],
             "title": "Real Share"
           },
+          "review_due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Due"
+          },
           "scenario_id": {
             "title": "Scenario Id",
             "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
           },
           "shock_count": {
             "title": "Shock Count",
@@ -11518,10 +11907,39 @@
             "title": "Shocks",
             "type": "array"
           },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "status": {
             "description": "IN_RUN, NOT_COVERED, SYNTHETIC_WINDOW, PARTLY_REAL or REAL",
             "title": "Status",
             "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
           },
           "window_end": {
             "anyOf": [
@@ -11558,6 +11976,401 @@
           "shock_count"
         ],
         "title": "StressScenarioSpec",
+        "type": "object"
+      },
+      "StressScenarioVersion": {
+        "additionalProperties": true,
+        "description": "One version of a scenario with its approval and review state.",
+        "properties": {
+          "area": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Desk or business the scenario was written for",
+            "title": "Area"
+          },
+          "catalyst": {
+            "default": "",
+            "title": "Catalyst",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "episode_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "HISTORICAL: a stylised episode of the history",
+            "title": "Episode Id"
+          },
+          "goal": {
+            "default": "INFORMATION",
+            "description": "LIMIT or INFORMATION",
+            "title": "Goal",
+            "type": "string"
+          },
+          "kind": {
+            "description": "HYPOTHETICAL or HISTORICAL",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "narrative": {
+            "default": "",
+            "title": "Narrative",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "proposed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed At"
+          },
+          "proposed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By"
+          },
+          "resolved_window": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Window"
+          },
+          "review_due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Due"
+          },
+          "review_overdue": {
+            "default": false,
+            "title": "Review Overdue",
+            "type": "boolean"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/StressRuleSpec"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "severity": {
+            "default": "SEVERE",
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "DRAFT, APPROVED, REJECTED or SUPERSEDED",
+            "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "HISTORICAL: fixed window start, YYYY-MM-DD",
+            "title": "Window Start"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "name",
+          "kind",
+          "version",
+          "source",
+          "position",
+          "status"
+        ],
+        "title": "StressScenarioVersion",
+        "type": "object"
+      },
+      "StressSeedBody": {
+        "properties": {
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "title": "StressSeedBody",
+        "type": "object"
+      },
+      "StressSetup": {
+        "additionalProperties": true,
+        "description": "The stress scenario library: approved versions in run order, open drafts and decided\nhistory. Record OPS-005.",
+        "properties": {
+          "business_date": {
+            "title": "Business Date",
+            "type": "string"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenarioVersion"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenarioVersion"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "history_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History End"
+          },
+          "history_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Start"
+          },
+          "options": {
+            "$ref": "#/components/schemas/StressSetupOptions"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "review_months": {
+            "title": "Review Months",
+            "type": "integer"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenarioVersion"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "source": {
+            "description": "stored, or defaults when the built-in library has not been stored",
+            "title": "Source",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "record",
+          "source",
+          "business_date",
+          "review_months",
+          "scenarios",
+          "drafts",
+          "history",
+          "summary",
+          "options"
+        ],
+        "title": "StressSetup",
+        "type": "object"
+      },
+      "StressSetupOptions": {
+        "additionalProperties": true,
+        "properties": {
+          "episodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Episodes",
+            "type": "array"
+          },
+          "goals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Goals",
+            "type": "array"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "severities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Severities",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "goals",
+          "kinds",
+          "severities",
+          "tags",
+          "episodes"
+        ],
+        "title": "StressSetupOptions",
         "type": "object"
       },
       "StressShock": {
@@ -14287,6 +15100,376 @@
           }
         },
         "summary": "Set Signoff Policy"
+      }
+    },
+    "/admin/stress/decisions": {
+      "post": {
+        "operationId": "decide_stress_scenario_admin_stress_decisions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressScenarioVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Decide Stress Scenario"
+      }
+    },
+    "/admin/stress/proposals": {
+      "post": {
+        "operationId": "propose_stress_scenario_admin_stress_proposals_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressProposalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressScenarioVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Propose Stress Scenario"
+      }
+    },
+    "/admin/stress/reviews": {
+      "post": {
+        "operationId": "review_stress_scenario_admin_stress_reviews_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressReviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressScenarioVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Review Stress Scenario"
+      }
+    },
+    "/admin/stress/seed": {
+      "post": {
+        "operationId": "seed_stress_library_admin_stress_seed_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressSeedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressSetup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Seed Stress Library"
+      }
+    },
+    "/admin/stress/setup": {
+      "get": {
+        "operationId": "stress_setup_admin_stress_setup_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressSetup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Setup"
       }
     },
     "/admin/var/setup": {

@@ -30,7 +30,6 @@ from novera.pricing.collateral import CollateralMap
 from novera.pricing.valuation import value_portfolio
 from novera.regulatory import run_regulatory
 from novera.risk import (
-    HYPOTHETICAL_LIBRARY,
     Portfolio,
     VaRConfig,
     compute_sensitivities,
@@ -40,11 +39,14 @@ from novera.risk import (
     liquidity,
     live_backtest,
     look_through,
-    run_stress,
     static_backtest,
-    stress_table,
 )
-from novera.risk.stress import historical_episodes
+from novera.risk.stress_definitions import (
+    built_in_definitions,
+    episode_windows,
+    run_stress_definitions,
+    stress_headline,
+)
 from novera.risk.var_measures import DEFAULT_MEASURES, MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.eod import (
@@ -159,10 +161,19 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         "stress",
         "Stress",
-        "The stress library under full revaluation (MR-005).",
+        "The scenarios the run ran (OPS-005) under full revaluation (MR-005).",
         ("stress", "stress_summary"),
         ("limits", "counterparty"),
-        ("worst_stress_id", "worst_stress_name", "worst_stress"),
+        (
+            "worst_stress_id",
+            "worst_stress_name",
+            "worst_stress",
+            "worst_stress_all_id",
+            "worst_stress_all_name",
+            "worst_stress_all",
+            "stress_scenarios",
+            "stress_limit_scenarios",
+        ),
     ),
     Stage(
         "limits",
@@ -251,6 +262,7 @@ class _Inputs:
             var=VaRConfig(**c.get("var", {})),
             var_measures=c.get("var_measures"),
             include_historical_stress=c.get("include_historical_stress", True),
+            stress_scenarios=c.get("stress_scenarios"),
             pnl_abs_tolerance=c.get("pnl_abs_tolerance", 50_000.0),
             counterparty=c.get("counterparty"),
             regulatory=c.get("regulatory"),
@@ -317,11 +329,25 @@ class _Inputs:
         return self.var_set.headline.result
 
     @cached_property
+    def stress_run(self):
+        """The definitions the parent ran (recorded in its config, OPS-005); a run made before
+        the stress setup existed ran the built-in library."""
+        recorded = self.cfg.stress_scenarios
+        stored = self.repo.load_market_episodes()
+        if recorded is None:
+            windows = episode_windows(self.history, stored)
+            recorded = [{**d.to_dict(), "review_due": None} for d in built_in_definitions(list(windows))]
+        return run_stress_definitions(
+            self.pf, self.history, recorded, stored, self.cfg.include_historical_stress
+        )
+
+    @property
     def stress(self) -> list:
-        scenarios = list(HYPOTHETICAL_LIBRARY)
-        if self.cfg.include_historical_stress:
-            scenarios += historical_episodes(self.history, self.repo.load_market_episodes())
-        return run_stress(self.pf, scenarios, self.history)
+        return self.stress_run.results
+
+    @property
+    def limit_stress(self) -> list:
+        return self.stress_run.limit_results
 
 
 def _stage_valuation(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
@@ -349,14 +375,8 @@ def _stage_backtest(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, 
 
 
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
-    persist_stress(repo, rid, x.stress)
-    st = stress_table(x.stress, x.val.table)
-    worst = st.iloc[0] if len(st) else None
-    return {
-        "worst_stress_id": worst["scenario_id"] if worst is not None else None,
-        "worst_stress_name": worst["name"] if worst is not None else None,
-        "worst_stress": float(worst["total"]) if worst is not None else None,
-    }
+    persist_stress(repo, rid, x.stress, x.stress_run.recorded)
+    return stress_headline(x.stress, x.limit_stress, x.val.table)
 
 
 def _stage_limits(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
@@ -379,7 +399,7 @@ def _stage_limits(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, An
                 x.val.table,
                 x.sens,
                 x.hs,
-                x.stress,
+                x.limit_stress,
                 counterparty_pfe=pfe,
                 fund_metrics=fund_metrics,
                 limit_var=x.var_set.limit_inputs(),
@@ -569,7 +589,8 @@ def rerun_stage(
     changed = {
         k: {"before": before[k], "after": run.summary.get(k)}
         for k in spec.summary_keys
-        if before[k] != run.summary.get(k)
+        if k in parent.summary
+        and before[k] != run.summary.get(k)  # keys a stage added later are new, not changed
     }
     run.summary["rerun"] = {
         **run.config["rerun"],

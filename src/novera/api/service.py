@@ -13,7 +13,7 @@ from novera.api.errors import RunNotFoundError as _RunNotFoundError
 from novera.domain.breaches import CloseReason
 from novera.limits import workflow as wf
 from novera.security import Action, User, oversees, require, require_on_limit
-from novera.security.permissions import require_signer
+from novera.security.permissions import require_signer, require_stress_proposal
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import RunRecord
 
@@ -263,7 +263,9 @@ class RiskService:
         m = rows.merge(v[["trade_id", by]], on="trade_id", how="inner")
         piv = m.pivot_table(index="scenario_id", columns=by, values="pnl", aggfunc="sum", fill_value=0.0)
         piv["total"] = piv.sum(axis=1)
-        piv = piv.join(summary.set_index("scenario_id")[["name", "kind", "description"]]).reset_index()
+        wanted = ("name", "kind", "description", "goal", "version", "source")
+        meta = [c for c in wanted if c in summary.columns]
+        piv = piv.join(summary.set_index("scenario_id")[meta]).reset_index()
         return _records(piv.sort_values("total"))
 
     def limits(
@@ -689,9 +691,22 @@ class RiskService:
         universe = self.repo.load_risk_factors()
         rows = self.repo.load_market_history(factor_ids=[fid for fid, _ in HEADLINE_FACTORS])
         history = MarketHistory.from_long(rows) if len(rows) else None
+        from novera.workflows.stress_setup import active
+
         return stress_library(
-            history, universe, self.repo.load_market_provenance(), self.repo.load_market_episodes()
+            history,
+            universe,
+            self.repo.load_market_provenance(),
+            self.repo.load_market_episodes(),
+            definitions=active(self.repo),
         )
+
+    def stress_setup(self) -> dict[str, Any]:
+        """The stress scenario library: approved versions in run order, open drafts, decided
+        history, and what a proposal may use (OPS-005)."""
+        from novera.workflows import stress_setup
+
+        return stress_setup.setup(self.repo)
 
     def counterparty_reference(self) -> dict[str, Any]:
         """Static counterparty reference data: counterparties, netting sets and CSA terms,
@@ -1149,6 +1164,8 @@ class RiskService:
             "es": r.summary.get("es"),
             "worst_stress": r.summary.get("worst_stress"),
             "worst_stress_name": r.summary.get("worst_stress_name"),
+            "worst_stress_all": r.summary.get("worst_stress_all"),
+            "worst_stress_all_name": r.summary.get("worst_stress_all_name"),
             "exposure_strategy": _records(self.repo.load_run_frame(r.run_id, "fund_exposure_strategy")),
             "exposure_asset_class": _records(self.repo.load_run_frame(r.run_id, "fund_exposure_asset_class")),
             "margin_pb": _records(self.repo.load_run_frame(r.run_id, "fund_margin_pb")),
@@ -1259,6 +1276,41 @@ class RiskWriteService:
 
         require(self.user, Action.VAR_SETUP)
         return var_setup.set_setup(self.repo, self.actor, [dict(m) for m in measures], comment)
+
+    def propose_stress_scenario(self, definition: dict[str, Any], note: str = "") -> dict[str, Any]:
+        """A new stress scenario, or a new version of one, as a DRAFT (OPS-005). Desk and
+        business heads propose information scenarios for their area (decision 46.2)."""
+        from novera.workflows import stress_setup
+
+        sid = str(definition.get("scenario_id") or "")
+        area = require_stress_proposal(
+            self.user, str(definition.get("goal") or "INFORMATION"), stress_setup.current_goal(self.repo, sid)
+        )
+        return stress_setup.propose(self.repo, self.actor, dict(definition), note, area=area)
+
+    def decide_stress_scenario(
+        self, scenario_id: str, version: int, approve: bool, note: str = ""
+    ) -> dict[str, Any]:
+        """Approve or reject a draft; never the proposer's own (four eyes, OPS-005)."""
+        from novera.workflows import stress_setup
+
+        require(self.user, Action.STRESS_DECIDE)
+        return stress_setup.decide(self.repo, self.actor, scenario_id, int(version), bool(approve), note)
+
+    def review_stress_scenario(self, scenario_id: str, note: str = "") -> dict[str, Any]:
+        """Confirm an approved scenario still fits; the next review falls due three months on."""
+        from novera.workflows import stress_setup
+
+        require(self.user, Action.STRESS_REVIEW)
+        return stress_setup.review(self.repo, self.actor, scenario_id, note)
+
+    def seed_stress_library(self, note: str = "") -> dict[str, Any]:
+        """Store the built-in library as approved version 1 and start its review clock."""
+        from novera.workflows import stress_setup
+
+        require(self.user, Action.STRESS_DECIDE)
+        stress_setup.seed(self.repo, self.actor, note)
+        return stress_setup.setup(self.repo)
 
     def apply_var_template(self, template: str, comment: str = "") -> dict[str, Any]:
         """Replace the VaR setup with a template (bank or hedge_fund) (OPS-004)."""

@@ -1846,6 +1846,58 @@ were added. One question round followed; the owner took every recommended option
 
 - Where: `docs/08-stress-framework.md` (the plan), `docs/03-roadmap.md` (Phase 8). No code yet.
 
+## Round 46 — The stress setup: a versioned, approved scenario library (2026-10-16)
+
+Context: the first round of the stress framework (`docs/08-stress-framework.md`, round 45). The
+library moves out of code into stored, versioned definitions with a goal each, modelled on the
+VaR setup (OPS-004). One question round; the owner took every recommended option.
+
+### 46.1 Approval
+- Options: four eyes for all ★ · four eyes for LIMIT scenarios only · a single audited actor
+- Choice (owner): **four eyes for every change**. A proposal is a DRAFT. The Head of Market Risk
+  or the CRO approves or rejects it, never the proposer. Only APPROVED versions run, and the
+  previous approved version becomes SUPERSEDED.
+
+### 46.2 Who proposes
+- Options: risk plus desk heads ★ · the risk function only · heads of risk only
+- Choice (owner): **risk plus desk heads**. Risk Control and the heads of risk propose any goal.
+  Desk and business heads propose INFORMATION scenarios for their area (recorded as `area`), and
+  may not change a scenario that feeds limits.
+
+### 46.3 The headline worst stress
+- Options: show both ★ · LIMIT set only · every scenario
+- Choice (owner): **both**. `worst_stress` stays the worst of the LIMIT set, the figure the
+  limits read, so today's figures do not move. `worst_stress_all` adds the worst of every
+  scenario. The Overview and the fund page show a second line when they differ.
+
+### 46.4 Reviews
+- Options: quarterly with an AMBER flag ★ · quarterly, drop from limits · annual, flag only
+- Choice (owner): **quarterly, AMBER**. A review falls due three months after approval or the
+  last review. An overdue scenario still runs, and the run carries a MINOR finding
+  `STRESS_REVIEW_OVERDUE`.
+
+- Choice (default): **the built-ins run until a library is stored**. The first write stores them
+  as version 1, APPROVED, adopted by its writer. On copies of the demo databases a re-run of the
+  stress stage reproduced every stored scenario P&L exactly, before and after seeding (bank
+  2026-09-15 and fund 2026-09-14, 17 scenarios each). The limits re-run reported no change.
+- Choice (default): **the review clock runs on business dates**, the latest date of the stored
+  history, so it matches the runs it is checked against. A frozen database never falls overdue.
+- Choice (default): **runs record the definitions they ran**, with the dates replayed for
+  historical ones. A stage re-run replays the parent's definitions; a parent made before this
+  round re-runs on the built-ins. A re-run no longer reports summary keys the parent never
+  recorded as "changed".
+- Found: a library with nothing enabled made the stress stage fail to store its frames; empty
+  frames are stored now. The Analyst's stress tool and the grouped stress read treated every
+  extra column as a number, so the new `goal` column broke them; fixed.
+- Where: `risk/stress_definitions.py`, `workflows/stress_setup.py` (OPS-005), `storage`
+  (`stress_scenario`), `workflows/eod.py` and `rerun.py`, `security/permissions.py`
+  (`STRESS_PROPOSE`, `STRESS_DECIDE`, `STRESS_REVIEW`, `require_stress_proposal`),
+  `GET /admin/stress/setup`, `POST /admin/stress/proposals | decisions | reviews | seed`,
+  `novera stress-setup`, the Admin page's "Stress scenarios" (`ui/stress_setup.py`), the Stress
+  page's goal column, the risk pack, the Analyst tool, MR-005 1.5.0.
+  Tests: `tests/test_stress_setup.py`, `test_api.py::test_stress_setup_endpoints`,
+  `test_ui.py::test_admin_stress_scenarios_configuration`, `test_security.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names

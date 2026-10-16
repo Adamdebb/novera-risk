@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.4.0 |
+| Version | 1.5.0 |
 | Owner | Market Risk Methodology |
 | Approval status | Draft |
-| Code | `novera.risk.stress`, `novera.risk.stress_catalogue` |
-| Last validated | 2026-09-15 |
+| Code | `novera.risk.stress`, `novera.risk.stress_catalogue`, `novera.risk.stress_definitions` |
+| Last validated | 2026-10-16 |
 
 ## Definition
 Instantaneous shock scenarios applied to the snapshot with full revaluation. Two kinds:
@@ -14,7 +14,12 @@ hypothetical (rule-based shocks on factor families) and historical (the observed
 every factor across a named episode window in the history).
 
 ## Library
-USD rates +100bp; global rates +100bp; USD steepener and flattener; EURIBOR basis +20bp
+Since round 46 the library is a stored, versioned set of definitions with a goal each (OPS-005):
+LIMIT scenarios feed the stress-loss limits, INFORMATION scenarios are reported only. Until a
+firm stores its own library the built-ins below run, all with goal LIMIT, which is what the
+engine always ran.
+
+Built-ins: USD rates +100bp; global rates +100bp; USD steepener and flattener; EURIBOR basis +20bp
 (6M over ESTR +20bp, 3M +15bp, ESTR unchanged: interbank stress); USD funding squeeze (every
 cross-currency basis −25bp, EUR, JPY and CHF −40bp); EUR/USD −10%;
 equity −20% with vol +15; credit +150bp; oil −30%; BTC −50%; vol +10 points; global
@@ -25,7 +30,8 @@ inflation bear, risk-off crash and rates shock, on the windows stored with the h
 `GET /reference/stress-library` and the dashboard page list every scenario in three
 categories with the shocks it applies:
 
-1. **Hypothetical** (14, in the daily run): the rules above, shown in bp for rates and
+1. **Hypothetical** (14 built-in, plus any the firm approves): the rules of the approved
+   versions, with their goal, version, tags, severity and review date, shown in bp for rates and
    spreads, vol points for surfaces and per cent for everything else, with the curve nodes a
    rule is limited to. Sizes are assumptions in the range regulators and desks use; none is
    measured from a real market move.
@@ -57,7 +63,8 @@ risk-off move where interbank spreads widen (the stylised historical episodes do
 ## Validation tests
 `test_stress_library_runs_and_makes_sense`, `test_historical_episode_scenarios`,
 `test_stress_library_catalogue` (categories, units and window statuses); the route and its
-schema in `tests/test_api.py`, the page in `tests/test_ui.py`.
+schema in `tests/test_api.py`, the page in `tests/test_ui.py`. The stored library reproduces
+the built-in results exactly (`tests/test_stress_setup.py`, OPS-005).
 
 ## Change history
 | Version | Date | Change | Author |
@@ -66,4 +73,5 @@ schema in `tests/test_api.py`, the page in `tests/test_ui.py`.
 | 1.1.0 | 2026-09-15 | Stress library catalogue: categories, shocks and crisis-window status (decision 22.1); scenario results unchanged | Novera |
 | 1.2.0 | 2026-10-14 | EURIBOR basis +20bp scenario (decision 33) | Novera |
 | 1.3.0 | 2026-10-14 | USD funding squeeze scenario on the cross-currency basis (decision 35) | Novera |
+| 1.5.0 | 2026-10-16 | Scenarios read from the stored, approved library with a goal each; limits read the LIMIT set; built-in results unchanged (decision 46, OPS-005) | Novera |
 | 1.4.0 | 2026-10-15 | Episode windows read from storage instead of counted back from the end of the history, which slid a day for each day appended; inflation bear added (decision 42) | Novera |

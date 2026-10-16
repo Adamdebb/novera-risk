@@ -92,6 +92,21 @@ def test_firm_wide_actions_and_signers(bank):
         with pytest.raises(ForbiddenError):
             require(users[who], action)
     require(users["viewer"], Action.ANALYST)
+    # Stress scenarios (OPS-005): the risk function proposes any goal, desk heads information only.
+    from novera.security.permissions import require_stress_proposal
+
+    assert require_stress_proposal(users["risk-control"], "LIMIT", "LIMIT") is None
+    assert require_stress_proposal(users["head-of-energy"], "INFORMATION", None) == "ENERGY"
+    for who, goal, current in (
+        ("head-of-energy", "LIMIT", None),
+        ("head-of-energy", "INFORMATION", "LIMIT"),
+        ("viewer", "INFORMATION", None),
+    ):
+        with pytest.raises(ForbiddenError):
+            require_stress_proposal(users[who], goal, current)
+    require(users["cro"], Action.STRESS_DECIDE)
+    with pytest.raises(ForbiddenError):
+        require(users["head-of-counterparty-risk"], Action.STRESS_DECIDE)
     require_signer(users["head-of-product-control"], "Head of Product Control", "PNL")
     require_signer(users["cro"], "Head of Product Control", "PNL")  # the CRO may sign any metric
     with pytest.raises(ForbiddenError):
