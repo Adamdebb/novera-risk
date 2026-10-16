@@ -1801,9 +1801,55 @@ owner took every recommended option.
   routes, `novera reference seed | geography`, `reporting/pack.py`, `ai/tools.py`, `ui/app.py`.
   Tests: `tests/test_geography.py`, `tests/test_api.py::test_risk_by_region_and_country`.
 
+## Round 45 — Stress framework plan (2026-10-16)
+
+Context: the owner asked for a strong and complete stress-test framework for banks and funds,
+working from three AI-written suggestions and eleven books, papers and annual-report extracts
+from their own reading (listed in `docs/08-stress-framework.md`, with notes on which are out of
+date). The plan was drafted after reading them and the current module. The owner then asked
+where seven topics sit: standalone factor stress, dynamic stress, hedging and liquidation, counterparty
+and interconnectedness, concentration and liquidation, crowding and fast unwind, and PCA. All seven
+were added. One question round followed; the owner took every recommended option.
+
+### 45.1 Named real crises
+- Options: calibrated replay ★ · fetch real history · keep synthetic only
+- Choice (owner): **calibrated replay**. Each crisis is a table of headline moves the owner
+  approves, expanded to every factor by the conditional expectation under a stressed covariance.
+  Status CALIBRATED; it becomes REAL once fetched history covers the window.
+- Revisit: fetching real history would replace the calibration factor by factor, without a
+  change of design.
+
+### 45.2 Order of work
+- Options: the revised order ★ · path engine earlier · fund story first · bank story first
+- Choice (owner): **revised order**: scenario store; conditional expansion, PCA shapes and
+  plausibility; standalone factor stress; explain; reverse stress; path engine; margin and
+  funding chain; concentration and liquidation; counterparty; crowding; fund layer; bank layer;
+  limits (rounds 46 to 58).
+
+### 45.3 What bank stress results are measured against
+- Options: a simple resources table ★ · limits and appetite only · a full balance sheet
+- Choice (owner): **resources table** per legal entity (CET1, RWA outside market risk, HQLA),
+  set in Admin, giving a stressed CET1 ratio and stressed net liquidity against red/amber/green
+  levels.
+
+### 45.4 How limits treat new scenarios
+- Options: information until promoted ★ · per-scenario limits now · all feed limits now
+- Choice (owner): **information until promoted**. Today's library stays the LIMIT set, so the
+  demo's breaches do not move; promoting a scenario creates a recalibration draft (MR-017).
+  Only round 58 needs a full demo rebuild.
+
+### 45.5 PCA
+- Options: shocks and simulation ★ · shocks only · simulation only
+- Choice (owner): **both**. PCA shapes curve, commodity-curve and vol-surface shocks, and drives
+  a fat-tailed Monte Carlo, the path generator and the reverse-stress search. Residual and basis
+  shocks are always added on top, since PCA drops the moves where hedges fail.
+
+- Where: `docs/08-stress-framework.md` (the plan), `docs/03-roadmap.md` (Phase 8). No code yet.
+
 ## Standing instructions given outside the question rounds
 
-- Do not read or use `../z-My_Tests` (private brainstorming).
+- Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names
+  for a task (the stress reading pack, round 45).
 - Ask questions at each step when something is unclear.
 - The three brainstorming documents were merged into the vision, architecture and roadmap.
 - Finish Phases 1 to 3 completely before Phase 4 (done); Phase 5 before Phase 6.

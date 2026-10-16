@@ -120,6 +120,7 @@ problem document with a stable code. See [`docs/02-architecture.md`](docs/02-arc
 - [`docs/04-governance.md`](docs/04-governance.md): methodology records, run reproducibility, AI rules
 - [`docs/05-demo-script.md`](docs/05-demo-script.md): the 10-minute executive demo
 - [`docs/07-eod-workflow.md`](docs/07-eod-workflow.md): the end-of-day run, step by step
+- [`docs/08-stress-framework.md`](docs/08-stress-framework.md): the plan for the stress-test framework (rounds 46 to 58)
 - [`docs/06-decision-log.md`](docs/06-decision-log.md): every design question, the options, the choice made
 - [`docs/methodology/`](docs/methodology): one record per metric
 - [`docs/adr/`](docs/adr): architecture decision records

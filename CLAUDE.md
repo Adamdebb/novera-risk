@@ -123,7 +123,8 @@ works as a one-off. The durable fix is to keep the repo outside iCloud-synced fo
 also protects `.git` and the DuckDB files from being synced mid-write.
 
 ## Do not
-- Do not read or use `../z-My_Tests` (owner's private brainstorming).
+- Do not read or use `../z-My_Tests` (owner's private brainstorming) unless the owner names a
+  subfolder for a task; never copy its content into the repo.
 - Do not add an asset class or product outside the current phase without updating
   `docs/03-roadmap.md` first.
 - Do not introduce a second source of truth for reference data or results.

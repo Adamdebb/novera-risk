@@ -182,6 +182,25 @@ client, read-only by default and audited. Records AI-002, AI-003, AI-004, LAB-00
       stands in for the firm's single sign-on, and the CLI names a known user (ADR 0006)
       for a full phase; morning overview and limits first
 
+## Phase 8 — Stress framework (planned 2026-10-16, round 45)
+
+The rebuild of stress testing into a framework for the bank and the fund, in thirteen rounds;
+the plan, sources and architecture are in `docs/08-stress-framework.md`.
+
+- [ ] 46 Scenario store and stress setup (LIMIT / INFORMATION); current library migrated unchanged
+- [ ] 47 Conditional expansion, PCA shapes, plausibility (scenario z-score, risk ruler), calibrated named crises
+- [ ] 48 Standalone factor stress, sliding scales, jump to default, multi-horizon replays, worst-window search
+- [ ] 49 Explain by factor family and Greeks, hedge-failure line, summary of significant risks
+- [ ] 50 Reverse stress in PCA space, PCA Monte Carlo
+- [ ] 51 Path engine with management actions, hedging and liquidation
+- [ ] 52 Margin, collateral and funding chain with the liquidity spiral
+- [ ] 53 Concentration and liquidation stress
+- [ ] 54 Counterparty, largest counterparty default, CCP and prime-broker stress
+- [ ] 55 Crowding and fast unwind
+- [ ] 56 Fund layer (NAV drawdown, margin-to-equity, survival, strategy packs)
+- [ ] 57 Bank layer (resources table, stressed CET1 and liquidity, market shock with counterparty default)
+- [ ] 58 Promotion to limits, recalibration, checks against later market moves (full demo rebuild)
+
 ## Injected problems in the simulated portfolio
 
 USD 10Y DV01 concentration, illiquid Brent position, BTC convexity, counterparty near
