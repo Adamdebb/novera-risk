@@ -256,7 +256,7 @@ def test_named_crises_require_coverage():
     names = {s.scenario_id for s in named_crisis_scenarios(long)}
     assert {"gfc_2008", "covid_2020", "rates_2022", "banks_2023"} <= names
     short = MarketHistory(
-        pd.DataFrame({"EQIDX:SPX": range(300)}, index=pd.bdate_range("2025-01-01", periods=300).date)
+        pd.DataFrame({"EQIDX:SPX": range(300)}, index=pd.bdate_range("2025-06-02", periods=300).date)
     )
     assert named_crisis_scenarios(short) == []
 

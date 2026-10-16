@@ -49,7 +49,6 @@ SEED_PROPOSER = "built-in library"
 _NOT_PROPOSED = {
     # set by the workflow, never by the proposer; a row copied from the setup carries them
     "version",
-    "source",
     "position",
     "resolved_window",
     "status",
@@ -193,6 +192,7 @@ def setup(repo: DuckDBRepository) -> dict[str, Any]:
             "severities": list(SEVERITIES),
             "tags": list(TAGS),
             "episodes": list(_windows(repo)),
+            "covariances": ["STRESSED", "SIMILAR", "RECENT"],
         },
         "history_start": rng[0].isoformat() if rng else None,
         "history_end": rng[1].isoformat() if rng else None,
@@ -203,9 +203,11 @@ def _audit(repo: DuckDBRepository, actor: str, event: str, **payload: Any) -> No
     repo.save_audit_events([AuditEvent.now(actor, event, SUBJECT, **payload)])
 
 
-def seed(repo: DuckDBRepository, actor: str, note: str = "") -> bool:
-    """Store the built-ins as version 1, APPROVED, adopted by ``actor``; False when the library
-    is stored already. Their review clock starts on today's business date."""
+def seed(repo: DuckDBRepository, actor: str, note: str = "", implicit: bool = False) -> bool:
+    """Store the built-ins, APPROVED at their built-in version, adopted by ``actor``; False when
+    the library is stored already. Their review clock starts on today's business date. An
+    implicit seed (the first proposal or review stores the library) records that no person
+    approved the built-ins: ``decided_by`` names the write that stored them."""
     if not actor or not actor.strip():
         raise WorkflowError("actor is required")
     repo.init_schema()
@@ -217,12 +219,12 @@ def seed(repo: DuckDBRepository, actor: str, note: str = "") -> bool:
         [
             {
                 "scenario_id": d.scenario_id,
-                "version": 1,
+                "version": d.version,
                 "status": "APPROVED",
                 "definition": d.to_dict(),
                 "proposed_by": SEED_PROPOSER,
                 "proposed_at": at,
-                "decided_by": actor,
+                "decided_by": f"stored on a first write by {actor}" if implicit else actor,
                 "decided_at": at,
                 "note": note or "built-in library adopted",
                 "review_due": due,
@@ -252,7 +254,7 @@ def propose(
     factors and the stored history."""
     if not actor or not actor.strip():
         raise WorkflowError("actor is required")
-    seed(repo, actor)
+    seed(repo, actor, implicit=True)
     try:
         d = ScenarioDefinition.from_dict({k: v for k, v in definition.items() if k not in _NOT_PROPOSED})
     except (TypeError, ValueError, KeyError) as e:
@@ -268,7 +270,7 @@ def propose(
     d = replace(
         d,
         version=max((r["version"] for r in rows), default=0) + 1,
-        source=prev.source if prev else "USER",
+        source=prev.source if prev else (d.source if d.source in ("USER", "CALIBRATED") else "USER"),
         position=position,
         area=area if area is not None else d.area,
     )
@@ -351,7 +353,7 @@ def review(repo: DuckDBRepository, actor: str, scenario_id: str, note: str = "")
     """Confirm the approved version still fits; its next review is due three months on."""
     if not actor or not actor.strip():
         raise WorkflowError("actor is required")
-    seed(repo, actor)
+    seed(repo, actor, implicit=True)
     rows = [r for r in _latest(repo, scenario_id) if r["status"] == "APPROVED"]
     if not rows:
         raise WorkflowError(f"{scenario_id} has no approved version to review")
@@ -376,3 +378,121 @@ def review(repo: DuckDBRepository, actor: str, scenario_id: str, note: str = "")
         note=note,
     )
     return _row({**out, "definition": r["definition"]}, today)
+
+
+def _content(d: ScenarioDefinition) -> dict[str, Any]:
+    """What a definition shocks and how it is governed, without its place in the store."""
+    out = d.to_dict()
+    for k in ("version", "position", "resolved_window", "source", "area"):
+        out.pop(k, None)
+    return out
+
+
+def upgrade_built_ins(repo: DuckDBRepository, actor: str, note: str = "") -> list[dict[str, Any]]:
+    """Propose, as drafts, the built-ins whose code version differs from the approved version a
+    stored library holds (the consistent market shocks of round 47, for example). A library
+    that is not stored runs the code's built-ins already; nothing is proposed then."""
+    if not is_stored(repo):
+        return []
+    approved = {r["definition"].scenario_id: r["definition"] for r in active(repo)}
+    out = []
+    for d in defaults(repo):
+        cur = approved.get(d.scenario_id)
+        if cur is None or cur.source != "BUILT_IN" or _content(cur) == _content(d):
+            continue
+        if any(r["status"] == "DRAFT" for r in _latest(repo, d.scenario_id)):
+            continue
+        out.append(
+            propose(
+                repo,
+                actor,
+                d.to_dict(),
+                note or "built-in library update: the scenario now moves every factor (MR-018)",
+            )
+        )
+    return out
+
+
+def draft_crises(repo: DuckDBRepository, actor: str) -> list[dict[str, Any]]:
+    """Enter every calibrated crisis table the library does not hold yet as an INFORMATION
+    draft from ``actor``, marked approximate (decision 47.3); the approver verifies each."""
+    from novera.risk.crisis_tables import CRISIS_TABLES, VERIFY_NOTE
+
+    have = {r["scenario_id"] for r in repo.load_stress_scenarios()}
+    return [
+        propose(repo, actor, c.definition(), VERIFY_NOTE) for c in CRISIS_TABLES if c.scenario_id not in have
+    ]
+
+
+def plausibility(repo: DuckDBRepository) -> dict[str, Any]:
+    """How extreme each approved scenario and each draft is (MR-018): z-score, exceedance,
+    correlation z-score, anchor detail, and the risk ruler that places scenarios and the stored
+    stress episodes on the headline basket under stressed correlations. For the approver; it
+    changes nothing a run computes (decision 47.4)."""
+    from novera.risk import scenario_covariance as sc_cov
+    from novera.risk.scenarios import episode_shocks
+    from novera.risk.stress_definitions import Expander
+
+    msnaps = repo.list_market_snapshots()
+    if not msnaps:
+        return {"available": False, "reason": "no market snapshot stored"}
+    base = repo.load_market_snapshot(msnaps[-1][0])
+    history = MarketHistory.from_long(repo.load_market_history())
+    universe = {f.factor_id: f for f in repo.load_risk_factors()}
+    windows = _windows(repo)
+    ex = Expander(history, base, universe, windows)
+
+    def facts(d: ScenarioDefinition) -> dict[str, Any] | None:
+        if d.kind != "HYPOTHETICAL":
+            return None
+        try:
+            _, info = ex.explain(d)
+        except ValueError as e:
+            return {"error": str(e)}
+        keep = (
+            "z_score",
+            "exceedance",
+            "correlation_z",
+            "volatility_z",
+            "ruler_z",
+            "covariance",
+            "horizon_days",
+            "filled",
+            "anchor_detail",
+            "pca",
+        )
+        return {k: info.get(k) for k in keep}
+
+    scenarios = {r["definition"].scenario_id: facts(r["definition"]) for r in active(repo)}
+    drafts = {
+        f"{r['scenario_id']}:{r['version']}": facts(r["definition"])
+        for r in versions(repo)
+        if r["status"] == "DRAFT"
+    }
+    ms = ex.moves(sc_cov.DEFAULT_HORIZON)
+    stressed = sc_cov.regime("STRESSED", history, ms, windows)
+    ruler = []
+    for eid, (s, e) in windows.items():
+        if s < base.as_of:
+            z = sc_cov.basket_z(episode_shocks(history, s, min(e, base.as_of), universe), ms, stressed)
+            ruler.append(
+                {"scenario_id": eid, "name": eid.replace("_", " ").title(), "kind": "EPISODE", "ruler_z": z}
+            )
+    for r in active(repo):
+        d = r["definition"]
+        f = scenarios.get(d.scenario_id) or {}
+        if f.get("ruler_z") is not None:
+            ruler.append(
+                {"scenario_id": d.scenario_id, "name": d.name, "kind": d.source, "ruler_z": f["ruler_z"]}
+            )
+    ruler.sort(key=lambda x: x["ruler_z"] or 0.0)
+    return {
+        "available": True,
+        "as_of": base.as_of.isoformat(),
+        "horizon_days": sc_cov.DEFAULT_HORIZON,
+        "method": "STRESSED",
+        "basket": [f for f, _ in sc_cov.HEADLINE_FACTORS],
+        "ruler": ruler,
+        "scenarios": scenarios,
+        "drafts": drafts,
+    }

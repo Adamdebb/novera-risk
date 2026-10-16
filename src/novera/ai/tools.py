@@ -148,9 +148,10 @@ def build_tools(db_path: str) -> list[Tool]:
             r = s.resolve(run_id)
             rows = s.stress(r.run_id, by=by, desk_id=desk_id)
         out = []
-        meta = ("scenario_id", "name", "kind", "description", "total", "goal", "version", "source")
+        from novera.api.service import STRESS_META
+
         for x in rows:
-            groups = {k: _m(v) for k, v in x.items() if k not in meta}
+            groups = {k: _m(v) for k, v in x.items() if k not in STRESS_META}
             out.append(
                 {
                     "scenario": x["name"],

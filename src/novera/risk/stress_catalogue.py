@@ -13,29 +13,16 @@ import pandas as pd
 from novera.market_data.crises import CRISES
 from novera.market_data.history import MarketHistory
 from novera.market_data.risk_factors import RiskFactor
+from novera.risk.scenario_covariance import HEADLINE_FACTORS
 from novera.risk.scenarios import episode_shocks
 from novera.risk.stress import ShockRule, StressScenario
 from novera.risk.stress_definitions import built_in_definitions, episode_windows
 
 RECORD = "MR-005"
 
-HEADLINE_FACTORS: tuple[tuple[str, str], ...] = (
-    ("EQIDX:SPX", "S&P 500"),
-    ("EQIDX:SX5E", "Euro Stoxx 50"),
-    ("IR:USD:2Y", "USD 2Y zero"),
-    ("IR:USD:10Y", "USD 10Y zero"),
-    ("IR:EUR:10Y", "EUR 10Y zero"),
-    ("FX:EURUSD", "EUR/USD"),
-    ("FX:USDJPY", "USD/JPY"),
-    ("CDS:CDX.NA.IG", "CDX IG"),
-    ("CDS:CDX.NA.HY", "CDX HY"),
-    ("VOL:SPX:3M:1.00", "SPX 3M ATM vol"),
-    ("SWVOL:USD:1Y:10Y", "USD 1Y10Y swaption vol"),
-    ("CMD:BRENT:1M", "Brent front"),
-    ("CMD:GOLD:1M", "Gold front"),
-    ("CRYPTO:BTC", "Bitcoin"),
-)
-"""Factors whose realised move summarises a historical window on the page."""
+# HEADLINE_FACTORS: the factors whose realised move summarises a historical window on the page;
+# the same basket is the risk ruler's coordinates (MR-018).
+
 
 CATEGORIES: tuple[dict[str, Any], ...] = (
     {
@@ -63,9 +50,9 @@ CATEGORIES: tuple[dict[str, Any], ...] = (
         "category": "NAMED_CRISIS",
         "title": "Named real crises",
         "description": (
-            "Seven real windows (MD-001). A window can only be replayed as a stress when the "
-            "stored history covers it, and the result is only a real replay when the factors on "
-            "those dates were fetched from a real source. None runs in the daily EOD today."
+            "Fourteen real windows since 2008. A window replays as a stress when the stored history "
+            "covers it with real data; until then a crisis runs as a calibrated replay once its "
+            "headline moves are approved (MR-018): status CALIBRATED."
         ),
         "in_daily_run": False,
     },
@@ -204,6 +191,23 @@ def _governance(row: dict[str, Any] | None) -> dict[str, Any]:
         "severity": d.severity,
         "enabled": d.enabled,
         "review_due": due_s,
+        "consistent": d.expand,
+    }
+
+
+def describe_pca(rule: dict[str, Any]) -> dict[str, Any]:
+    """A PCA shape rule (MR-018) as a library row."""
+    names = {1: "level", 2: "slope", 3: "curvature"}
+    comp = int(rule["component"])
+    sig = float(rule["sigmas"])
+    return {
+        "target": rule["pca"],
+        "family": _family_label(rule["pca"]),
+        "size": sig,
+        "unit": f"σ of PC{comp}",
+        "tenors": None,
+        "text": f"{_family_label(rule['pca'])}: {sig:+g}σ of its {names.get(comp, f'PC{comp}')} component",
+        "kind": "PCA",
     }
 
 
@@ -230,17 +234,18 @@ def stress_library(
     hypothetical = []
     stylised = []
     windows = episode_windows(history, episodes) if history is not None and dates else {}
+    calibrated: dict[str, dict[str, Any]] = {}
     for row in definitions:
         d = row["definition"]
         status = "IN_RUN" if d.enabled else "DISABLED"
         gov = _governance(row)
+        if d.kind == "HYPOTHETICAL" and d.source == "CALIBRATED":
+            calibrated[d.scenario_id] = row  # shown with its named crisis below
+            continue
         if d.kind == "HYPOTHETICAL":
             sc = d.to_scenario()
-            hypothetical.append(
-                _scenario_row(
-                    sc, "HYPOTHETICAL", d.enabled, status, [describe_rule(r) for r in sc.rules], **gov
-                )
-            )
+            shocks = [describe_rule(r) for r in sc.rules] + [describe_pca(r) for r in d.pca_rules()]
+            hypothetical.append(_scenario_row(sc, "HYPOTHETICAL", d.enabled, status, shocks, **gov))
             continue
         w = windows.get(d.episode_id) if d.episode_id else None
         if w is None and d.window_start and d.window_end:
@@ -268,7 +273,22 @@ def stress_library(
             status, note = "REAL", "every factor fetched from a real source on these dates"
         sc = StressScenario(sid, name, f"Observed moves {start} to {end}", "HISTORICAL", episode=(start, end))
         shocks = _window_shocks(history, start, end, by_id) if covered and history is not None else []
-        crises.append(_scenario_row(sc, "NAMED_CRISIS", False, status, shocks, real_share=share, note=note))
+        in_run = False
+        extra: dict[str, Any] = {}
+        cal = calibrated.pop(sid, None)
+        if cal is not None and status != "REAL":
+            d = cal["definition"]
+            in_run = d.enabled
+            status = "CALIBRATED" if d.enabled else "DISABLED"
+            note = (
+                "calibrated replay: approved headline moves, every other factor with stressed correlations "
+                f"(version {d.version}); {note}"
+            )
+            shocks = [describe_rule(r) for r in d.shock_rules()]
+            extra = _governance(cal)
+        crises.append(
+            _scenario_row(sc, "NAMED_CRISIS", in_run, status, shocks, real_share=share, note=note, **extra)
+        )
 
     rows = {"HYPOTHETICAL": hypothetical, "STYLISED_HISTORICAL": stylised, "NAMED_CRISIS": crises}
     return {

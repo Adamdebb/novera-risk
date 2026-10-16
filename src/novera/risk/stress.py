@@ -35,6 +35,9 @@ class StressScenario:
     kind: str  # HYPOTHETICAL or HISTORICAL
     rules: tuple[ShockRule, ...] = ()
     episode: tuple[date, date] | None = None  # HISTORICAL: start and end dates in history
+    shocks: tuple[tuple[str, float], ...] | None = None
+    """Every factor's shock, given explicitly (a consistent scenario expanded from its rules,
+    MR-018); when set, the rules are documentation and the shocks are applied as they are."""
 
 
 @dataclass
@@ -217,12 +220,19 @@ def build_shocks(
     scenario: StressScenario, pf: Portfolio, history: MarketHistory | None = None
 ) -> dict[str, float]:
     base = pf.base
+    if scenario.shocks is not None:
+        return {f: s for f, s in scenario.shocks if f in base.values}
     if scenario.kind == "HISTORICAL":
         if history is None or scenario.episode is None:
             raise ValueError("historical scenario needs history and an episode window")
         return episode_shocks(history, *scenario.episode, universe=pf.universe)
+    return rule_shocks(scenario.rules, base)
+
+
+def rule_shocks(rules: tuple[ShockRule, ...] | list[ShockRule], base) -> dict[str, float]:
+    """The shocks a set of rules applies to the factors of ``base`` (a market snapshot)."""
     shocks: dict[str, float] = {}
-    for rule in scenario.rules:
+    for rule in rules:
         if rule.prefix.startswith("VOL:") and rule.vol_points is not None:
             for f in base.factors_with_prefix(rule.prefix):
                 shocks[f] = shocks.get(f, 0.0) + rule.vol_points / base.values[f]

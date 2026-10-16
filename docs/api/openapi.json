@@ -11507,6 +11507,34 @@
             "title": "Catalyst",
             "type": "string"
           },
+          "covariance": {
+            "default": "STRESSED",
+            "description": "STRESSED, SIMILAR or RECENT",
+            "title": "Covariance",
+            "type": "string"
+          },
+          "crisis_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crisis End"
+          },
+          "crisis_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crisis Start"
+          },
           "description": {
             "default": "",
             "title": "Description",
@@ -11529,11 +11557,23 @@
             "description": "HISTORICAL: a stylised episode of the history",
             "title": "Episode Id"
           },
+          "expand": {
+            "default": false,
+            "description": "Consistent: every factor the rules leave out moves with stressed correlations",
+            "title": "Expand",
+            "type": "boolean"
+          },
           "goal": {
             "default": "INFORMATION",
             "description": "LIMIT or INFORMATION",
             "title": "Goal",
             "type": "string"
+          },
+          "horizon_days": {
+            "default": 20,
+            "description": "Business days of the moves the covariance is estimated on",
+            "title": "Horizon Days",
+            "type": "integer"
           },
           "kind": {
             "description": "HYPOTHETICAL or HISTORICAL",
@@ -11564,6 +11604,18 @@
             "default": "SEVERE",
             "title": "Severity",
             "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "USER or CALIBRATED for a new scenario",
+            "title": "Source"
           },
           "tags": {
             "items": {
@@ -11641,6 +11693,90 @@
         "title": "StressLibrary",
         "type": "object"
       },
+      "StressPlausibility": {
+        "additionalProperties": true,
+        "description": "Plausibility of every approved scenario and draft, and the risk ruler. Record MR-018.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "basket": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Basket",
+            "type": "array"
+          },
+          "drafts": {
+            "additionalProperties": true,
+            "title": "Drafts",
+            "type": "object"
+          },
+          "horizon_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizon Days"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "ruler": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ruler",
+            "type": "array"
+          },
+          "scenarios": {
+            "additionalProperties": true,
+            "title": "Scenarios",
+            "type": "object"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "StressPlausibility",
+        "type": "object"
+      },
       "StressProposalBody": {
         "properties": {
           "definition": {
@@ -11680,6 +11816,40 @@
         "additionalProperties": true,
         "description": "One scenario; when grouped, each group's P&L is an extra field named after the group.",
         "properties": {
+          "consistent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every factor moved with stressed correlations",
+            "title": "Consistent"
+          },
+          "correlation_z": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Z"
+          },
+          "covariance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Covariance"
+          },
           "description": {
             "anyOf": [
               {
@@ -11690,6 +11860,28 @@
               }
             ],
             "title": "Description"
+          },
+          "exceedance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exceedance"
+          },
+          "filled": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filled"
           },
           "goal": {
             "anyOf": [
@@ -11711,6 +11903,18 @@
             "title": "Name",
             "type": "string"
           },
+          "ruler_z": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "z-score on the headline basket, the risk ruler",
+            "title": "Ruler Z"
+          },
           "scenario_id": {
             "title": "Scenario Id",
             "type": "string"
@@ -11724,7 +11928,7 @@
                 "type": "null"
               }
             ],
-            "description": "BUILT_IN or USER",
+            "description": "BUILT_IN, USER or CALIBRATED",
             "title": "Source"
           },
           "total": {
@@ -11741,6 +11945,18 @@
               }
             ],
             "title": "Version"
+          },
+          "z_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plausibility of the key moves (MR-018)",
+            "title": "Z Score"
           }
         },
         "required": [
@@ -11754,12 +11970,55 @@
       },
       "StressRuleSpec": {
         "additionalProperties": true,
-        "description": "One shock rule of a hypothetical scenario, in engine units (MR-005).",
+        "description": "One rule of a hypothetical scenario, in engine units (MR-005): a shock on a factor or family,\nor a PCA shape (``pca``, ``component``, ``sigmas``) on a curve or surface (MR-018).",
         "properties": {
+          "component": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 level, 2 slope, 3 curvature",
+            "title": "Component"
+          },
+          "pca": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PCA shape: the curve or surface prefix, e.g. IR:USD:",
+            "title": "Pca"
+          },
           "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Factor id or family prefix, e.g. IR:USD: or EQIDX:SPX",
-            "title": "Prefix",
-            "type": "string"
+            "title": "Prefix"
+          },
+          "sigmas": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard deviations of the component over the horizon",
+            "title": "Sigmas"
           },
           "size": {
             "default": 0.0,
@@ -11795,9 +12054,6 @@
             "title": "Vol Points"
           }
         },
-        "required": [
-          "prefix"
-        ],
         "title": "StressRuleSpec",
         "type": "object"
       },
@@ -11807,6 +12063,18 @@
           "category": {
             "title": "Category",
             "type": "string"
+          },
+          "consistent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Every factor moves with the rules (MR-018)",
+            "title": "Consistent"
           },
           "description": {
             "title": "Description",
@@ -11999,6 +12267,34 @@
             "title": "Catalyst",
             "type": "string"
           },
+          "covariance": {
+            "default": "STRESSED",
+            "description": "STRESSED, SIMILAR or RECENT",
+            "title": "Covariance",
+            "type": "string"
+          },
+          "crisis_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crisis End"
+          },
+          "crisis_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crisis Start"
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -12043,11 +12339,23 @@
             "description": "HISTORICAL: a stylised episode of the history",
             "title": "Episode Id"
           },
+          "expand": {
+            "default": false,
+            "description": "Consistent: every factor the rules leave out moves with stressed correlations",
+            "title": "Expand",
+            "type": "boolean"
+          },
           "goal": {
             "default": "INFORMATION",
             "description": "LIMIT or INFORMATION",
             "title": "Goal",
             "type": "string"
+          },
+          "horizon_days": {
+            "default": 20,
+            "description": "Business days of the moves the covariance is estimated on",
+            "title": "Horizon Days",
+            "type": "integer"
           },
           "kind": {
             "description": "HYPOTHETICAL or HISTORICAL",
@@ -12169,8 +12477,16 @@
             "type": "string"
           },
           "source": {
-            "title": "Source",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "USER or CALIBRATED for a new scenario",
+            "title": "Source"
           },
           "status": {
             "description": "DRAFT, APPROVED, REJECTED or SUPERSEDED",
@@ -12217,7 +12533,6 @@
           "name",
           "kind",
           "version",
-          "source",
           "position",
           "status"
         ],
@@ -12327,6 +12642,13 @@
       "StressSetupOptions": {
         "additionalProperties": true,
         "properties": {
+          "covariances": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Covariances",
+            "type": "array"
+          },
           "episodes": {
             "items": {
               "type": "string"
@@ -15102,6 +15424,76 @@
         "summary": "Set Signoff Policy"
       }
     },
+    "/admin/stress/crises": {
+      "post": {
+        "operationId": "draft_stress_crises_admin_stress_crises_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StressScenarioVersion"
+                  },
+                  "title": "Response Draft Stress Crises Admin Stress Crises Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Draft Stress Crises"
+      }
+    },
     "/admin/stress/decisions": {
       "post": {
         "operationId": "decide_stress_scenario_admin_stress_decisions_post",
@@ -15176,6 +15568,72 @@
           }
         },
         "summary": "Decide Stress Scenario"
+      }
+    },
+    "/admin/stress/plausibility": {
+      "get": {
+        "operationId": "stress_plausibility_admin_stress_plausibility_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressPlausibility"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Plausibility"
       }
     },
     "/admin/stress/proposals": {
@@ -15470,6 +15928,86 @@
           }
         },
         "summary": "Stress Setup"
+      }
+    },
+    "/admin/stress/upgrade": {
+      "post": {
+        "operationId": "upgrade_stress_built_ins_admin_stress_upgrade_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressSeedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StressScenarioVersion"
+                  },
+                  "title": "Response Upgrade Stress Built Ins Admin Stress Upgrade Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Upgrade Stress Built Ins"
       }
     },
     "/admin/var/setup": {

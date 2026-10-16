@@ -267,7 +267,14 @@ class StressRow(Row):
         description="LIMIT (feeds stress-loss limits) or INFORMATION; absent on runs before OPS-005",
     )
     version: int | None = None
-    source: str | None = Field(default=None, description="BUILT_IN or USER")
+    source: str | None = Field(default=None, description="BUILT_IN, USER or CALIBRATED")
+    consistent: bool | None = Field(default=None, description="Every factor moved with stressed correlations")
+    covariance: str | None = None
+    z_score: float | None = Field(default=None, description="Plausibility of the key moves (MR-018)")
+    exceedance: float | None = None
+    correlation_z: float | None = None
+    ruler_z: float | None = Field(default=None, description="z-score on the headline basket, the risk ruler")
+    filled: int | None = None
 
 
 class PnLStep(ApiModel):
@@ -653,9 +660,17 @@ class VarSetup(ApiModel):
 
 
 class StressRuleSpec(ApiModel):
-    """One shock rule of a hypothetical scenario, in engine units (MR-005)."""
+    """One rule of a hypothetical scenario, in engine units (MR-005): a shock on a factor or family,
+    or a PCA shape (``pca``, ``component``, ``sigmas``) on a curve or surface (MR-018)."""
 
-    prefix: str = Field(description="Factor id or family prefix, e.g. IR:USD: or EQIDX:SPX")
+    prefix: str | None = Field(
+        default=None, description="Factor id or family prefix, e.g. IR:USD: or EQIDX:SPX"
+    )
+    pca: str | None = Field(default=None, description="PCA shape: the curve or surface prefix, e.g. IR:USD:")
+    component: int | None = Field(default=None, description="1 level, 2 slope, 3 curvature")
+    sigmas: float | None = Field(
+        default=None, description="Standard deviations of the component over the horizon"
+    )
     size: float = Field(
         default=0.0, description="Decimal for rates (0.01 = +100bp), bp for CDS, fraction for prices"
     )
@@ -674,6 +689,17 @@ class StressDefinitionSpec(ApiModel):
     goal: str = Field(default="INFORMATION", description="LIMIT or INFORMATION")
     description: str = ""
     rules: list[StressRuleSpec] = Field(default_factory=list)
+    expand: bool = Field(
+        default=False,
+        description="Consistent: every factor the rules leave out moves with stressed correlations",
+    )
+    covariance: str = Field(default="STRESSED", description="STRESSED, SIMILAR or RECENT")
+    horizon_days: int = Field(
+        default=20, description="Business days of the moves the covariance is estimated on"
+    )
+    source: str | None = Field(default=None, description="USER or CALIBRATED for a new scenario")
+    crisis_start: str | None = None
+    crisis_end: str | None = None
     episode_id: str | None = Field(default=None, description="HISTORICAL: a stylised episode of the history")
     window_start: str | None = Field(default=None, description="HISTORICAL: fixed window start, YYYY-MM-DD")
     window_end: str | None = None
@@ -689,7 +715,6 @@ class StressScenarioVersion(StressDefinitionSpec):
     """One version of a scenario with its approval and review state."""
 
     version: int
-    source: str
     position: int
     resolved_window: list[str] | None = None
     status: str = Field(description="DRAFT, APPROVED, REJECTED or SUPERSEDED")
@@ -704,8 +729,23 @@ class StressScenarioVersion(StressDefinitionSpec):
     review_overdue: bool = False
 
 
+class StressPlausibility(ApiModel):
+    """Plausibility of every approved scenario and draft, and the risk ruler. Record MR-018."""
+
+    available: bool
+    as_of: str | None = None
+    horizon_days: int | None = None
+    method: str | None = None
+    basket: list[str] = Field(default_factory=list)
+    ruler: list[dict[str, Any]] = Field(default_factory=list)
+    scenarios: dict[str, Any] = Field(default_factory=dict)
+    drafts: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+
+
 class StressSetupOptions(ApiModel):
     goals: list[str]
+    covariances: list[str] = Field(default_factory=list)
     kinds: list[str]
     severities: list[str]
     tags: list[str]
@@ -816,6 +856,7 @@ class StressScenarioSpec(ApiModel):
     severity: str | None = None
     enabled: bool | None = None
     review_due: str | None = None
+    consistent: bool | None = Field(default=None, description="Every factor moves with the rules (MR-018)")
 
 
 class StressCategory(ApiModel):

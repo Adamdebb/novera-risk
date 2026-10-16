@@ -61,7 +61,7 @@ _DESK_VAR: dict[str, float] = {
 }
 _DESK_STRESS: dict[str, float] = {
     "USD_RATES": 350e6,
-    "EUR_RATES": 75e6,
+    "EUR_RATES": 150e6,  # decision 47.5: room for the consistent credit shock; breach on the 15th only
     "GBP_RATES": 60e6,
     "JPY_RATES": 20e6,
     "EM_RATES": 15e6,

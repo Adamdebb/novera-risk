@@ -375,7 +375,7 @@ def _stage_backtest(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, 
 
 
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
-    persist_stress(repo, rid, x.stress, x.stress_run.recorded)
+    persist_stress(repo, rid, x.stress, x.stress_run.recorded, x.stress_run.info)
     return stress_headline(x.stress, x.limit_stress, x.val.table)
 
 

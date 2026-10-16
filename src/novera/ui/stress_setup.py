@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 RULE_COLS = ["prefix", "size", "vol_points", "tenor_filter"]
+PCA_COLS = ["pca", "component", "sigmas"]
 LIST_COLS = [
     "scenario_id",
     "name",
@@ -35,8 +36,48 @@ def _rules_frame(rules: list[dict[str, Any]]) -> pd.DataFrame:
                 "tenor_filter": ",".join(r.get("tenor_filter") or []),
             }
             for r in rules
+            if "pca" not in r
         ],
         columns=RULE_COLS,
+    )
+
+
+def _pca_frame(rules: list[dict[str, Any]]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [{c: r.get(c) for c in PCA_COLS} for r in rules if "pca" in r and r.get("pca")], columns=PCA_COLS
+    )
+
+
+def _pca_from(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    out = []
+    for row in frame.to_dict("records"):
+        pref = row.get("pca")
+        if isinstance(pref, str) and pref.strip() and not pd.isna(row.get("sigmas")):
+            out.append(
+                {
+                    "pca": pref.strip(),
+                    "component": int(row.get("component") or 1),
+                    "sigmas": float(row["sigmas"]),
+                }
+            )
+    return out
+
+
+def _facts(f: dict[str, Any] | None) -> str:
+    """One line of plausibility facts (MR-018) for the approver."""
+    if not f:
+        return "Plausibility: not available for this scenario."
+    if f.get("error"):
+        return f"Plausibility: {f['error']}"
+    if f.get("z_score") is None:
+        return "Plausibility: no key move to score."
+    return (
+        f"Plausibility ({f.get('horizon_days')}-day moves, {f.get('covariance')} covariance): z-score "
+        f"{f['z_score']:.2f}, exceedance {f['exceedance']:.1%} of historical moves as extreme, correlation "
+        f"z-score {f['correlation_z']:.2f} (above 1: the signs and sizes fight the correlations), risk "
+        f"ruler {f.get('ruler_z') or 0:.2f}"
+        + (f", {f['filled']} factors filled" if f.get("filled") else "")
+        + "."
     )
 
 
@@ -91,16 +132,16 @@ def render_stress_setup(client: Any) -> None:
 
     if s["source"] == "defaults":
         st.info(
-            "The built-in library is running but not yet stored: no versions, no review dates. Storing "
-            "it records the built-ins as approved version 1 under your name and starts their review "
-            "clock. Any first proposal stores it too."
+            "The built-in library is running but not yet stored: no review dates. Storing it records "
+            "the built-ins as approved under your name and starts their review clock. Any first "
+            "proposal stores it too."
         )
         with st.form("stress_seed"):
             note = st.text_input("Note", key="stress_seed_note")
             if st.form_submit_button("Store the built-in library"):
                 try:
                     client.seed_stress_library(note.strip())
-                    st.success("Built-in library stored as approved version 1.")
+                    st.success("Built-in library stored as approved.")
                     st.cache_data.clear()
                     st.rerun()
                 except ApiError as e:
@@ -108,6 +149,64 @@ def render_stress_setup(client: Any) -> None:
 
     st.subheader("Approved scenarios, in run order")
     st.dataframe(_version_table(s["scenarios"]), use_container_width=True, hide_index=True)
+
+    plaus: dict[str, Any] = {}
+    show_ruler = st.checkbox(
+        "Plausibility and risk ruler (MR-018)",
+        value=bool(s["drafts"]),
+        help="z-scores of every scenario and draft against stressed correlations, and the ruler that "
+        "places them among the stored stress episodes. Computed on the latest snapshot; takes a few seconds.",
+    )
+    if show_ruler:
+        plaus = client.stress_plausibility()
+        if plaus.get("available"):
+            rows = []
+            for sid, f in plaus["scenarios"].items():
+                if f and f.get("z_score") is not None:
+                    rows.append(
+                        {
+                            "scenario_id": sid,
+                            "z_score": round(f["z_score"], 2),
+                            "exceedance": round(f["exceedance"], 3),
+                            "correlation_z": round(f["correlation_z"], 2),
+                            "ruler_z": round(f["ruler_z"] or 0.0, 2),
+                            "covariance": f["covariance"],
+                            "filled": f.get("filled"),
+                        }
+                    )
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            ruler = pd.DataFrame(plaus["ruler"])
+            if not ruler.empty:
+                st.markdown(
+                    f"**Risk ruler** · z-score on the headline basket, {plaus['horizon_days']}-day moves, "
+                    "stressed correlations. Further right is less plausible."
+                )
+                st.bar_chart(ruler.set_index("name")["ruler_z"], horizontal=True)
+        else:
+            st.caption(plaus.get("reason") or "Plausibility is not available.")
+
+    b1, b2 = st.columns(2)
+    if b1.button(
+        "Propose the built-in updates",
+        help="Drafts of built-ins whose code version is newer than the stored one",
+    ):
+        try:
+            out = client.upgrade_stress_built_ins("")
+            st.success(f"{len(out)} built-in updates proposed for a second person to decide.")
+            st.cache_data.clear()
+            st.rerun()
+        except ApiError as e:
+            st.error(str(e))
+    if b2.button(
+        "Draft the calibrated crises", help="14 named crises with approximate headline moves to verify"
+    ):
+        try:
+            out = client.draft_stress_crises()
+            st.success(f"{len(out)} calibrated crises drafted; verify each figure before approving.")
+            st.cache_data.clear()
+            st.rerun()
+        except ApiError as e:
+            st.error(str(e))
 
     st.subheader(f"Drafts · {len(s['drafts'])}")
     if not s["drafts"]:
@@ -121,6 +220,20 @@ def render_stress_setup(client: Any) -> None:
                 st.caption(f"Narrative: {d.get('narrative') or '—'} · Catalyst: {d.get('catalyst') or '—'}")
             if d["kind"] == "HYPOTHETICAL":
                 st.dataframe(_rules_frame(d["rules"]), use_container_width=True, hide_index=True)
+                pca = _pca_frame(d["rules"])
+                if not pca.empty:
+                    st.dataframe(pca, use_container_width=True, hide_index=True)
+                st.caption(
+                    (
+                        "Consistent: every factor the rules leave out moves with the "
+                        + d["covariance"].lower()
+                        + " correlations. "
+                    )
+                    if d.get("expand")
+                    else "Standalone: factors the rules leave out stay where they are. "
+                )
+                if plaus.get("available"):
+                    st.caption(_facts(plaus["drafts"].get(f"{d['scenario_id']}:{d['version']}")))
             else:
                 st.caption(
                     f"Episode {d['episode_id']}"
@@ -172,6 +285,9 @@ def render_stress_setup(client: Any) -> None:
         "window_start": None,
         "window_end": None,
         "enabled": True,
+        "expand": True,
+        "covariance": "STRESSED",
+        "horizon_days": 20,
         "tags": [],
         "severity": "SEVERE",
         "narrative": "",
@@ -199,6 +315,8 @@ def render_stress_setup(client: Any) -> None:
             "Tags", opts["tags"], default=[t for t in base.get("tags") or [] if t in opts["tags"]]
         )
         rules_frame = pd.DataFrame(columns=RULE_COLS)
+        pca_frame = pd.DataFrame(columns=PCA_COLS)
+        expand = covariance = horizon = None
         episode_id = window_start = window_end = None
         if kind == "HYPOTHETICAL":
             st.caption(
@@ -218,6 +336,40 @@ def render_stress_setup(client: Any) -> None:
                     "vol_points": st.column_config.NumberColumn("Vol points", format="%.3f"),
                     "tenor_filter": st.column_config.TextColumn("Tenors", help="Comma separated, e.g. 1Y,2Y"),
                 },
+            )
+            st.caption(
+                "PCA shapes (optional): a curve or surface prefix (IR:USD:, CMD:BRENT:, VOL:SPX:), the "
+                "component (1 level, 2 slope, 3 curvature) and its size in standard deviations over "
+                "the horizon."
+            )
+            pca_frame = st.data_editor(
+                _pca_frame(base["rules"] or []),
+                num_rows="dynamic",
+                hide_index=True,
+                use_container_width=True,
+                key=f"pca_{start}",
+                column_config={
+                    "pca": st.column_config.TextColumn("Curve or surface prefix"),
+                    "component": st.column_config.NumberColumn("Component", min_value=1, max_value=3, step=1),
+                    "sigmas": st.column_config.NumberColumn("Size (σ)", format="%.2f"),
+                },
+            )
+            e1, e2, e3 = st.columns(3)
+            expand = e1.checkbox(
+                "Consistent (move every factor)",
+                value=bool(base.get("expand", False)),
+                help="Factors the rules leave out take their conditional expectation given the rules' "
+                "key moves (MR-018).",
+            )
+            covs = opts.get("covariances") or ["STRESSED", "SIMILAR", "RECENT"]
+            covariance = e2.selectbox(
+                "Covariance", covs, index=covs.index(base.get("covariance") or "STRESSED")
+            )
+            horizon = e3.number_input(
+                "Horizon (business days)",
+                min_value=5,
+                max_value=250,
+                value=int(base.get("horizon_days") or 20),
             )
         else:
             eps = ["(fixed window)", *opts["episodes"]]
@@ -243,7 +395,10 @@ def render_stress_setup(client: Any) -> None:
             "kind": kind,
             "goal": goal,
             "description": description.strip(),
-            "rules": _rules_from(rules_frame) if kind == "HYPOTHETICAL" else [],
+            "rules": (_rules_from(rules_frame) + _pca_from(pca_frame)) if kind == "HYPOTHETICAL" else [],
+            "expand": bool(expand) if kind == "HYPOTHETICAL" else False,
+            "covariance": covariance or "STRESSED",
+            "horizon_days": int(horizon or 20),
             "episode_id": episode_id,
             "window_start": window_start or None,
             "window_end": window_end or None,

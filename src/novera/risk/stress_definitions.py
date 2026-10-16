@@ -21,12 +21,16 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from typing import Any
 
+import numpy as np
+
 from novera.market_data.history import MarketHistory
+from novera.risk import scenario_covariance as sc_cov
 from novera.risk.stress import (
     HYPOTHETICAL_LIBRARY,
     ShockRule,
     StressScenario,
     historical_episodes,
+    rule_shocks,
 )
 
 RECORD = "OPS-005"
@@ -60,6 +64,19 @@ TAGS = (
 )
 CURVE_TENORS = ("1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y")
 _ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+SOURCES = ("BUILT_IN", "USER", "CALIBRATED")
+CONSISTENT_BUILT_INS = (
+    # Market shocks and composites that move every factor since round 47 (decision 47.1);
+    # the curve and basis sensitivities stay standalone by design.
+    "eurusd_down_10",
+    "equity_crash_20_vol_15",
+    "credit_wider_150",
+    "oil_down_30",
+    "btc_down_50",
+    "vol_shock_10",
+    "global_risk_off",
+    "inflation_shock",
+)
 
 _BUILT_IN_TAGS: dict[str, tuple[str, ...]] = {
     "usd_rates_up_100": ("SENSITIVITY", "RATES"),
@@ -87,7 +104,18 @@ class ScenarioDefinition:
     goal: str = "INFORMATION"
     description: str = ""
     rules: tuple[dict[str, Any], ...] = ()
-    """HYPOTHETICAL: ``ShockRule`` fields as dicts (prefix, size, vol_points, tenor_filter)."""
+    """HYPOTHETICAL: ``ShockRule`` fields as dicts (prefix, size, vol_points, tenor_filter), or
+    PCA shapes as dicts (pca: the curve or surface prefix, component 1-3, sigmas)."""
+    expand: bool = False
+    """Consistent scenario: every factor the rules do not name takes its conditional expectation
+    given the rules' anchors (MR-018)."""
+    covariance: str = sc_cov.DEFAULT_METHOD
+    """STRESSED, SIMILAR or RECENT: the regime the expansion, PCA shapes and plausibility use."""
+    horizon_days: int = sc_cov.DEFAULT_HORIZON
+    """Business days of the moves the covariance is estimated on."""
+    crisis_start: str | None = None
+    """CALIBRATED: the real crisis window the headline moves describe (documentation)."""
+    crisis_end: str | None = None
     episode_id: str | None = None
     """HISTORICAL: a stylised episode stored with the history (``market_episode``)."""
     window_start: str | None = None
@@ -100,7 +128,7 @@ class ScenarioDefinition:
     catalyst: str = ""
     area: str | None = None
     """The desk or business a desk head wrote the scenario for; None for the firm."""
-    source: str = "USER"  # BUILT_IN or USER
+    source: str = "USER"  # BUILT_IN, USER or CALIBRATED (a named real crisis, MR-018)
     version: int = 1
     position: int = 0
     """Run order; the built-ins keep the order the engine always used."""
@@ -130,6 +158,9 @@ class ScenarioDefinition:
                 "tags": tuple(d.get("tags") or ()),
                 "version": int(d.get("version") or 1),
                 "position": int(d.get("position") or 0),
+                "horizon_days": int(d.get("horizon_days") or sc_cov.DEFAULT_HORIZON),
+                "covariance": d.get("covariance") or sc_cov.DEFAULT_METHOD,
+                "expand": bool(d.get("expand", False)),
                 "resolved_window": (str(rw[0]), str(rw[1])) if rw else None,
             }
         )
@@ -144,12 +175,28 @@ class ScenarioDefinition:
                 tuple(r["tenor_filter"]) if r.get("tenor_filter") else None,
             )
             for r in self.rules
+            if "pca" not in r
         )
 
-    def to_scenario(self, window: tuple[date, date] | None = None) -> StressScenario:
+    def pca_rules(self) -> tuple[dict[str, Any], ...]:
+        return tuple(r for r in self.rules if "pca" in r)
+
+    @property
+    def explicit(self) -> bool:
+        """Whether the run gives the engine every shock explicitly (expansion or PCA shapes)."""
+        return self.kind == "HYPOTHETICAL" and (self.expand or bool(self.pca_rules()))
+
+    def to_scenario(
+        self, window: tuple[date, date] | None = None, shocks: dict[str, float] | None = None
+    ) -> StressScenario:
         if self.kind == "HYPOTHETICAL":
             return StressScenario(
-                self.scenario_id, self.name, self.description, "HYPOTHETICAL", self.shock_rules()
+                self.scenario_id,
+                self.name,
+                self.description,
+                "HYPOTHETICAL",
+                self.shock_rules(),
+                shocks=tuple(sorted(shocks.items())) if shocks is not None else None,
             )
         if window is None:
             raise ValueError(f"historical scenario {self.scenario_id} needs a window")
@@ -162,6 +209,12 @@ class ScenarioDefinition:
 def _rule_dict(r: dict[str, Any] | ShockRule) -> dict[str, Any]:
     if isinstance(r, ShockRule):
         r = asdict(r)
+    if r.get("pca"):
+        return {
+            "pca": str(r["pca"]),
+            "component": int(r.get("component") or 1),
+            "sigmas": float(r.get("sigmas") or 0.0),
+        }
     out: dict[str, Any] = {"prefix": str(r["prefix"]), "size": float(r.get("size") or 0.0)}
     out["vol_points"] = None if r.get("vol_points") is None else float(r["vol_points"])
     tf = r.get("tenor_filter")
@@ -174,18 +227,27 @@ def _episode_name(episode_id: str) -> str:
 
 
 def built_in_definitions(episode_ids: list[str]) -> list[ScenarioDefinition]:
-    """The library the platform ran before the store existed: every hypothetical rule set,
-    then one definition per stylised episode, in that order, all feeding limits."""
+    """The built-in library: every hypothetical rule set, then one definition per stylised
+    episode, in that order, all feeding limits. Since round 47 the eight market shocks and
+    composites are consistent (version 2, ``CONSISTENT_BUILT_INS``); the curve and basis
+    sensitivities and the episodes are as the engine always ran them."""
     out = [
         ScenarioDefinition(
             sc.scenario_id,
             sc.name,
             "HYPOTHETICAL",
             goal="LIMIT",
-            description=sc.description,
+            description=sc.description
+            + (
+                " · every other factor moves with it (stressed correlations)"
+                if sc.scenario_id in CONSISTENT_BUILT_INS
+                else ""
+            ),
             rules=tuple(_rule_dict(r) for r in sc.rules),
+            expand=sc.scenario_id in CONSISTENT_BUILT_INS,
             tags=_BUILT_IN_TAGS.get(sc.scenario_id, ()),
             source="BUILT_IN",
+            version=2 if sc.scenario_id in CONSISTENT_BUILT_INS else 1,
             position=i,
         )
         for i, sc in enumerate(HYPOTHETICAL_LIBRARY)
@@ -223,12 +285,99 @@ def episode_windows(
 class Resolved:
     definition: ScenarioDefinition
     scenario: StressScenario
+    info: dict[str, Any] = field(default_factory=dict, compare=False)
+    """Expansion and plausibility facts of a hypothetical scenario (MR-018)."""
+
+
+class Expander:
+    """Turns hypothetical definitions into explicit shocks on a snapshot: the rules' shocks,
+    PCA shapes, and for a consistent scenario every other factor's conditional expectation
+    given the anchors, with the plausibility of the anchors (MR-018). Uses the history up to
+    the snapshot's date only, so a re-run on the same date reproduces the shocks."""
+
+    def __init__(
+        self,
+        history: MarketHistory,
+        base: Any,
+        universe: dict[str, Any],
+        episodes: dict[str, tuple[date, date]] | None = None,
+    ) -> None:
+        self.history, self.base, self.universe, self.episodes = history, base, universe, episodes or {}
+        self.relative = {f for f, rf in universe.items() if rf.shock_type != "ABSOLUTE"}
+
+    def moves(self, horizon: int) -> sc_cov.MoveSet:
+        return sc_cov.move_set(self.history, self.base.as_of, horizon, self.universe)
+
+    @staticmethod
+    def _anchors(ms: sc_cov.MoveSet, shocks: dict[str, float], per_rule: list[set[str]]) -> dict[str, float]:
+        """One representative factor per rule, carrying the rule's shock (MR-018)."""
+        out: dict[str, float] = {}
+        for matched in per_rule:
+            a = sc_cov.representative(sorted(matched), ms)
+            if a is not None and a not in out and a in shocks:  # a pinned zero move is an anchor too
+                out[a] = shocks[a]
+        return out
+
+    def explain(self, d: ScenarioDefinition) -> tuple[dict[str, float], dict[str, Any]]:
+        """The shocks the definition applies and the facts behind them."""
+        ms = self.moves(d.horizon_days)
+        stressed = sc_cov.regime("STRESSED", self.history, ms, self.episodes)
+        shape_regime = (
+            stressed if d.covariance != "RECENT" else sc_cov.regime("RECENT", self.history, ms, self.episodes)
+        )
+        per_rule: list[set[str]] = []
+        shocks: dict[str, float] = {}
+        for rule in d.shock_rules():
+            one = rule_shocks((rule,), self.base)
+            per_rule.append(set(one))
+            for f, s in one.items():
+                shocks[f] = shocks.get(f, 0.0) + s
+        pca_info = []
+        for r in d.pca_rules():
+            shape = sc_cov.pca_shape(ms, shape_regime, r["pca"], int(r["component"]), float(r["sigmas"]))
+            for f, s in shape.shocks.items():
+                if f in self.base.values:
+                    shocks[f] = shocks.get(f, 0.0) + s
+            per_rule.append(set(shape.shocks))
+            pca_info.append({**r, "explained": shape.explained, "nodes": shape.nodes})
+        anchors = {a: v for a, v in self._anchors(ms, shocks, per_rule).items() if a in ms.index}
+        reg = sc_cov.regime(
+            d.covariance,
+            self.history,
+            ms,
+            self.episodes,
+            ms.cols(list(anchors)),
+            np.array(list(anchors.values())),
+        )
+        info: dict[str, Any] = {
+            "covariance": reg.method,
+            "horizon_days": d.horizon_days,
+            "anchors": anchors,
+            "pca": pca_info,
+        }
+        if d.expand:
+            ex = sc_cov.expand(shocks, anchors, ms, reg, self.relative)
+            shocks = ex.shocks
+            info["filled"] = ex.filled
+            info["effective_days"] = ex.effective_days
+        pl = sc_cov.plausibility(anchors, ms, reg)
+        if pl is not None:
+            info.update(
+                z_score=pl.z_score,
+                exceedance=pl.exceedance,
+                correlation_z=pl.correlation_z,
+                volatility_z=pl.volatility_z,
+                anchor_detail=pl.anchors,
+            )
+        info["ruler_z"] = sc_cov.basket_z(shocks, ms, stressed)
+        return shocks, info
 
 
 def resolve(
     definitions: list[ScenarioDefinition],
     windows: dict[str, tuple[date, date]],
     include_historical: bool = True,
+    expander: Expander | None = None,
 ) -> tuple[list[Resolved], list[str]]:
     """Definitions to runnable scenarios, in run order. Disabled definitions are skipped; a
     historical definition whose episode is unknown is skipped and named in the second list.
@@ -253,8 +402,19 @@ def resolve(
             out.append(
                 Resolved(replace(d, resolved_window=(w[0].isoformat(), w[1].isoformat())), d.to_scenario(w))
             )
+        elif d.explicit:
+            if expander is None:
+                raise ValueError(f"{d.scenario_id} is a consistent scenario: resolving it needs the history")
+            shocks, info = expander.explain(d)
+            out.append(Resolved(d, d.to_scenario(shocks=shocks), info))
         else:
-            out.append(Resolved(d, d.to_scenario()))
+            info = {}
+            if expander is not None:
+                try:
+                    info = expander.explain(d)[1]
+                except ValueError:
+                    info = {}
+            out.append(Resolved(d, d.to_scenario(), info))
     return out, unresolved
 
 
@@ -279,12 +439,31 @@ def validate(
     bad_tags = [t for t in d.tags if t not in TAGS]
     if bad_tags:
         e.append(f"unknown tags: {', '.join(bad_tags)}")
+    if d.source not in SOURCES:
+        e.append(f"source must be one of {', '.join(SOURCES)}")
+    if d.covariance not in sc_cov.METHODS:
+        e.append(f"covariance must be one of {', '.join(sc_cov.METHODS)}")
+    if not 5 <= int(d.horizon_days) <= 250:
+        e.append("horizon_days must be between 5 and 250 business days")
+    if d.expand and d.kind != "HYPOTHETICAL":
+        e.append("only a hypothetical scenario expands to every factor")
     if d.kind == "HYPOTHETICAL":
         if not d.rules:
             e.append("a hypothetical scenario needs at least one shock rule")
         if d.episode_id or d.window_start or d.window_end:
             e.append("a hypothetical scenario takes rules, not a window")
         for i, r in enumerate(d.rules, 1):
+            if "pca" in r:
+                prefix = str(r["pca"])
+                nodes = [f for f in factor_ids if f.startswith(prefix)]
+                if len(nodes) < 3:
+                    e.append(f"rule {i}: PCA needs at least 3 nodes under {prefix}, found {len(nodes)}")
+                if int(r.get("component") or 0) not in (1, 2, 3):
+                    e.append(f"rule {i}: PCA component must be 1 (level), 2 (slope) or 3 (curvature)")
+                sig = float(r.get("sigmas") or 0.0)
+                if not math.isfinite(sig) or sig == 0.0 or abs(sig) > 10:
+                    e.append(f"rule {i}: PCA size must be a non-zero number of standard deviations up to 10")
+                continue
             prefix = str(r.get("prefix") or "")
             if not prefix or not any(f.startswith(prefix) for f in factor_ids):
                 e.append(f"rule {i}: {prefix or '(empty)'} matches no risk factor")
@@ -294,7 +473,8 @@ def validate(
             for v in (size, vp):
                 if v is not None and not math.isfinite(float(v)):
                     e.append(f"rule {i}: size must be a finite number")
-            if (vp is None and float(size) == 0.0) or (vp is not None and float(vp) == 0.0):
+            pins = prefix in factor_ids  # a zero move on one named factor pins it (calibrated crises)
+            if not pins and ((vp is None and float(size) == 0.0) or (vp is not None and float(vp) == 0.0)):
                 e.append(f"rule {i}: the shock is zero")
             tf = r.get("tenor_filter") or ()
             if tf and any(t not in CURVE_TENORS for t in tf):
@@ -354,6 +534,11 @@ class StressRun:
         return [r for r in self.results if r.scenario.scenario_id in ids]
 
     @property
+    def info(self) -> dict[str, dict[str, Any]]:
+        """Expansion and plausibility facts by scenario id (MR-018)."""
+        return {r.definition.scenario_id: r.info for r in self.resolved}
+
+    @property
     def recorded(self) -> list[dict[str, Any]]:
         """What the run ran, for its config: each definition with the dates it replayed and its
         review due date, so a re-run reproduces the stage whatever the library says later."""
@@ -404,8 +589,9 @@ def run_stress_definitions(
     from novera.risk.stress import run_stress
 
     pairs = [from_recorded(d) for d in recorded]
+    windows = episode_windows(history, stored_episodes)
     resolved, unresolved = resolve(
-        [p[0] for p in pairs], episode_windows(history, stored_episodes), include_historical
+        [p[0] for p in pairs], windows, include_historical, Expander(history, pf.base, pf.universe, windows)
     )
     due = {p[0].scenario_id: p[1] for p in pairs}
     results = run_stress(pf, [r.scenario for r in resolved], history)

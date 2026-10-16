@@ -522,6 +522,21 @@ def stress_setup(svc: RiskService = Depends(service)):
     return svc.stress_setup()
 
 
+@app.get("/admin/stress/plausibility", response_model=s.StressPlausibility)
+def stress_plausibility(svc: RiskService = Depends(service)):
+    return svc.stress_plausibility()
+
+
+@app.post("/admin/stress/upgrade", response_model=list[s.StressScenarioVersion])
+def upgrade_stress_built_ins(body: StressSeedBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.upgrade_stress_built_ins(body.note)
+
+
+@app.post("/admin/stress/crises", response_model=list[s.StressScenarioVersion])
+def draft_stress_crises(svc: RiskWriteService = Depends(write_service)):
+    return svc.draft_stress_crises()
+
+
 @app.post("/admin/stress/proposals", response_model=s.StressScenarioVersion)
 def propose_stress_scenario(body: StressProposalBody, svc: RiskWriteService = Depends(write_service)):
     return svc.propose_stress_scenario(body.definition.model_dump(), body.note)

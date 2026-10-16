@@ -221,8 +221,11 @@ def test_stress_library_catalogue(world):
     usd10 = next(s for s in crash["shocks"] if s["target"] == "IR:USD:10Y")
     assert usd10["unit"] == "bp" and usd10["size"] < 0  # rates fall in the risk-off crash
     crises = cats["NAMED_CRISIS"]["scenarios"]
-    assert all(c["status"] == "NOT_COVERED" and not c["in_daily_run"] for c in crises)
-    assert lib["summary"]["scenarios"] == len(HYPOTHETICAL_LIBRARY) + 2 + 7
+    first = date.fromisoformat(lib["history"]["start"])
+    for c in crises:  # 14 windows; any the synthetic year reaches is covered but synthetic
+        covered = date.fromisoformat(c["window_start"]) >= first
+        assert c["status"] == ("SYNTHETIC_WINDOW" if covered else "NOT_COVERED") and not c["in_daily_run"]
+    assert lib["summary"]["scenarios"] == len(HYPOTHETICAL_LIBRARY) + 2 + 14
 
 
 def test_weighted_tail_measures_and_fixed_window(world, sens):

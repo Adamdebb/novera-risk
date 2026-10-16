@@ -93,7 +93,7 @@ uv run novera limits calibrate --run latest --actor "..." / drafts / approve <id
 uv run novera run sweep       # mark runs and jobs a killed process left RUNNING as FAILED (OPS-001); runs do it on start too
 uv run novera signoff status / sign VAR --actor "Head of Market Risk" / reject ... --comment / policy --require VAR,STRESS   # sign-off and release (OPS-003)
 uv run novera var-setup show / template bank|hedge_fund --actor CRO   # the VaR matrix: measures produced daily, for limits or information (OPS-004); Admin page edits it
-uv run novera stress-setup show / seed / propose <file.json> --actor ... / decide <id> <version> --approve --actor CRO / review <id> --actor CRO   # the versioned stress library, four eyes, LIMIT or INFORMATION (OPS-005); Admin page does the same
+uv run novera stress-setup show / seed / propose <file.json> --actor ... / decide <id> <version> --approve --actor CRO / review <id> --actor CRO / upgrade / crises / plausibility   # the versioned stress library, four eyes, LIMIT or INFORMATION (OPS-005); consistent scenarios and plausibility (MR-018); Admin page does the same
 uv run novera alert test      # send one test alert through the configured channels (Slack, SMTP); `alert list` shows stored alerts
 uv run novera vendor-feed / reconcile <csv>   # independent-challenger demo
 uv run novera fetch           # real market data into the history (network, optional FRED key)

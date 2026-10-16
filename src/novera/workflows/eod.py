@@ -437,6 +437,7 @@ def run_eod(
                     "liq": liq,
                     "proxies": proxies,
                     "lookthrough": lookthrough,
+                    "stress_info": st_run.info,
                 },
             )
         # The run stays RUNNING from here: the engines below read the stored run by id, and a
@@ -658,10 +659,17 @@ def persist_var(repo, rid: str, var_set: MeasureSet, runs_dir: Path | None = Non
         chal.result.pnl.to_parquet(d / "var_pnl_delta_gamma_vega.parquet")
 
 
-def persist_stress(repo, rid: str, stress: list, recorded: list | None = None) -> None:
+_STRESS_FACTS = ("covariance", "z_score", "exceedance", "correlation_z", "ruler_z", "filled")
+
+
+def persist_stress(
+    repo, rid: str, stress: list, recorded: list | None = None, info: dict | None = None
+) -> None:
     """Scenario P&L by trade, and one summary row per scenario with the goal and version of
-    the definition the run ran (OPS-005)."""
+    the definition the run ran (OPS-005), whether it moved every factor and how plausible its
+    anchors are (MR-018)."""
     meta = {d["scenario_id"]: d for d in recorded or []}
+    info = info or {}
     stress_rows = (
         pd.concat(
             [
@@ -691,10 +699,23 @@ def persist_stress(repo, rid: str, stress: list, recorded: list | None = None) -
                     "goal": meta.get(r.scenario.scenario_id, {}).get("goal", "LIMIT"),
                     "version": int(meta.get(r.scenario.scenario_id, {}).get("version") or 1),
                     "source": meta.get(r.scenario.scenario_id, {}).get("source", "BUILT_IN"),
+                    "consistent": bool(meta.get(r.scenario.scenario_id, {}).get("expand", False)),
+                    **{k: info.get(r.scenario.scenario_id, {}).get(k) for k in _STRESS_FACTS},
                 }
                 for r in stress
             ],
-            columns=["scenario_id", "name", "kind", "description", "total", "goal", "version", "source"],
+            columns=[
+                "scenario_id",
+                "name",
+                "kind",
+                "description",
+                "total",
+                "goal",
+                "version",
+                "source",
+                "consistent",
+                *_STRESS_FACTS,
+            ],
         ),
     )
 
@@ -758,7 +779,7 @@ def _persist(
     repo.save_run_frame(rid, "valuation", valuation)
     repo.save_run_frame(rid, "sensitivities", sens)
     persist_var(repo, rid, var_set, runs_dir)
-    persist_stress(repo, rid, stress, run.config.get("stress_scenarios"))
+    persist_stress(repo, rid, stress, run.config.get("stress_scenarios"), (extras or {}).get("stress_info"))
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

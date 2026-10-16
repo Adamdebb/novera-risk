@@ -640,19 +640,29 @@ elif page == "Stress":
     )
     stt = df(load("stress", run_id, by=by))
     if not stt.empty:
-        meta = ["scenario_id", "name", "kind", "description", "total", "goal", "version", "source"]
-        cols = [c for c in stt.columns if c not in meta]
+        from novera.api.service import STRESS_META
+
+        cols = [c for c in stt.columns if c not in STRESS_META]
         if "goal" not in stt.columns:  # runs made before the stress setup: every scenario fed limits
             stt["goal"] = "LIMIT"
-        show = stt[["name", "kind", "goal", "total", *cols]].copy()
+        facts = [c for c in ("consistent", "z_score", "ruler_z") if c in stt.columns]
+        show = stt[["name", "kind", "goal", *facts, "total", *cols]].copy()
         for c in ["total", *cols]:
             show[c] = show[c] / M
+        for c in ("z_score", "ruler_z"):
+            if c in show.columns:
+                show[c] = pd.to_numeric(show[c], errors="coerce").round(2)
         st.dataframe(
-            show.round(1).rename(columns={"total": "total (m)"}), use_container_width=True, hide_index=True
+            show.round(1).rename(columns={"total": "total (m)", "z_score": "z-score", "ruler_z": "ruler"}),
+            use_container_width=True,
+            hide_index=True,
         )
         st.caption(
             "Goal LIMIT: the scenario feeds the stress-loss limits. INFORMATION: reported only, until "
-            "the risk function promotes it (OPS-005, Admin → Stress scenarios)."
+            "the risk function promotes it (OPS-005, Admin → Stress scenarios). Consistent: every factor "
+            "the rules leave out moves with stressed correlations. z-score: how extreme the scenario's key "
+            "moves are against the covariance; ruler: its place among past stress episodes on the headline "
+            "basket (MR-018)."
         )
         pick = st.selectbox("Scenario", stt["name"])
         row = stt[stt["name"] == pick].iloc[0]
@@ -681,6 +691,8 @@ elif page == "Stress library":
     status_names = {
         "IN_RUN": "🟢 in the daily run",
         "REAL": "🟢 replayable on real data",
+        "CALIBRATED": "🟢 calibrated replay in the daily run",
+        "DISABLED": "⚪ disabled",
         "PARTLY_REAL": "🟡 partly real data",
         "SYNTHETIC_WINDOW": "⚪ window covered, synthetic data only",
         "NOT_COVERED": "⚫ outside the stored history",

@@ -1898,6 +1898,83 @@ VaR setup (OPS-004). One question round; the owner took every recommended option
   Tests: `tests/test_stress_setup.py`, `test_api.py::test_stress_setup_endpoints`,
   `test_ui.py::test_admin_stress_scenarios_configuration`, `test_security.py`.
 
+## Round 47 — Consistent scenarios, PCA shapes, plausibility and calibrated crises (2026-10-16)
+
+Context: the second round of the stress framework (`docs/08-stress-framework.md`). Until now a
+scenario left every factor it did not name at zero. Two question rounds; the owner chose to replace
+the built-ins in place rather than add twins.
+
+### 47.1 The built-ins
+- Options: keep them and add consistent twins ★ · replace them in place · leave them alone
+- Choice (owner): **replace in place**. Follow-up options: the 8 market shocks, not the curve
+  tests ★ · all 14 · composites only. Choice (owner): **the 8 market shocks**. EUR/USD −10%,
+  equity crash with vol, credit +150bp, oil −30%, BTC −50%, vol +10, global risk-off and the
+  inflation shock are consistent from version 2. The six curve and basis sensitivities stay
+  standalone, by the framework's design.
+
+### 47.2 The covariance that fills unnamed factors
+- Options: stressed regime ★ · similar days · recent
+- Choice (owner): **stressed regime** by default: the stored episodes plus the top fifth of
+  20-day realised S&P 500 volatility days. Each scenario may choose SIMILAR (falls back to
+  STRESSED below 30 effective days) or RECENT.
+
+### 47.3 Where the crisis figures come from
+- Options: I draft, the owner approves ★ · fetch real data · the owner provides them
+- Choice (owner): **drafted, then approved**. Fourteen crises, 2008 to 2025
+  (`risk/crisis_tables.py`), give approximate moves of 5 to 14 headline factors. They enter only as
+  INFORMATION drafts from Risk Control, marked "approximate, to verify" (`novera stress-setup
+  crises`, or the Admin page), and run once approved. The demo databases hold none yet. The
+  named-crisis list grows from 7 to 14; an approved crisis shows as CALIBRATED.
+
+### 47.4 What plausibility does
+- Options: inform the approver ★ · warn above a threshold · block above a threshold
+- Choice (owner): **inform**. Every approved scenario and draft shows its z-score, exceedance,
+  correlation z-score, per-anchor z-delta and risk-ruler position (Admin page, `novera
+  stress-setup plausibility`). Each run stores them in `stress_summary`.
+
+### 47.5 The limits after the change
+- Options: recalibrate and rebuild ★ · keep the amounts · no rebuild yet
+- Choice (owner): **recalibrate and rebuild**. Result: the consistent "credit +150bp" applies the
+  shock to investment grade too, a GFC-sized move with a z-score of 10.6, the least plausible in the
+  library. It becomes the bank's worst stress (−338.9m on the 15th, was USD rates +100bp at
+  −187.0m) and the fund's second. Its expansion rallies European rates, and the EUR rates desk
+  loses 333m. Calibration caps a limit at twice its appetite (150m), so EUR_RATES_STRESS breached
+  on all three days (185%, 194%, 222%).
+  - Options brought to the owner: tier the credit shock (IG +50bp, HY +150bp) ★ · keep the story ·
+    raise the desk's appetite.
+  - Choice (owner): **raise the appetite**, from 75m to 150m. Calibration then sets the limit at
+    300m: 92.6% on the 11th, 96.9% on the 14th, 111.1% on the 15th (a warning, a warning, then the
+    breach the demo already had).
+- Rebuilt with the recipe of 33.3. The bank keeps 5, 7 and 9 breaches and the fund 2 and 3, the
+  same lists. VaR is unchanged everywhere. Firm stress utilisation rises from 31% to 57% on the
+  15th; EM_FX_STRESS rises from 48% to 61%. The previous databases are in
+  `data/backup-2026-10-16-round46/`.
+
+- Choice (default): **anchors**. Each rule's anchor is the headline factor it shocks; otherwise
+  the 10Y, 2Y or 5Y node of the leading currency, a 3M at-the-money vol, or the most volatile
+  factor it shocks. Only the anchor block of the covariance is inverted (with a small ridge), so
+  1,584 factors on 1,306 days are no obstacle. Fills are capped at 1.5 times the factor's largest
+  historical 20-day move.
+- Choice (default): **a zero move on a single named factor pins it**. The GFC's unchanged USD 10Y,
+  for example, is an anchor at zero rather than a factor left to fill.
+- Choice (default): **PCA shapes are a rule type** (`{pca, component, sigmas}`) on any curve or
+  surface prefix. Signs are fixed: level up, long end up against the short end, belly up.
+- Choice (default): **seeding records who approved**. A library stored by a first proposal or
+  review now records which write stored it, not a person as approver.
+  `novera stress-setup upgrade` proposes newer built-ins to a library stored before this round.
+- Found: the rebuild recipe in the assistant's notes used `--trades 500` for the fund. The live
+  fund was built at the default 1,500 trades plus 16 planted ones; the rebuild uses the default.
+- Where:
+  - code: `risk/scenario_covariance.py` (MR-018), `risk/stress_definitions.py`
+    (`Expander`, `CONSISTENT_BUILT_INS`, PCA rules), `risk/crisis_tables.py`, `risk/stress.py`
+    (explicit shocks, `rule_shocks`), `market_data/crises.py`, `workflows/stress_setup.py`
+    (`upgrade_built_ins`, `draft_crises`, `plausibility`), `simulation/limits.py` (EUR_RATES
+    appetite);
+  - API, CLI and UI: `GET /admin/stress/plausibility`, `POST /admin/stress/upgrade` and
+    `/crises`, the Admin and Stress pages;
+  - records: MR-005 1.6.0, OPS-005 1.1.0;
+  - tests: `tests/test_stress_consistency.py`, `tests/test_stress_setup.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names

@@ -215,7 +215,7 @@ def test_http_endpoints(client):
     spx = next(sh for sh in styl[0]["shocks"] if sh["target"] == "EQIDX:SPX")
     assert spx["kind"] == "REALISED" and spx["unit"] == "%" and spx["size"] < -15
     crises = {x["scenario_id"]: x for x in lib["categories"][2]["scenarios"]}
-    assert len(crises) == 7 and not any(x["in_daily_run"] for x in crises.values())
+    assert len(crises) == 14 and not any(x["in_daily_run"] for x in crises.values())
     assert crises["covid_2020"]["status"] == "NOT_COVERED" and crises["covid_2020"]["shocks"] == []
     assert lib["summary"]["replayable_real"] == 0 and lib["history"]["days"] > 200
     ref = client.get("/reference/counterparties").json()

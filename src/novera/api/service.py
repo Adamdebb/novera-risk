@@ -17,6 +17,25 @@ from novera.security.permissions import require_signer, require_stress_proposal
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.runs import RunRecord
 
+STRESS_META = (
+    "scenario_id",
+    "total",
+    "name",
+    "kind",
+    "description",
+    "goal",
+    "version",
+    "source",
+    "consistent",
+    "covariance",
+    "z_score",
+    "exceedance",
+    "correlation_z",
+    "ruler_z",
+    "filled",
+)
+"""Columns of a stress row that describe the scenario, not a group's P&L (OPS-005, MR-018)."""
+
 HIERARCHY = ["firm_id", "business_id", "desk_id", "book_id", "trader_id", "trade_id"]
 VAR_CONTRIBUTION_FRAMES: dict[str, str] = {
     "historical_full_revaluation": "var_contributions",
@@ -263,7 +282,7 @@ class RiskService:
         m = rows.merge(v[["trade_id", by]], on="trade_id", how="inner")
         piv = m.pivot_table(index="scenario_id", columns=by, values="pnl", aggfunc="sum", fill_value=0.0)
         piv["total"] = piv.sum(axis=1)
-        wanted = ("name", "kind", "description", "goal", "version", "source")
+        wanted = [c for c in STRESS_META if c not in ("scenario_id", "total")]
         meta = [c for c in wanted if c in summary.columns]
         piv = piv.join(summary.set_index("scenario_id")[meta]).reset_index()
         return _records(piv.sort_values("total"))
@@ -700,6 +719,12 @@ class RiskService:
             self.repo.load_market_episodes(),
             definitions=active(self.repo),
         )
+
+    def stress_plausibility(self) -> dict[str, Any]:
+        """How extreme each approved scenario and draft is, and the risk ruler (MR-018)."""
+        from novera.workflows import stress_setup
+
+        return stress_setup.plausibility(self.repo)
 
     def stress_setup(self) -> dict[str, Any]:
         """The stress scenario library: approved versions in run order, open drafts, decided
@@ -1303,6 +1328,20 @@ class RiskWriteService:
 
         require(self.user, Action.STRESS_REVIEW)
         return stress_setup.review(self.repo, self.actor, scenario_id, note)
+
+    def upgrade_stress_built_ins(self, note: str = "") -> list[dict[str, Any]]:
+        """Drafts of the built-ins whose code version differs from the stored approved version."""
+        from novera.workflows import stress_setup
+
+        require(self.user, Action.STRESS_PROPOSE)
+        return stress_setup.upgrade_built_ins(self.repo, self.actor, note)
+
+    def draft_stress_crises(self) -> list[dict[str, Any]]:
+        """Drafts of the calibrated named crises the library does not hold (decision 47.3)."""
+        from novera.workflows import stress_setup
+
+        require(self.user, Action.STRESS_PROPOSE)
+        return stress_setup.draft_crises(self.repo, self.actor)
 
     def seed_stress_library(self, note: str = "") -> dict[str, Any]:
         """Store the built-in library as approved version 1 and start its review clock."""

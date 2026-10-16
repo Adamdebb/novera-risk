@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.1.0 |
 | Owner | Market Risk Control |
 | Approval status | Draft |
 | Code | `novera.risk.stress_definitions`, `novera.workflows.stress_setup`, `GET /admin/stress/setup`, `POST /admin/stress/proposals`, `/decisions`, `/reviews`, `/seed`, `novera stress-setup`; the "Stress scenarios" section of the Admin page |
@@ -28,7 +28,8 @@ governed, not how they are revalued: the engine is still MR-005.
 | severity | MODERATE, SEVERE, EXTREME | The committee's reading, not a probability |
 | narrative, catalyst | text | What happens and what would trigger it |
 | area | desk or business ids | Set from a desk or business head's scope when they propose |
-| source | BUILT_IN, USER | The platform's library or a firm addition |
+| source | BUILT_IN, USER, CALIBRATED | The platform's library, a firm addition, or a named crisis replayed from approved headline moves (MR-018) |
+| expand, covariance, horizon_days | yes or no; STRESSED, SIMILAR, RECENT; 5 to 250 | A consistent scenario: every factor the rules leave out moves with its conditional expectation (MR-018) |
 
 A proposal is validated before it is stored. Every rule must match at least one risk factor.
 Vol points are allowed only on `VOL:` surfaces. Tenors must be curve nodes. No shock may be
@@ -38,9 +39,13 @@ zero. A historical window must lie inside the stored history, and an episode mus
 1. **Defaults.** Until anything is stored, the built-ins run: the 14 hypothetical rule sets of
    MR-005 and one definition per stored stylised episode, in that order, all with goal LIMIT.
    A database built before this record therefore produces the same stress results as before.
-2. **Seeding.** The first write stores the built-ins as version 1, APPROVED. The person who
-   triggered it is recorded as having adopted them (`STRESS_LIBRARY_SEEDED`).
-   `novera stress-setup seed` or the Admin page stores the library without proposing anything.
+2. **Seeding.** `novera stress-setup seed`, or the Admin page, stores the built-ins APPROVED at
+   their built-in version, with the Head of Market Risk or CRO who adopted them
+   (`STRESS_LIBRARY_SEEDED`). A first proposal or review stores them too; then `decided_by`
+   records which write stored them, since no person approved them.
+   - `novera stress-setup upgrade` proposes, as drafts, the built-ins whose code version is newer
+     than the stored one (the consistent market shocks of round 47).
+   - `novera stress-setup crises` drafts the 14 calibrated named crises (MR-018).
 3. **Proposal.** A new scenario, or a new version of one, is stored as a DRAFT
    (`STRESS_SCENARIO_PROPOSED`). A scenario has at most one open draft.
    - Risk Control and the heads of risk may propose any goal.
@@ -108,4 +113,5 @@ Also `tests/test_api.py::test_stress_setup_endpoints`,
 ## Change history
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
+| 1.1.0 | 2026-10-16 | Consistent scenarios, PCA rules and plausibility on drafts; source CALIBRATED; built-in upgrades and crisis drafts; implicit seeding records no approver (decision 47) | Novera |
 | 1.0.0 | 2026-10-16 | Versioned stress library with four-eyes approval, LIMIT and INFORMATION goals, quarterly reviews (decision 46) | Novera |

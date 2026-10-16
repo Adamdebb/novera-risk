@@ -86,14 +86,26 @@ def _frames(repo, run_id):
 
 def test_built_ins_are_the_library_the_engine_always_ran(world):
     """The built-in definitions resolve to exactly the scenarios of the old code path."""
+    from novera.risk.stress_definitions import CONSISTENT_BUILT_INS, Expander
+
     hist, md = world["hist"], world["md"]
+    universe = {f.factor_id: f for f in md.universe}
     windows = episode_windows(hist, md.episodes)
-    resolved, unresolved = resolve(built_in_definitions(list(windows)), windows)
+    ex = Expander(hist, md.snapshot, universe, windows)
+    resolved, unresolved = resolve(built_in_definitions(list(windows)), windows, expander=ex)
     old = list(HYPOTHETICAL_LIBRARY) + historical_episodes(hist, md.episodes)
-    assert not unresolved and [r.scenario for r in resolved] == old
+    assert not unresolved and len(resolved) == len(old)
     assert all(r.definition.goal == "LIMIT" and r.definition.source == "BUILT_IN" for r in resolved)
+    for r, o in zip(resolved, old, strict=True):
+        if r.definition.scenario_id in CONSISTENT_BUILT_INS:
+            # Round 47: the rules are unchanged and the scenario now gives every shock explicitly.
+            assert r.scenario.rules == o.rules and r.scenario.shocks is not None and r.definition.version == 2
+        else:
+            assert r.scenario == o  # curve and basis sensitivities and the episodes: as always
     # A database without stored windows falls back to the offsets, as before (decision 42.4).
-    fb, _ = resolve(built_in_definitions(list(episode_windows(hist, None))), episode_windows(hist, None))
+    fb, _ = resolve(
+        built_in_definitions(list(episode_windows(hist, None))), episode_windows(hist, None), expander=ex
+    )
     assert [r.scenario for r in fb][len(HYPOTHETICAL_LIBRARY) :] == historical_episodes(hist, {})
     # Round trip through the stored form.
     d = resolved[-1].definition
@@ -155,7 +167,7 @@ def test_store_reproduces_the_run_and_governs_the_library(world):
         assert [d["scenario_id"] for d in recorded][-1] in world["md"].episodes
         assert all(d["review_due"] is None for d in recorded) and recorded[-1]["resolved_window"]
         summ = repo.load_run_frame(base.run.run_id, "stress_summary")
-        assert set(summ["goal"]) == {"LIMIT"} and set(summ["version"]) == {1}
+        assert set(summ["goal"]) == {"LIMIT"} and set(summ["version"]) == {1, 2}  # v2: consistent (round 47)
 
         # Seeding stores the built-ins as approved version 1; the next run is identical.
         hmr = RiskWriteService(repo, users["head-of-market-risk"])
@@ -203,8 +215,9 @@ def test_store_reproduces_the_run_and_governs_the_library(world):
         # A risk-function change to a built-in: credit shock as information only.
         credit = {**built_in_definitions([])[8].to_dict(), "goal": "INFORMATION"}
         assert credit["scenario_id"] == "credit_wider_150"
-        hmr.propose_stress_scenario(credit, "information until recalibrated")
-        cro.decide_stress_scenario("credit_wider_150", 2, True)
+        cv = hmr.propose_stress_scenario(credit, "information until recalibrated")["version"]
+        assert cv == 3  # seeded at version 2, the consistent built-in of round 47
+        cro.decide_stress_scenario("credit_wider_150", cv, True)
 
         st2 = stress_setup.setup(repo)
         by = {s["scenario_id"]: s for s in st2["scenarios"]}
@@ -222,7 +235,7 @@ def test_store_reproduces_the_run_and_governs_the_library(world):
         r = run_eod(repo, EODConfig(**CFG), runs_dir=world["runs"])
         summ = repo.load_run_frame(r.run.run_id, "stress_summary").set_index("scenario_id")
         assert summ.loc["jpy_carry_unwind", "goal"] == "INFORMATION"
-        assert summ.loc["credit_wider_150", "version"] == 2
+        assert summ.loc["credit_wider_150", "version"] == 3
         assert r.run.summary["stress_scenarios"] == r.run.summary["stress_limit_scenarios"] + 2
         lim_ids = {x.scenario.scenario_id for x in r.stress} - {"jpy_carry_unwind", "credit_wider_150"}
         firm = repo.load_run_frame(r.run.run_id, "limits").set_index("limit_id").loc["FIRM_STRESS", "current"]

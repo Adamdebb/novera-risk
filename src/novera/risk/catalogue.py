@@ -125,7 +125,17 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "reporting currency",
                 "Stress",
                 "Stress testing",
-                version="1.5.0",
+                version="1.6.0",
+            ),
+            MeasureSpec(
+                "MR-018",
+                "Consistent scenarios and plausibility",
+                "Every factor a scenario's rules leave out takes its conditional expectation given the "
+                "rules' anchors under stressed correlations; PCA curve shapes; scenario z-score, "
+                "exceedance and the risk ruler; calibrated replays of named crises.",
+                "shock units, z-score",
+                "Stress",
+                "Consistent scenarios and plausibility",
             ),
             MeasureSpec(
                 "MR-007",

@@ -744,6 +744,56 @@ def stress_setup_decide(
     typer.echo(f"{d['scenario_id']} v{d['version']} {d['status']} by {d['decided_by']}")
 
 
+@stress_setup_app.command("upgrade")
+def stress_setup_upgrade(
+    actor: str = typer.Option("risk-control", help="Risk Control or a head of risk proposes"),
+    note: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Propose, as drafts, the built-ins whose code version differs from the stored library's."""
+    out = _write(fund, actor, lambda svc: svc.upgrade_stress_built_ins(note))
+    typer.echo(
+        f"{len(out)} built-in updates proposed"
+        + "".join(f"\n  DRAFT {d['scenario_id']} v{d['version']}" for d in out)
+    )
+
+
+@stress_setup_app.command("crises")
+def stress_setup_crises(
+    actor: str = typer.Option("risk-control", help="Risk Control or a head of risk proposes"),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Draft the calibrated named crises (approximate figures to verify) for a second person."""
+    out = _write(fund, actor, lambda svc: svc.draft_stress_crises())
+    typer.echo(
+        f"{len(out)} calibrated crises drafted"
+        + "".join(f"\n  DRAFT {d['scenario_id']} {d['name']}" for d in out)
+    )
+
+
+@stress_setup_app.command("plausibility")
+def stress_setup_plausibility(fund: bool = typer.Option(False)) -> None:
+    """How extreme each scenario and draft is (z-score, exceedance) and the risk ruler (MR-018)."""
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    with DuckDBRepository(_db(fund), read_only=True) as repo:
+        p = RiskService(repo).stress_plausibility()
+    if not p["available"]:
+        typer.echo(p.get("reason") or "not available")
+        return
+    typer.echo(f"Plausibility on {p['as_of']}, {p['horizon_days']}-day moves, {p['method']} covariance")
+    for key, f in [*p["scenarios"].items(), *(("DRAFT " + k, v) for k, v in p["drafts"].items())]:
+        if f and f.get("z_score") is not None:
+            typer.echo(
+                f"  {key:<34} z {f['z_score']:5.2f}  exceedance {f['exceedance']:6.1%}  "
+                f"correlation z {f['correlation_z']:4.2f}  ruler {f['ruler_z'] or 0:5.2f}"
+            )
+    typer.echo("Risk ruler (headline basket):")
+    for r in p["ruler"]:
+        typer.echo(f"  {r['ruler_z'] or 0:5.2f}  {r['kind']:<10} {r['name']}")
+
+
 @stress_setup_app.command("review")
 def stress_setup_review(
     scenario_id: str = typer.Argument(...),

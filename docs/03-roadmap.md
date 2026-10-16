@@ -188,7 +188,7 @@ The rebuild of stress testing into a framework for the bank and the fund, in thi
 the plan, sources and architecture are in `docs/08-stress-framework.md`.
 
 - [x] 46 Scenario store and stress setup (LIMIT / INFORMATION); current library migrated unchanged (OPS-005, 2026-10-16)
-- [ ] 47 Conditional expansion, PCA shapes, plausibility (scenario z-score, risk ruler), calibrated named crises
+- [x] 47 Conditional expansion, PCA shapes, plausibility (scenario z-score, risk ruler), calibrated named crises (MR-018, 2026-10-16)
 - [ ] 48 Standalone factor stress, sliding scales, jump to default, multi-horizon replays, worst-window search
 - [ ] 49 Explain by factor family and Greeks, hedge-failure line, summary of significant risks
 - [ ] 50 Reverse stress in PCA space, PCA Monte Carlo

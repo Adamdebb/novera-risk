@@ -6,17 +6,14 @@ from __future__ import annotations
 from datetime import date
 
 from novera.market_data.history import MarketHistory
+from novera.risk.crisis_tables import CRISIS_TABLES
 from novera.risk.stress import StressScenario
 
-CRISES: tuple[tuple[str, str, date, date], ...] = (
-    ("gfc_2008", "2008 Global financial crisis", date(2008, 9, 12), date(2008, 10, 27)),
-    ("euro_2011", "2011 Euro sovereign crisis", date(2011, 7, 22), date(2011, 9, 22)),
-    ("china_2015", "2015 China devaluation shock", date(2015, 8, 10), date(2015, 8, 25)),
-    ("brexit_2016", "2016 Brexit vote", date(2016, 6, 23), date(2016, 6, 27)),
-    ("covid_2020", "2020 COVID crash", date(2020, 2, 19), date(2020, 3, 23)),
-    ("rates_2022", "2022 inflation and rates shock", date(2022, 1, 3), date(2022, 6, 14)),
-    ("banks_2023", "2023 regional banking stress", date(2023, 3, 8), date(2023, 3, 17)),
+CRISES: tuple[tuple[str, str, date, date], ...] = tuple(
+    (c.scenario_id, c.name, c.start, c.end) for c in CRISIS_TABLES
 )
+"""The named real crises: 14 windows since 2008 (round 47); each also has a calibrated replay
+drafted in ``novera.risk.crisis_tables``."""
 
 
 def named_crisis_scenarios(history: MarketHistory) -> list[StressScenario]:
