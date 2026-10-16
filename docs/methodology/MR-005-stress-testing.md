@@ -32,19 +32,24 @@ risk-off (composite); inflation shock (composite). Historical: the simulator's s
 inflation bear, risk-off crash and rates shock, on the windows stored with the history (SIM-001).
 
 ### Categories on the "Stress library" page
-`GET /reference/stress-library` and the dashboard page list every scenario in three
+`GET /reference/stress-library` and the dashboard page list every scenario in four
 categories with the shocks it applies:
 
-1. **Hypothetical** (14 built-in, plus any the firm approves): the rules of the approved
-   versions, with their goal, version, tags, severity and review date, shown in bp for rates and
-   spreads, vol points for surfaces and per cent for everything else, with the curve nodes a
-   rule is limited to. Sizes are assumptions in the range regulators and desks use; none is
-   measured from a real market move.
-2. **Stylised historical episodes** (3, in the daily run): the simulator's windows, shown as
+1. **Individual factor stress** (the six standalone built-ins and any standalone scenario the
+   firm approves): one factor, curve or basis moves and every other factor stays where it is.
+2. **Hypothetical** (the eight consistent built-ins and any consistent scenario the firm
+   approves): the rules set the key moves and every other factor follows under stressed
+   correlations (MR-018).
+
+   Both categories show the rules of the approved versions with their goal, version, tags,
+   severity and review date: bp for rates and spreads, vol points for surfaces, per cent for
+   everything else, and the curve nodes a rule is limited to. Sizes are assumptions in the
+   range regulators and desks use; none is measured from a real market move.
+3. **Stylised historical episodes** (3, in the daily run): the simulator's windows, shown as
    the realised move of fourteen headline factors (S&P 500, Euro Stoxx, USD 2Y and 10Y, EUR
    10Y, EUR/USD, USD/JPY, CDX IG and HY, SPX 3M vol, USD 1Y10Y swaption vol, Brent, gold,
    Bitcoin) between the window's first and last day.
-3. **Named real crises** (14 since round 47): 2008 GFC, 2011 euro sovereign, 2013 taper
+4. **Historical real crises** (14 since round 47): 2008 GFC, 2011 euro sovereign, 2013 taper
    tantrum, 2015 franc de-peg, 2015 China, 2016 Brexit, 2018 Volmageddon, 2020 COVID, 2020
    negative oil, 2022 rates shock, 2022 gilt and LDI crisis, 2023 banking stress, 2024 yen
    carry unwind and 2025 tariff shock. Each carries a status:

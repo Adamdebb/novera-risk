@@ -209,7 +209,7 @@ def test_stress_library_catalogue(world):
     lib = stress_library(world["hist"], list(world["pf"].universe.values()))
     cats = {c["category"]: c for c in lib["categories"]}
     assert (
-        cats["HYPOTHETICAL"]["count"] == len(HYPOTHETICAL_LIBRARY)
+        cats["HYPOTHETICAL"]["count"] + cats["INDIVIDUAL_FACTOR"]["count"] == len(HYPOTHETICAL_LIBRARY)
         and cats["STYLISED_HISTORICAL"]["count"] == 2
     )
     rules = {r["scenario_id"]: r["shocks"] for r in cats["HYPOTHETICAL"]["scenarios"]}

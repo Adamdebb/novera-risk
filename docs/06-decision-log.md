@@ -1975,6 +1975,21 @@ the built-ins in place rather than add twins.
   - records: MR-005 1.6.0, OPS-005 1.1.0;
   - tests: `tests/test_stress_consistency.py`, `tests/test_stress_setup.py`.
 
+## Round 47b — Stress library categories (2026-10-16)
+
+- **Asked by the owner:** the category names were confusing.
+  - "Named real crises" becomes **"Historical real crises"**.
+  - A new first category, **"Individual factor stress"**, holds every standalone scenario (one
+    factor, curve or basis moves and nothing else): today the six curve and basis built-ins; later
+    the per-factor stresses of round 48.
+  - **"Hypothetical"** keeps the consistent scenarios.
+- Choice (default): **only the titles change**. Category ids stay (`NAMED_CRISIS`), so API clients
+  keep working; the new category id is `INDIVIDUAL_FACTOR`. Calibrated crises on the page now
+  read "Approved headline move (calibrated replay)", not "realised move".
+- Open: the owner is considering splitting "Hypothetical" into market shocks and macro and
+  geopolitical scenarios, and drafting forward-looking narratives.
+- Where: `risk/stress_catalogue.py` (`CATEGORIES`), the Stress library page, MR-005.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names

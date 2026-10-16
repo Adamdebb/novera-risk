@@ -710,14 +710,16 @@ elif page == "Stress library":
                 if shocks.empty:
                     st.caption("No shocks to show: the window is outside the stored history.")
                 else:
-                    label = (
-                        "Shock rule"
-                        if cat["category"] == "HYPOTHETICAL"
-                        else "Realised move of headline factors"
-                    )
+                    rule_based = cat["category"] in ("HYPOTHETICAL", "INDIVIDUAL_FACTOR")
+                    if rule_based:
+                        label = "Shock rule"
+                    elif sc["status"] == "CALIBRATED":
+                        label = "Approved headline move (calibrated replay)"
+                    else:
+                        label = "Realised move of headline factors"
                     st.markdown(f"**{label}**")
                     cols = ["family", "target", "size", "unit"]
-                    if cat["category"] == "HYPOTHETICAL":
+                    if rule_based:
                         cols.append("tenors")
                         shocks["tenors"] = shocks["tenors"].fillna("all")
                     st.dataframe(shocks[cols].round(1), use_container_width=True, hide_index=True)

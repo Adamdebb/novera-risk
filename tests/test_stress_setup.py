@@ -257,7 +257,7 @@ def test_store_reproduces_the_run_and_governs_the_library(world):
 
         # The library page lists the stored scenarios with their governance facts.
         lib = RiskService(repo).stress_library()
-        hyp = next(c for c in lib["categories"] if c["category"] == "HYPOTHETICAL")["scenarios"]
+        hyp = next(c for c in lib["categories"] if c["category"] == "INDIVIDUAL_FACTOR")["scenarios"]
         row = next(s for s in hyp if s["scenario_id"] == "jpy_carry_unwind")
         assert row["status"] == "DISABLED" and not row["in_daily_run"] and row["version"] == 3
 

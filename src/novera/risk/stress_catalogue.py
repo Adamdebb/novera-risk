@@ -26,12 +26,23 @@ RECORD = "MR-005"
 
 CATEGORIES: tuple[dict[str, Any], ...] = (
     {
+        "category": "INDIVIDUAL_FACTOR",
+        "title": "Individual factor stress",
+        "description": (
+            "Standalone shocks: one factor, curve or basis moves by a set amount and every other "
+            "factor stays where it is, so the result isolates the book's exposure to that one move. "
+            "Sizes are assumptions in the range regulators and desks use."
+        ),
+        "in_daily_run": True,
+    },
+    {
         "category": "HYPOTHETICAL",
         "title": "Hypothetical",
         "description": (
-            "Rule-based instantaneous shocks on factor families with full revaluation, no "
-            "liquidity horizon and no rebalancing. Sizes are assumptions in the range regulators "
-            "and desks use; none is measured from a real market move."
+            "Forward-looking scenarios: the rules set the key moves and every other factor moves "
+            "with them under stressed correlations (consistent scenarios, MR-018). Instantaneous, "
+            "full revaluation, no liquidity horizon and no rebalancing. Sizes are assumptions, not "
+            "measured from a real market move."
         ),
         "in_daily_run": True,
     },
@@ -39,7 +50,7 @@ CATEGORIES: tuple[dict[str, Any], ...] = (
         "category": "STYLISED_HISTORICAL",
         "title": "Stylised historical episodes",
         "description": (
-            "The simulator's two synthetic crisis windows, replayed as the observed move of every "
+            "The simulator's synthetic crisis windows, replayed as the observed move of every "
             "factor between the window's first and last day. They carry the full cross-asset "
             "correlation of the synthetic history but are calibrated to look like a crisis, not "
             "to any real one (SIM-001)."
@@ -48,7 +59,7 @@ CATEGORIES: tuple[dict[str, Any], ...] = (
     },
     {
         "category": "NAMED_CRISIS",
-        "title": "Named real crises",
+        "title": "Historical real crises",
         "description": (
             "Fourteen real windows since 2008. A window replays as a stress when the stored history "
             "covers it with real data; until then a crisis runs as a calibrated replay once its "
@@ -232,6 +243,7 @@ def stress_library(
         windows = episode_windows(history, episodes) if history is not None else {}
         definitions = [{"definition": d, "review_due": None} for d in built_in_definitions(list(windows))]
     hypothetical = []
+    individual = []
     stylised = []
     windows = episode_windows(history, episodes) if history is not None and dates else {}
     calibrated: dict[str, dict[str, Any]] = {}
@@ -245,7 +257,10 @@ def stress_library(
         if d.kind == "HYPOTHETICAL":
             sc = d.to_scenario()
             shocks = [describe_rule(r) for r in sc.rules] + [describe_pca(r) for r in d.pca_rules()]
-            hypothetical.append(_scenario_row(sc, "HYPOTHETICAL", d.enabled, status, shocks, **gov))
+            cat = "HYPOTHETICAL" if d.expand else "INDIVIDUAL_FACTOR"  # standalone: nothing else moves
+            (hypothetical if d.expand else individual).append(
+                _scenario_row(sc, cat, d.enabled, status, shocks, **gov)
+            )
             continue
         w = windows.get(d.episode_id) if d.episode_id else None
         if w is None and d.window_start and d.window_end:
@@ -290,7 +305,12 @@ def stress_library(
             _scenario_row(sc, "NAMED_CRISIS", in_run, status, shocks, real_share=share, note=note, **extra)
         )
 
-    rows = {"HYPOTHETICAL": hypothetical, "STYLISED_HISTORICAL": stylised, "NAMED_CRISIS": crises}
+    rows = {
+        "INDIVIDUAL_FACTOR": individual,
+        "HYPOTHETICAL": hypothetical,
+        "STYLISED_HISTORICAL": stylised,
+        "NAMED_CRISIS": crises,
+    }
     return {
         "record": RECORD,
         "history": {

@@ -124,7 +124,7 @@ the Sign-off page tracks whether the required metrics have been signed and the r
 The VaR setup (OPS-004) is read at the start of the run and frozen in its config; changing it
 on the Admin page affects the next run only.
 No intraday or incremental run:
-every run is a full pass. Named real crises are catalogued but not replayed (Stress library).
+every run is a full pass. Historical real crises are catalogued, and replayed once a calibrated replay is approved (Stress library).
 A re-run recomputes one stage and lists, but does not recompute, its dependents.
 
 ## Where to look
