@@ -2074,12 +2074,36 @@ limitation.
   - Recalibration leaves a limit in breach alone; it calls for an increase request (decision 40.7).
   - Even without a breach, recalibration caps a limit at twice its appetite (160m).
   - Promoting it therefore makes METALS_STRESS a breach either way.
-- Taken back to the owner before any limit or LIMIT promotion changes; the outcome is recorded
-  below when chosen.
+- Taken back to the owner before any limit or LIMIT promotion changed: see 47d.4.
 
 ### 47d.3 Sizes
 - Options: keep as drafted ★ · soften the extremes below z 3 · the owner edits
 - Choice (owner): **keep as drafted**. The approver can propose new versions.
+
+### 47d.4 What to promote, given the metals breach
+- Options: the rally now, the gold unwind to round 58 ★ · both, with the breach and an increase
+  request · both, with a higher metals appetite set by the owner · neither yet
+- Choice (owner): **the rally now, the gold unwind to round 58.**
+  - The European rearmament rally is approved and promoted to LIMIT (v2, proposed by the Head of
+    Market Risk, approved by the CRO). It feeds the single-name equity desk (about 15%) and the
+    index equity desk (about 34%), and creates no new breach.
+  - The gold unwind is approved as INFORMATION. It shows among the forward-looking results, and
+    the metals limit is sized in round 58.
+  - The other seven narratives stay drafts in the bank. All nine are drafts in the fund.
+- How it reached the demo:
+  - Options: a stress re-run ★ · a full demo rebuild
+  - Choice (owner): **a full demo rebuild**, with the recipe of 33.3. The library steps run
+    after the bank simulation and before the 11 September EOD.
+- Result:
+  - The bank keeps 5, 7 and 9 breaches and the fund 2 and 3, the same lists. VaR is identical.
+  - Coverage restored by the rally on the 15th:
+    - INDEX_EQ_STRESS rises from 4% to 34%.
+    - SINGLE_NAME_EQ_STRESS rises from 0% to 14%.
+    - IG_CREDIT_STRESS rises from 0% to 30%, through the filled iTraxx move.
+    - METALS_STRESS rises from 0% to 2%, through the rally's metals fill.
+  - The gold unwind reports −420m for the firm and −216m for the metals desk, as information.
+  - The fund's results are unchanged.
+  - Previous databases (round 47c) are in `data/backup-2026-10-16-round47c/`.
 
 - Where: `risk/narratives.py`, `workflows/stress_setup.py` (`draft_narratives`),
   `api/service.py`, `api/app.py`, `api/client.py`, `cli.py`, `ui/stress_setup.py`, MR-018 1.1.0,
