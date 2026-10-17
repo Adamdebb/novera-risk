@@ -4374,6 +4374,113 @@
         "title": "FactorBeta",
         "type": "object"
       },
+      "FactorShockRow": {
+        "additionalProperties": true,
+        "properties": {
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "factor_id": {
+            "title": "Factor Id",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "shock": {
+            "title": "Shock",
+            "type": "number"
+          }
+        },
+        "required": [
+          "factor_id",
+          "direction",
+          "shock",
+          "pnl"
+        ],
+        "title": "FactorShockRow",
+        "type": "object"
+      },
+      "FactorStress": {
+        "additionalProperties": true,
+        "description": "Standalone shocks, sliding scales, jump to default and worst windows of one run, for the\nfirm or one desk. Record MR-019. ``available`` is false for a run made before round 48.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "desk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desk Id"
+          },
+          "desks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Desks",
+            "type": "array"
+          },
+          "jump_to_default": {
+            "items": {
+              "$ref": "#/components/schemas/JumpToDefaultRow"
+            },
+            "title": "Jump To Default",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scale_factors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scale Factors",
+            "type": "array"
+          },
+          "scales": {
+            "items": {
+              "$ref": "#/components/schemas/SlidingScaleRow"
+            },
+            "title": "Scales",
+            "type": "array"
+          },
+          "standalone": {
+            "items": {
+              "$ref": "#/components/schemas/FactorShockRow"
+            },
+            "title": "Standalone",
+            "type": "array"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/WorstWindowRow"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "FactorStress",
+        "type": "object"
+      },
       "Firm": {
         "additionalProperties": false,
         "properties": {
@@ -5405,6 +5512,46 @@
           "status"
         ],
         "title": "JobRecord",
+        "type": "object"
+      },
+      "JumpToDefaultRow": {
+        "additionalProperties": true,
+        "properties": {
+          "cds_pnl": {
+            "title": "Cds Pnl",
+            "type": "number"
+          },
+          "equity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity"
+          },
+          "equity_pnl": {
+            "title": "Equity Pnl",
+            "type": "number"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          }
+        },
+        "required": [
+          "issuer",
+          "equity_pnl",
+          "cds_pnl",
+          "pnl"
+        ],
+        "title": "JumpToDefaultRow",
         "type": "object"
       },
       "LabBody": {
@@ -9867,6 +10014,17 @@
             ],
             "title": "Es Confidence"
           },
+          "factor_stress_factors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factor Stress Factors"
+          },
           "failed_stages": {
             "anyOf": [
               {
@@ -10171,6 +10329,61 @@
             ],
             "title": "Warnings"
           },
+          "worst_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Factor"
+          },
+          "worst_factor_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Factor Direction"
+          },
+          "worst_factor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Factor Id"
+          },
+          "worst_jtd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Jtd"
+          },
+          "worst_jtd_issuer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Jtd Issuer"
+          },
           "worst_stress": {
             "anyOf": [
               {
@@ -10238,6 +10451,61 @@
               }
             ],
             "title": "Worst Stress Name"
+          },
+          "worst_window": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Window"
+          },
+          "worst_window_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Window Days"
+          },
+          "worst_window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Window End"
+          },
+          "worst_window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Window Start"
+          },
+          "worst_window_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Window Version"
           }
         },
         "title": "RunFigures",
@@ -11226,6 +11494,35 @@
           "metrics"
         ],
         "title": "SignoffStatus",
+        "type": "object"
+      },
+      "SlidingScaleRow": {
+        "additionalProperties": true,
+        "properties": {
+          "factor_id": {
+            "title": "Factor Id",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "shock": {
+            "title": "Shock",
+            "type": "number"
+          },
+          "sigmas": {
+            "title": "Sigmas",
+            "type": "number"
+          }
+        },
+        "required": [
+          "factor_id",
+          "sigmas",
+          "shock",
+          "pnl"
+        ],
+        "title": "SlidingScaleRow",
         "type": "object"
       },
       "SlowestPosition": {
@@ -14932,6 +15229,50 @@
           "template"
         ],
         "title": "VarTemplateBody",
+        "type": "object"
+      },
+      "WorstWindowRow": {
+        "additionalProperties": true,
+        "properties": {
+          "approx_pnl": {
+            "title": "Approx Pnl",
+            "type": "number"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "window_end": {
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "horizon_days",
+          "version",
+          "rank",
+          "window_start",
+          "window_end",
+          "approx_pnl",
+          "pnl"
+        ],
+        "title": "WorstWindowRow",
         "type": "object"
       },
       "WrongWayRow": {
@@ -20542,6 +20883,107 @@
           }
         },
         "summary": "Dq"
+      }
+    },
+    "/runs/{run_id}/factor-stress": {
+      "get": {
+        "operationId": "factor_stress_runs__run_id__factor_stress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desk_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desk Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "title": "Top",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactorStress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Factor Stress"
       }
     },
     "/runs/{run_id}/fund": {

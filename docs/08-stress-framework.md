@@ -210,7 +210,7 @@ Each figure is reported before and after management actions.
 |---|---|---|
 | 46 | Scenario store and stress setup; current library migrated unchanged | No |
 | 47 | Conditional expansion, PCA shapes, plausibility measures, calibrated named crises | No |
-| 48 | Standalone factor stress, sliding scales, jump to default, multi-horizon replays, worst-window search | No |
+| 48 | Standalone factor stress, sliding scales, jump to default, multi-horizon replays, worst-window search (done 2026-10-17, MR-019) | No |
 | 49 | Explain: factor families, Greeks, hedge-failure line, summary of significant risks | No |
 | 50 | Reverse stress in PCA space, PCA Monte Carlo | No |
 | 51 | Path engine with management actions, hedging and liquidation | No |

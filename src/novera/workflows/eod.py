@@ -58,6 +58,8 @@ from novera.risk import stress as stress_mod
 from novera.risk import var as var_mod
 from novera.risk.backtest import MODEL_VERSION as BACKTEST_VERSION
 from novera.risk.concentration import MODEL_VERSION as CONC_VERSION
+from novera.risk.factor_stress import MODEL_VERSION as FACTOR_STRESS_VERSION
+from novera.risk.factor_stress import run_factor_stress
 from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
 from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
@@ -83,6 +85,7 @@ MODEL_VERSIONS = {
     "liquidity": LIQ_VERSION,
     "lookthrough": LOOKTHROUGH_VERSION,
     "market_data_proxies": PROXY_VERSION,
+    "factor_stress": FACTOR_STRESS_VERSION,
 }
 
 
@@ -106,6 +109,9 @@ class EODConfig:
     regulatory: bool | None = None  # None: follow settings.regulatory_enabled
     exposure_paths: int | None = None  # None: settings.exposure_paths
     proxies: bool | None = None  # None: follow settings.proxies_enabled
+    factor_stress: bool = True
+    """Standalone shocks, sliding scales, jump to default and worst windows (MR-019); off only for
+    the limit-calibration dry run, which reads none of them."""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -119,6 +125,7 @@ class EODConfig:
             "regulatory": self.regulatory,
             "exposure_paths": self.exposure_paths,
             "proxies": self.proxies,
+            "factor_stress": self.factor_stress,
         }
 
 
@@ -283,6 +290,8 @@ def run_eod(
         stress, limit_stress = st_run.results, st_run.limit_results
         run.config["stress_scenarios"] = st_run.recorded
         dq.findings += st_run.findings(market.as_of)
+    with _timed(timings, "factor_stress"):
+        fstress = run_factor_stress(pf, sens, history, val.table) if cfg.factor_stress else None
     with _timed(timings, "limits"):
         limit_table = (
             monitor(
@@ -382,6 +391,7 @@ def run_eod(
         "lookthrough_flags": len(lookthrough.flags),
         "fund_holdings": int(lookthrough.holdings["trade_id"].nunique()) if len(lookthrough.holdings) else 0,
         **worst_summary,
+        **(fstress.summary() if fstress else {}),
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
@@ -438,6 +448,7 @@ def run_eod(
                     "proxies": proxies,
                     "lookthrough": lookthrough,
                     "stress_info": st_run.info,
+                    "factor_stress": fstress,
                 },
             )
         # The run stays RUNNING from here: the engines below read the stored run by id, and a
@@ -720,6 +731,18 @@ def persist_stress(
     )
 
 
+FACTOR_STRESS_TABLES = ("factor_stress", "factor_stress_scales", "jump_to_default", "worst_windows")
+
+
+def persist_factor_stress(repo, rid: str, fs) -> None:
+    """Standalone shocks by desk, sliding scales, jump to default by issuer and desk, and the
+    confirmed worst windows (MR-019)."""
+    repo.save_run_frame(rid, "factor_stress", fs.standalone)
+    repo.save_run_frame(rid, "factor_stress_scales", fs.scales)
+    repo.save_run_frame(rid, "jump_to_default", fs.jump_to_default)
+    repo.save_run_frame(rid, "worst_windows", fs.windows)
+
+
 def persist_backtest(repo, rid: str, bts, btl, bth=None) -> None:
     rows = [bts.summary(), btl.summary()] + ([bth.summary()] if bth is not None and bth.days else [])
     repo.save_run_frame(rid, "backtest_summary", pd.DataFrame(rows))
@@ -780,6 +803,8 @@ def _persist(
     repo.save_run_frame(rid, "sensitivities", sens)
     persist_var(repo, rid, var_set, runs_dir)
     persist_stress(repo, rid, stress, run.config.get("stress_scenarios"), (extras or {}).get("stress_info"))
+    if (extras or {}).get("factor_stress") is not None:
+        persist_factor_stress(repo, rid, extras["factor_stress"])  # type: ignore[index]
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

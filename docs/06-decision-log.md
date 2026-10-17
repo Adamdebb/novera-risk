@@ -2109,6 +2109,68 @@ limitation.
   `api/service.py`, `api/app.py`, `api/client.py`, `cli.py`, `ui/stress_setup.py`, MR-018 1.1.0,
   `tests/test_stress_consistency.py`.
 
+## Round 48 — Standalone factor stress, sliding scales, jump to default, worst windows (2026-10-17)
+
+Context: the third round of the stress framework (`docs/08-stress-framework.md`, B.1 and B.3).
+- **Timing.** Before asking, the engine was timed on the demo. A one-factor shock reprices only
+  the trades that depend on the factor, so all 1,584 factors in both directions take 3.7 s
+  (bank) and 2.7 s (fund) in full revaluation. The standalone view therefore skips the
+  delta-gamma-vega screen the framework planned.
+- **Screened views.** A full-book revaluation is far heavier (the VaR step revalues about 500 in
+  39 s), so the worst-window search screens and confirms as planned.
+- **Defaults taken from the framework.** Horizons 1, 5, 10, 20 and 60 days; raw and
+  volatility-rescaled windows; scales from −3σ to +3σ; every view for information.
+- One question round.
+
+### 48.1 Size of a standalone shock
+- Options: the 99% 10-day move on the stressed regime ★ · the worst historical 10-day move · k σ
+  of the stressed window
+- Choice (owner, written in): **the 99.9th percentile of 10-day moves.**
+- No regime was named. At 99.9% the stressed regime (about 250 days) would return little more
+  than its single worst move. The size is therefore each direction's 99.9th percentile over
+  every overlapping 10-day move in the full stored history, down and up measured apart.
+- `SIZE_QUANTILE` and `SIZE_HORIZON` in `risk/factor_stress.py` hold the rule.
+
+### 48.2 Jump to default
+- Options: each trade's recovery, corporates only ★ · a uniform 60% LGD · include sovereigns
+- Choice (owner): **each trade's recovery, corporates only.**
+  - Single-name CDS settle at notional × (1 − recovery).
+  - A stock falls to 0.01% of today's price, so options, exotics and fund holdings are repriced.
+  - BOEING joins BA; index CDS and sovereign bond issuers are out of scope.
+
+### 48.3 When it runs
+- Options: every EOD ★ · EOD with the window search weekly · on demand only
+- Choice (owner): **every EOD.**
+  - A new step `factor_stress` after stress adds about 14 s to the bank run and 8 s to the fund.
+  - It is a re-runnable stage (OPS-002).
+  - It is off only in the limit-calibration dry run, which reads none of it.
+
+### 48.4 Which factors get sliding scales
+- Options: the headline basket plus each desk's three worst ★ · the headline basket only · every
+  factor
+- Choice (owner): **the headline basket plus each desk's three worst.** That is 49 factors on
+  the bank.
+
+### Results on the demo
+| | Bank (15 Sep) | Fund (14 Sep) |
+|---|---|---|
+| Worst standalone shock | S&P 500 −14.7%: −179m | NVDA −22.7%: −72m |
+| Worst jump to default | MSFT −93m, TEVA −57m | NVDA −319m |
+| Worst window | 60 days to 14 Oct 2024, rescaled: −758m | 60 days to 4 Mar 2025, raw: −239m |
+
+- The fund's NVDA default exceeds its whole 300m fund stress-loss limit, but no limit reads factor
+  stress.
+- The metals desk's worst standalone shock is gold −10% (−54m). Its silver book is a calendar
+  spread: it loses on the 3-month contract down (−47m) and the 1-month contract up (−28m).
+
+- No demo rebuild: the round adds measures and changes no market history, trade generator,
+  limit or price (round 40b). The latest bank and fund runs got the step through a single-stage
+  re-run (`novera rerun latest --stage factor_stress`), which matched the figures above.
+- Where: `risk/factor_stress.py`; `workflows/eod.py` (step, `persist_factor_stress`, model
+  version); `workflows/rerun.py` (stage); `workflows/limit_calibration.py`; `GET
+  /runs/{run_id}/factor-stress`; the Stress page; MR-019; `tests/test_factor_stress.py`,
+  `tests/test_workflows.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names

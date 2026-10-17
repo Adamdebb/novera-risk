@@ -456,6 +456,13 @@ def geography(svc: RiskService = Depends(service)):
     return svc.geography()
 
 
+@app.get("/runs/{run_id}/factor-stress", response_model=s.FactorStress)
+def factor_stress(
+    run_id: str, desk_id: str | None = None, top: int = 25, svc: RiskService = Depends(service)
+):
+    return svc.factor_stress(run_id, desk_id, top)
+
+
 @app.get("/reference/stress-library", response_model=s.StressLibrary)
 def stress_library(svc: RiskService = Depends(service)):
     return svc.stress_library()

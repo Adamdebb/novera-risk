@@ -55,7 +55,10 @@ def seed_limits(
         with DuckDBRepository(copy) as repo:
             day1 = min(d for _, d, *_ in repo.list_portfolio_snapshots())
             res = run_eod(
-                repo, EODConfig(firm_id=firm_id, actor=actor, alerts=False), day1, runs_dir=tmp / "runs"
+                repo,
+                EODConfig(firm_id=firm_id, actor=actor, alerts=False, factor_stress=False),
+                day1,
+                runs_dir=tmp / "runs",
             )
             measured = repo.load_run_frame(res.run.run_id, "limits")
     finally:

@@ -669,6 +669,75 @@ elif page == "Stress":
         st.caption(row["description"])
         st.bar_chart(pd.Series({c: row[c] / M for c in cols}, name="loss (m)"))
 
+    st.divider()
+    st.subheader("Factor stress (information)")
+    fs_all = load("factor_stress", run_id, top=1)
+    if not fs_all.get("available"):
+        st.info("This run predates factor stress (MR-019); runs from round 48 on carry it.")
+    else:
+        desk_pick = st.selectbox("For", ["Firm", *fs_all["desks"]], key="factor_stress_desk")
+        fs = load("factor_stress", run_id, desk_id=None if desk_pick == "Firm" else desk_pick, top=25)
+        t_alone, t_scale, t_jtd, t_win = st.tabs(
+            ["Standalone shocks", "Sliding scales", "Jump to default", "Worst windows"]
+        )
+        with t_alone:
+            a = df(fs["standalone"])
+            if not a.empty:
+                a["pnl"] = a["pnl"] / M
+                st.dataframe(
+                    a.round(4).rename(columns={"pnl": "P&L (m)", "shock": "shock (units)"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            st.caption(
+                "Each risk factor moved alone, down and up, by the 99.9th percentile of its own 10-day "
+                "moves over the stored history; full revaluation. The 25 worst for the selection."
+            )
+        with t_scale:
+            sc = df(fs["scales"])
+            if not sc.empty:
+                f_pick = st.selectbox("Factor", fs["scale_factors"], key="factor_stress_scale")
+                one = sc[sc["factor_id"] == f_pick].set_index("sigmas")["pnl"] / M
+                st.line_chart(one.rename("P&L (m)"))
+            st.caption(
+                "P&L from −3σ to +3σ of the factor's 10-day moves, in half-sigma steps; a straight line "
+                "is a linear book. Factors: the headline basket and each desk's three worst."
+            )
+        with t_jtd:
+            j = df(fs["jump_to_default"])
+            if not j.empty:
+                for c in ("equity_pnl", "cds_pnl", "pnl"):
+                    j[c] = j[c] / M
+                st.dataframe(
+                    j.round(1).rename(
+                        columns={"equity_pnl": "equity (m)", "cds_pnl": "CDS (m)", "pnl": "total (m)"}
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            st.caption(
+                "Each corporate issuer defaults alone: its CDS settle at the trade's own recovery, its "
+                "stock falls to 0.01% of today's price (options, exotics and fund holdings repriced). "
+                "Sovereigns are not included."
+            )
+        with t_win:
+            w = df(fs_all.get("windows", [])) if desk_pick == "Firm" else pd.DataFrame()
+            if not w.empty:
+                for c in ("approx_pnl", "pnl"):
+                    w[c] = w[c] / M
+                st.dataframe(
+                    w.round(1).rename(columns={"approx_pnl": "screen (m)", "pnl": "full reval (m)"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            elif desk_pick != "Firm":
+                st.caption("Worst windows are searched for the firm's book.")
+            st.caption(
+                "Every overlapping window of 1 to 60 days in the stored history on today's book, raw and "
+                "rescaled to today's volatility; the delta-gamma-vega screen ranks all windows and full "
+                "revaluation confirms the three worst that do not overlap."
+            )
+
 elif page == "Stress library":
     header("Stress library")
     st.caption(

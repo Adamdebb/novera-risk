@@ -487,3 +487,23 @@ def test_a_failed_late_engine_leaves_a_partial_run(db_path, tmp_path, monkeypatc
         assert repo.load_run(run.run_id).status == "PARTIAL"  # the parent is untouched
         st = signoff.sign(repo, fixed.run, "CAPITAL", "Head of Regulatory Reporting")
         assert next(m for m in st["metrics"] if m["metric_id"] == "CAPITAL")["status"] == "SIGNED"
+
+
+def test_eod_stores_factor_stress_and_its_stage_reruns_exactly(db_path, result, tmp_path):
+    """MR-019 runs every EOD for information; a re-run of its stage reproduces it."""
+    from novera.workflows.eod import FACTOR_STRESS_TABLES
+    from novera.workflows.rerun import rerun_stage
+
+    s = result.run.summary
+    assert s["worst_factor"] < 0 and s["worst_window"] < 0 and s["factor_stress_factors"] > 100
+    assert "factor_stress" in result.run.timings
+    with DuckDBRepository(db_path) as repo:
+        frames = {t: repo.load_run_frame(result.run.run_id, t) for t in FACTOR_STRESS_TABLES}
+        assert all(len(f) for f in frames.values())
+        res = rerun_stage(
+            repo, result.run.run_id, "factor_stress", "Risk Control", "fixture check", runs_dir=tmp_path
+        )
+        for t in FACTOR_STRESS_TABLES:
+            again = repo.load_run_frame(res.run.run_id, t)
+            pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
+        assert res.run.summary["worst_factor"] == pytest.approx(s["worst_factor"])

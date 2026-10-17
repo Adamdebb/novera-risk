@@ -41,6 +41,7 @@ from novera.risk import (
     look_through,
     static_backtest,
 )
+from novera.risk.factor_stress import run_factor_stress
 from novera.risk.stress_definitions import (
     built_in_definitions,
     episode_windows,
@@ -54,6 +55,7 @@ from novera.workflows.eod import (
     EODConfig,
     persist_backtest,
     persist_concentration,
+    persist_factor_stress,
     persist_pnl,
     persist_stress,
     persist_var,
@@ -173,6 +175,27 @@ STAGES: tuple[Stage, ...] = (
             "worst_stress_all",
             "stress_scenarios",
             "stress_limit_scenarios",
+        ),
+    ),
+    Stage(
+        "factor_stress",
+        "Factor stress",
+        "Standalone shocks of every factor, sliding scales, jump to default by issuer and the worst "
+        "historical windows, for information (MR-019).",
+        ("factor_stress", "factor_stress_scales", "jump_to_default", "worst_windows"),
+        (),
+        (
+            "factor_stress_factors",
+            "worst_factor_id",
+            "worst_factor_direction",
+            "worst_factor",
+            "worst_jtd_issuer",
+            "worst_jtd",
+            "worst_window_start",
+            "worst_window_end",
+            "worst_window_days",
+            "worst_window_version",
+            "worst_window",
         ),
     ),
     Stage(
@@ -375,6 +398,12 @@ def _stage_backtest(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, 
     return {"backtest_zone": bts.zone, "backtest_exceptions": bts.exceptions, "backtest_days": bts.days}
 
 
+def _stage_factor_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
+    fs = run_factor_stress(x.pf, x.sens, x.history, x.val.table)
+    persist_factor_stress(repo, rid, fs)
+    return fs.summary()
+
+
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
     persist_stress(repo, rid, x.stress, x.stress_run.recorded, x.stress_run.info)
     return stress_headline(x.stress, x.limit_stress, x.val.table)
@@ -497,6 +526,7 @@ _STAGE_FUNCTIONS = {
     "var": _stage_var,
     "backtest": _stage_backtest,
     "stress": _stage_stress,
+    "factor_stress": _stage_factor_stress,
     "limits": _stage_limits,
     "concentration": _stage_concentration,
     "pnl": _stage_pnl,

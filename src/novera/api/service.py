@@ -287,6 +287,58 @@ class RiskService:
         piv = piv.join(summary.set_index("scenario_id")[meta]).reset_index()
         return _records(piv.sort_values("total"))
 
+    def factor_stress(
+        self, run_id: str | None = None, desk_id: str | None = None, top: int = 25
+    ) -> dict[str, Any]:
+        """Standalone shocks (the ``top`` worst), sliding scales, jump to default by issuer and the
+        worst windows (firm only) of one run, for the firm or one desk (MR-019)."""
+        r, alone = self._frame(run_id, "factor_stress")
+        out: dict[str, Any] = {
+            "record": "MR-019",
+            "run_id": r.run_id,
+            "available": not alone.empty,
+            "desk_id": desk_id,
+        }
+        if alone.empty:
+            return out
+        out["desks"] = sorted(str(d) for d in alone["desk_id"].unique())
+        if desk_id:
+            alone = alone[alone["desk_id"] == desk_id]
+        st = alone.groupby(["factor_id", "direction"], as_index=False).agg(
+            shock=("shock", "first"), pnl=("pnl", "sum")
+        )
+        out["standalone"] = _records(st.sort_values(["pnl", "factor_id"]).head(top))
+        scales = self.repo.load_run_frame(r.run_id, "factor_stress_scales")
+        scales = scales[scales["desk_id"] == (desk_id or "(firm)")]
+        if desk_id:  # the desk's own curve of every scaled factor; zero where the desk has no position
+            grid = self.repo.load_run_frame(r.run_id, "factor_stress_scales")
+            grid = grid[grid["desk_id"] == "(firm)"][["factor_id", "sigmas", "shock"]]
+            scales = grid.merge(
+                scales[["factor_id", "sigmas", "pnl"]], on=["factor_id", "sigmas"], how="left"
+            )
+            scales["pnl"] = scales["pnl"].fillna(0.0)
+            moved = scales.groupby("factor_id")["pnl"].apply(lambda p: (p != 0).any())
+            scales = scales[scales["factor_id"].isin(moved[moved].index)]
+        out["scale_factors"] = list(dict.fromkeys(scales["factor_id"]))
+        out["scales"] = _records(scales[["factor_id", "sigmas", "shock", "pnl"]])
+        jtd = self.repo.load_run_frame(r.run_id, "jump_to_default")
+        if desk_id:
+            jtd = jtd[jtd["desk_id"] == desk_id]
+        if len(jtd):
+            jtd = jtd.groupby(["issuer"], as_index=False).agg(
+                equity=("equity", "first"),
+                equity_pnl=("equity_pnl", "sum"),
+                cds_pnl=("cds_pnl", "sum"),
+                pnl=("pnl", "sum"),
+            )
+        out["jump_to_default"] = _records(jtd.sort_values(["pnl", "issuer"])) if len(jtd) else []
+        if not desk_id:
+            w = self.repo.load_run_frame(r.run_id, "worst_windows")
+            for c in ("window_start", "window_end"):
+                w[c] = w[c].astype(str)
+            out["windows"] = _records(w.sort_values(["horizon_days", "version", "rank"]))
+        return out
+
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]:

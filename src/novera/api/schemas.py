@@ -108,6 +108,17 @@ class RunFigures(ApiModel):
     )
     stress_scenarios: int | None = None
     stress_limit_scenarios: int | None = None
+    factor_stress_factors: int | None = None
+    worst_factor_id: str | None = None
+    worst_factor_direction: str | None = None
+    worst_factor: float | None = None
+    worst_jtd_issuer: str | None = None
+    worst_jtd: float | None = None
+    worst_window_start: str | None = None
+    worst_window_end: str | None = None
+    worst_window_days: int | None = None
+    worst_window_version: str | None = None
+    worst_window: float | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -913,6 +924,54 @@ class GeographyReference(ApiModel):
     countries: list[CountryRow] = Field(default_factory=list)
     currencies: list[CurrencyRow] = Field(default_factory=list)
     currency_pairs: list[CurrencyPairRow] = Field(default_factory=list)
+
+
+class FactorShockRow(ApiModel):
+    factor_id: str
+    direction: str
+    shock: float
+    pnl: float
+
+
+class SlidingScaleRow(ApiModel):
+    factor_id: str
+    sigmas: float
+    shock: float
+    pnl: float
+
+
+class JumpToDefaultRow(ApiModel):
+    issuer: str
+    equity: str | None = None
+    equity_pnl: float
+    cds_pnl: float
+    pnl: float
+
+
+class WorstWindowRow(ApiModel):
+    horizon_days: int
+    version: str
+    rank: int
+    window_start: str
+    window_end: str
+    approx_pnl: float
+    pnl: float
+
+
+class FactorStress(ApiModel):
+    """Standalone shocks, sliding scales, jump to default and worst windows of one run, for the
+    firm or one desk. Record MR-019. ``available`` is false for a run made before round 48."""
+
+    record: str
+    run_id: str
+    available: bool
+    desk_id: str | None = None
+    desks: list[str] = Field(default_factory=list)
+    standalone: list[FactorShockRow] = Field(default_factory=list)
+    scale_factors: list[str] = Field(default_factory=list)
+    scales: list[SlidingScaleRow] = Field(default_factory=list)
+    jump_to_default: list[JumpToDefaultRow] = Field(default_factory=list)
+    windows: list[WorstWindowRow] = Field(default_factory=list)
 
 
 class StressLibrary(ApiModel):
