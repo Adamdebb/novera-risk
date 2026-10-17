@@ -822,6 +822,116 @@ elif page == "Stress":
                 "the positions that carry at least 2% of the firm's VaR or of its worst stress loss."
             )
 
+    st.divider()
+    st.subheader("Reverse stress and stressed Monte Carlo")
+    rv = load("reverse_stress", run_id)
+    if not rv.get("available"):
+        st.info("This run predates reverse stress (MR-021); runs from round 50 on carry it.")
+    else:
+        t_rev, t_mc = st.tabs(["Reverse stress", "Stressed Monte Carlo"])
+        with t_rev:
+            sp = rv.get("space")
+            if sp:
+                st.caption(
+                    f"PCA space: {sp['components']} components keep {sp['explained']:.0%} of the variance of "
+                    f"{sp['horizon_days']}-day moves ({sp['regime'].lower()} regime) and "
+                    f"{sp['tail_capture']:.0%} "
+                    "of the book's worst 1% of historical moves."
+                )
+            sol = df(rv["solutions"])
+            ids = list(dict.fromkeys(sol["target_id"]))
+            pick = st.selectbox("Stress-loss limit", ids, key="reverse_target")
+            one = sol[sol["target_id"] == pick]
+            if (one["status"] == "UNREACHABLE").all():
+                st.warning(
+                    "No scenario within 15 sigma, with prices above -95%, loses this much: "
+                    "the limit is out of reach of the book."
+                )
+            else:
+                view = one[
+                    [
+                        "solution",
+                        "loss_target",
+                        "refined_norm",
+                        "probability",
+                        "exceedance",
+                        "angle_to_first",
+                        "status",
+                    ]
+                ].copy()
+                view["loss_target"] = view["loss_target"] / M
+                st.dataframe(
+                    view.round(6).rename(
+                        columns={
+                            "loss_target": "loss (m)",
+                            "refined_norm": "sigmas",
+                            "probability": "probability (10d, Gaussian)",
+                            "exceedance": "seen in history",
+                            "angle_to_first": "angle to #1 (deg)",
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                rv1 = load("reverse_stress", run_id, target_id=pick)
+                mv = df(rv1["moves"])
+                if not mv.empty:
+                    k_sol = st.selectbox("Solution", sorted(mv["solution"].unique()), key="reverse_solution")
+                    mv = mv[mv["solution"] == k_sol]
+                    d = mv[mv["kind"] == "DRIVER"][["factor_id", "move", "pnl"]].copy()
+                    d["pnl"] = d["pnl"] / M
+                    st.markdown("**What drives the loss** (sensitivity approximation)")
+                    st.dataframe(
+                        d.round(4).rename(columns={"move": "move (units)", "pnl": "P&L (m)"}),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    h = mv[mv["kind"] == "HEADLINE"][["factor_id", "move"]]
+                    st.markdown("**Headline basket in this scenario**")
+                    st.dataframe(h.round(4), use_container_width=True, hide_index=True)
+            st.caption(
+                "For each stress-loss limit: the most plausible market moves that lose exactly the "
+                "limit, found in PCA space on the sensitivities and confirmed by full revaluation. "
+                "'sigmas' is the distance along the scenario's own direction; 'probability' is the "
+                "Gaussian chance of going that far in "
+                "ten days; 'seen in history' is the share of past ten-day moves that went that far in that "
+                "direction. Further solutions point at least 45 degrees away from the earlier ones."
+            )
+        with t_mc:
+            mc = load("stress_monte_carlo", run_id)
+            if not mc.get("available"):
+                st.info("No stressed Monte Carlo stored for this run.")
+            else:
+                q = df(mc["quantiles"]).set_index("quantile") / M
+                st.line_chart(q.rename(columns={"loss_gaussian": "Gaussian", "loss_fat_tail": "Fat tail"}))
+                m = df(mc["summary"])
+                for c in ("mean", "worst", "var_99", "es_975", "var_999"):
+                    m[c] = m[c] / M
+                st.dataframe(
+                    m[m["scope"] == "(firm)"]
+                    .round(2)
+                    .rename(
+                        columns={"var_99": "VaR 99 (m)", "es_975": "ES 97.5 (m)", "var_999": "VaR 99.9 (m)"}
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                tg = df(mc["targets"])
+                if not tg.empty:
+                    tg["loss_target"] = tg["loss_target"] / M
+                    st.markdown("**Chance of losing each stress-loss limit in ten days**")
+                    st.dataframe(
+                        tg.round(5).rename(columns={"loss_target": "limit (m)"}),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                st.caption(
+                    "Ten-day paths drawn in the stressed PCA space: Gaussian scores beside Student-t scores "
+                    "(4 degrees of freedom, one scale per path, so extremes arrive together). "
+                    "Losses in millions; "
+                    "the fat tail's cost shows at the 99.9th percentile and beyond."
+                )
+
 elif page == "Stress library":
     header("Stress library")
     st.caption(

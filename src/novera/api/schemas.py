@@ -122,6 +122,20 @@ class RunFigures(ApiModel):
     hedge_failure: float | None = None
     hedge_failure_scenario: str | None = None
     significant_risks: int | None = None
+    pca_components: int | None = None
+    pca_explained: float | None = None
+    pca_tail_capture: float | None = None
+    reverse_stress_targets: int | None = None
+    reverse_stress_unreachable: int | None = None
+    reverse_firm_target: str | None = None
+    reverse_firm_sigmas: float | None = None
+    reverse_firm_probability: float | None = None
+    reverse_easiest_target: str | None = None
+    reverse_easiest_sigmas: float | None = None
+    stress_mc_var_99: float | None = None
+    stress_mc_es_975: float | None = None
+    stress_mc_var_999: float | None = None
+    stress_mc_tail_ratio: float | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -1032,6 +1046,112 @@ class StressExplain(ApiModel):
     families: list[ExplainFamilyRow] = Field(default_factory=list)
     top_trades: list[ExplainTradeRow] = Field(default_factory=list)
     risk_summary: list[RiskSummaryRow] = Field(default_factory=list)
+
+
+class ReverseStressRow(ApiModel):
+    target_id: str
+    level: str
+    entity_id: str
+    loss_target: float
+    solution: int
+    status: str
+    norm: float | None = None
+    exceedance: float | None = None
+    probability: float | None = None
+    angle_to_first: float | None = None
+    taylor_loss: float | None = None
+    full_loss_unscaled: float | None = None
+    scale: float | None = None
+    full_loss: float | None = None
+    refined_norm: float | None = None
+    neighbour_norm_ratio: float | None = None
+
+
+class ReverseNeighbourRow(ApiModel):
+    target_id: str
+    solution: int
+    neighbour: int
+    angle: float
+    norm: float
+    norm_ratio: float
+
+
+class ReverseMoveRow(ApiModel):
+    target_id: str
+    solution: int
+    kind: str
+    factor_id: str
+    move: float
+    pnl: float | None = None
+
+
+class PCASpaceFacts(ApiModel):
+    horizon_days: int
+    regime: str
+    effective_days: float
+    factors: int
+    components: int
+    explained: float
+    tail_capture: float
+
+
+class PCATailRow(ApiModel):
+    k: int
+    explained: float
+    tail_capture: float
+
+
+class ReverseStress(ApiModel):
+    """The scenarios that lose each stress-loss limit, most plausible first, with near neighbours and
+    drivers for one target. Record MR-021. ``available`` is false for a run made before round 50."""
+
+    record: str
+    run_id: str
+    available: bool
+    target_id: str | None = None
+    solutions: list[ReverseStressRow] = Field(default_factory=list)
+    neighbours: list[ReverseNeighbourRow] = Field(default_factory=list)
+    moves: list[ReverseMoveRow] = Field(default_factory=list)
+    space: PCASpaceFacts | None = None
+    tail_check: list[PCATailRow] = Field(default_factory=list)
+
+
+class StressMCRow(ApiModel):
+    scope: str
+    distribution: str
+    paths: int
+    mean: float
+    worst: float
+    var_99: float
+    es_975: float
+    var_999: float
+    tail_ratio: float | None = None
+
+
+class StressMCQuantile(ApiModel):
+    quantile: float
+    loss_gaussian: float
+    loss_fat_tail: float
+
+
+class StressMCTarget(ApiModel):
+    target_id: str
+    loss_target: float
+    prob_gaussian: float
+    prob_fat_tail: float
+    return_period_years: float | None = None
+
+
+class StressMonteCarlo(ApiModel):
+    """Stressed ten-day paths on Gaussian and fat-tailed PCA scores. Record MR-022."""
+
+    record: str
+    run_id: str
+    available: bool
+    summary: list[StressMCRow] = Field(default_factory=list)
+    quantiles: list[StressMCQuantile] = Field(default_factory=list)
+    targets: list[StressMCTarget] = Field(default_factory=list)
+    parameters: dict[str, Any] | None = None
 
 
 class StressLibrary(ApiModel):

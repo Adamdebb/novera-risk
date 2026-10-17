@@ -529,3 +529,30 @@ def test_eod_stores_stress_explain_and_its_stage_reruns_exactly(db_path, result,
             again = repo.load_run_frame(res.run.run_id, t)
             pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
         assert res.run.summary["significant_risks"] == s["significant_risks"]
+
+
+def test_eod_stores_reverse_stress_and_monte_carlo_and_their_stages_rerun_exactly(db_path, result, tmp_path):
+    """MR-021 and MR-022 run every EOD; a re-run of each stage reproduces it."""
+    from novera.workflows.pca_stress import REVERSE_STRESS_TABLES, STRESS_MC_TABLES
+    from novera.workflows.rerun import rerun_stage
+
+    s = result.run.summary
+    assert s["reverse_stress_targets"] >= 1 and s["stress_mc_var_999"] > s["stress_mc_var_99"]
+    assert "pca_stress" in result.run.timings
+    with DuckDBRepository(db_path) as repo:
+        for stage, tables, key in (
+            ("reverse_stress", REVERSE_STRESS_TABLES, "reverse_stress_targets"),
+            ("stress_monte_carlo", STRESS_MC_TABLES, "stress_mc_var_999"),
+        ):
+            frames = {t: repo.load_run_frame(result.run.run_id, t) for t in tables}
+            assert all(len(f) for f in frames.values()), stage
+            res = rerun_stage(
+                repo, result.run.run_id, stage, "Risk Control", "fixture check", runs_dir=tmp_path
+            )
+            for t in tables:
+                again = repo.load_run_frame(res.run.run_id, t)
+                pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
+            assert res.run.summary[key] == pytest.approx(s[key])
+        sol = repo.load_run_frame(result.run.run_id, "reverse_stress")
+        confirmed = sol[sol["status"] == "CONFIRMED"]
+        assert len(confirmed) and (confirmed["full_loss"] / confirmed["loss_target"] - 1).abs().max() < 0.02

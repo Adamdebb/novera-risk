@@ -473,6 +473,16 @@ def stress_explain(
     return svc.stress_explain(run_id, scenario_id, desk_id)
 
 
+@app.get("/runs/{run_id}/reverse-stress", response_model=s.ReverseStress)
+def reverse_stress(run_id: str, target_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.reverse_stress(run_id, target_id)
+
+
+@app.get("/runs/{run_id}/stress-monte-carlo", response_model=s.StressMonteCarlo)
+def stress_monte_carlo(run_id: str, svc: RiskService = Depends(service)):
+    return svc.stress_monte_carlo(run_id)
+
+
 @app.get("/reference/stress-library", response_model=s.StressLibrary)
 def stress_library(svc: RiskService = Depends(service)):
     return svc.stress_library()

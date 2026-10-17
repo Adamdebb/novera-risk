@@ -2215,6 +2215,63 @@ wording and are open to change; no question round was held.
   /runs/{run_id}/stress-explain`; the Stress page; MR-020; `tests/test_stress_explain.py`,
   `tests/test_workflows.py`.
 
+## Round 50 — Reverse stress and the stressed PCA Monte Carlo (2026-10-17)
+
+Context: the fifth round of the stress framework (`docs/08-stress-framework.md`, B.6 and E). One question round.
+
+### 50.1 Loss targets
+- Options: stress-loss limits ★ · fractions of VaR · fund NAV drawdown · margin or capital ratio
+- Choice (owner): **the stress-loss limits** (the firm's and each desk's, at the amount in force).
+  - Margin and capital ratio targets wait for rounds 52 and 57, which build the margin chain and the bank layer.
+  - Fund NAV drawdown and fractions of VaR were not chosen and are not built.
+
+### 50.2 Solutions per target
+- Options: three, each with near neighbours ★ · one · five
+- Choice (owner): **three** scenarios at least 45 degrees apart, each with four neighbours (the solution
+  rotated 15 degrees and put back on the target).
+
+### 50.3 Horizon and schedule
+- Choice (owner): **10 days**; **every EOD**, as a re-runnable stage (`reverse_stress`, `stress_monte_carlo`).
+- Cost: about 3 s and 2 s on the demo; the PCA space and the quadratic book are cheap.
+
+### 50.4 Taken from the framework, not asked
+- **Plausibility is the Euclidean norm of the standardised scores** (framework B.6). I report it as
+  sigmas along the scenario's own direction. The first version used the norm divided by the square root of the
+  number of components, as MR-018 does; it was wrong here, because a scenario that aims at the book's one
+  weak direction is far less extreme than a typical day in all 65 directions. The probability is the
+  Gaussian chance of crossing the half-space, Φ(−σ), beside the share of past 10-day moves that went that far
+  in that direction.
+- **Number of components** is data-driven: 95% of the variance, then more until the book's worst 1% of
+  historical moves is reproduced at 90% (`pca_tail`). A reduction that smooths the tail away is not accepted.
+- **Fat-tailed scores** are Student-t with 4 degrees of freedom and one scale per path, so extremes arrive
+  together; Gaussian paths on the same random numbers run beside them.
+- **Price-like factors cannot fall below −95%** in a solution or a path.
+
+### Results on the demo (latest runs)
+| | Bank (15 Sep) | Fund (14 Sep) |
+|---|---|---|
+| Components / variance kept / tail reproduced | 65 / 98.6% / 91% | 80 (cap) / 99.4% / **63%** |
+| Firm stress-loss limit | 600m: 4.7 sigma, three stories at 4.7, 6.1 and 6.3 | 300m: 10.1 sigma |
+| Gaussian probability of that loss in 10 days | 1.4e-6 | 2e-24 |
+| Stressed Monte Carlo, probability (fat tail) | 0.13%, once in 31 years | 0.03%, once in 132 years |
+| Firm VaR 99 / VaR 99.9, Gaussian | 294m / 392m | 75m / 99m |
+| Firm VaR 99 / VaR 99.9, fat tail | 347m / 625m (tail ratio 1.59) | 92m / 190m (tail ratio 1.92) |
+| Limits no scenario reaches | 4 of 15 (ENERGY, SINGLE_NAME_EQ, HY_CREDIT, JPY_RATES) | 4 of 10 |
+
+- The Gaussian and the fat-tail probabilities differ by three to twenty orders of magnitude: a Gaussian PCA
+  model says the firm limit will never be reached; the fat-tailed paths say about once in thirty years.
+- **The fund's PCA space fails the tail test**: even 80 components reproduce only 63% of its worst-1%
+  historical P&L, because the fund's tail is made of single-name moves (NVDA, option books) that common
+  components do not carry. A MINOR data-quality finding `PCA_TAIL_CAPTURE_LOW` is raised, and the fund's
+  reverse-stress sigmas and Monte Carlo tail are understated. Second-look item 31.
+- ENERGY is UNREACHABLE at 500m: the unbounded solution needs twelve price-like factors below −95%.
+- No demo rebuild: the latest bank and fund runs got both stages by single-stage re-run.
+- Where: `risk/pca_space.py`, `risk/reverse_stress.py`, `risk/stress_monte_carlo.py`,
+  `workflows/pca_stress.py`; `workflows/eod.py` (step `pca_stress`, model versions); `workflows/rerun.py`
+  (two stages); `workflows/limit_calibration.py`; `GET /runs/{run_id}/reverse-stress` and
+  `/stress-monte-carlo`; the Stress page; MR-021, MR-022; `tests/test_reverse_stress.py`,
+  `tests/test_workflows.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names
@@ -2314,3 +2371,8 @@ wording and are open to change; no question round was held.
 30. **Hedge failure is the basis family only** (49.2): a hedge that fails through a single name against
     an index, an equity against a future, or a changed correlation is not on its own line. Pairwise
     cross-family terms would show the interactions (one more revaluation per pair).
+31. **The fund's PCA space smooths its tail away** (50.4): at 80 components it reproduces 63% of the worst-1%
+    historical P&L. The fund's tail is idiosyncratic (single names, option books). Adding the idiosyncratic
+    residual to the Monte Carlo, or a name-level shock set for reverse stress, would close it.
+32. **Reverse stress search is local** (50): a book with strong short gamma may hide a more plausible solution
+    the search does not find; the angle constraint and the start on the linear solution are the only guards.

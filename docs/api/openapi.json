@@ -8032,6 +8032,74 @@
         "title": "Organisation",
         "type": "object"
       },
+      "PCASpaceFacts": {
+        "additionalProperties": true,
+        "properties": {
+          "components": {
+            "title": "Components",
+            "type": "integer"
+          },
+          "effective_days": {
+            "title": "Effective Days",
+            "type": "number"
+          },
+          "explained": {
+            "title": "Explained",
+            "type": "number"
+          },
+          "factors": {
+            "title": "Factors",
+            "type": "integer"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "regime": {
+            "title": "Regime",
+            "type": "string"
+          },
+          "tail_capture": {
+            "title": "Tail Capture",
+            "type": "number"
+          }
+        },
+        "required": [
+          "horizon_days",
+          "regime",
+          "effective_days",
+          "factors",
+          "components",
+          "explained",
+          "tail_capture"
+        ],
+        "title": "PCASpaceFacts",
+        "type": "object"
+      },
+      "PCATailRow": {
+        "additionalProperties": true,
+        "properties": {
+          "explained": {
+            "title": "Explained",
+            "type": "number"
+          },
+          "k": {
+            "title": "K",
+            "type": "integer"
+          },
+          "tail_capture": {
+            "title": "Tail Capture",
+            "type": "number"
+          }
+        },
+        "required": [
+          "k",
+          "explained",
+          "tail_capture"
+        ],
+        "title": "PCATailRow",
+        "type": "object"
+      },
       "PLARow": {
         "additionalProperties": true,
         "properties": {
@@ -9657,6 +9725,313 @@
         "title": "RerunStage",
         "type": "object"
       },
+      "ReverseMoveRow": {
+        "additionalProperties": true,
+        "properties": {
+          "factor_id": {
+            "title": "Factor Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "move": {
+            "title": "Move",
+            "type": "number"
+          },
+          "pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pnl"
+          },
+          "solution": {
+            "title": "Solution",
+            "type": "integer"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "solution",
+          "kind",
+          "factor_id",
+          "move"
+        ],
+        "title": "ReverseMoveRow",
+        "type": "object"
+      },
+      "ReverseNeighbourRow": {
+        "additionalProperties": true,
+        "properties": {
+          "angle": {
+            "title": "Angle",
+            "type": "number"
+          },
+          "neighbour": {
+            "title": "Neighbour",
+            "type": "integer"
+          },
+          "norm": {
+            "title": "Norm",
+            "type": "number"
+          },
+          "norm_ratio": {
+            "title": "Norm Ratio",
+            "type": "number"
+          },
+          "solution": {
+            "title": "Solution",
+            "type": "integer"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "solution",
+          "neighbour",
+          "angle",
+          "norm",
+          "norm_ratio"
+        ],
+        "title": "ReverseNeighbourRow",
+        "type": "object"
+      },
+      "ReverseStress": {
+        "additionalProperties": true,
+        "description": "The scenarios that lose each stress-loss limit, most plausible first, with near neighbours and\ndrivers for one target. Record MR-021. ``available`` is false for a run made before round 50.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "moves": {
+            "items": {
+              "$ref": "#/components/schemas/ReverseMoveRow"
+            },
+            "title": "Moves",
+            "type": "array"
+          },
+          "neighbours": {
+            "items": {
+              "$ref": "#/components/schemas/ReverseNeighbourRow"
+            },
+            "title": "Neighbours",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "solutions": {
+            "items": {
+              "$ref": "#/components/schemas/ReverseStressRow"
+            },
+            "title": "Solutions",
+            "type": "array"
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PCASpaceFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tail_check": {
+            "items": {
+              "$ref": "#/components/schemas/PCATailRow"
+            },
+            "title": "Tail Check",
+            "type": "array"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "ReverseStress",
+        "type": "object"
+      },
+      "ReverseStressRow": {
+        "additionalProperties": true,
+        "properties": {
+          "angle_to_first": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Angle To First"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "exceedance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exceedance"
+          },
+          "full_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Loss"
+          },
+          "full_loss_unscaled": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Loss Unscaled"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "loss_target": {
+            "title": "Loss Target",
+            "type": "number"
+          },
+          "neighbour_norm_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Neighbour Norm Ratio"
+          },
+          "norm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Norm"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "refined_norm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refined Norm"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "solution": {
+            "title": "Solution",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "taylor_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taylor Loss"
+          }
+        },
+        "required": [
+          "target_id",
+          "level",
+          "entity_id",
+          "loss_target",
+          "solution",
+          "status"
+        ],
+        "title": "ReverseStressRow",
+        "type": "object"
+      },
       "RiskArea": {
         "additionalProperties": true,
         "properties": {
@@ -10362,6 +10737,39 @@
             "description": "Host and process id that ran it, read by the stuck-run sweep (OPS-001)",
             "title": "Owner"
           },
+          "pca_components": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pca Components"
+          },
+          "pca_explained": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pca Explained"
+          },
+          "pca_tail_capture": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pca Tail Capture"
+          },
           "pnl_steps": {
             "additionalProperties": {
               "type": "number"
@@ -10406,6 +10814,83 @@
               }
             ]
           },
+          "reverse_easiest_sigmas": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Easiest Sigmas"
+          },
+          "reverse_easiest_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Easiest Target"
+          },
+          "reverse_firm_probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Firm Probability"
+          },
+          "reverse_firm_sigmas": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Firm Sigmas"
+          },
+          "reverse_firm_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Firm Target"
+          },
+          "reverse_stress_targets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Stress Targets"
+          },
+          "reverse_stress_unreachable": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverse Stress Unreachable"
+          },
           "significant_risks": {
             "anyOf": [
               {
@@ -10427,6 +10912,50 @@
               }
             ],
             "title": "Stress Limit Scenarios"
+          },
+          "stress_mc_es_975": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Mc Es 975"
+          },
+          "stress_mc_tail_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Mc Tail Ratio"
+          },
+          "stress_mc_var_99": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Mc Var 99"
+          },
+          "stress_mc_var_999": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Mc Var 999"
           },
           "stress_scenarios": {
             "anyOf": [
@@ -12279,6 +12808,188 @@
           "summary"
         ],
         "title": "StressLibrary",
+        "type": "object"
+      },
+      "StressMCQuantile": {
+        "additionalProperties": true,
+        "properties": {
+          "loss_fat_tail": {
+            "title": "Loss Fat Tail",
+            "type": "number"
+          },
+          "loss_gaussian": {
+            "title": "Loss Gaussian",
+            "type": "number"
+          },
+          "quantile": {
+            "title": "Quantile",
+            "type": "number"
+          }
+        },
+        "required": [
+          "quantile",
+          "loss_gaussian",
+          "loss_fat_tail"
+        ],
+        "title": "StressMCQuantile",
+        "type": "object"
+      },
+      "StressMCRow": {
+        "additionalProperties": true,
+        "properties": {
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "es_975": {
+            "title": "Es 975",
+            "type": "number"
+          },
+          "mean": {
+            "title": "Mean",
+            "type": "number"
+          },
+          "paths": {
+            "title": "Paths",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "tail_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tail Ratio"
+          },
+          "var_99": {
+            "title": "Var 99",
+            "type": "number"
+          },
+          "var_999": {
+            "title": "Var 999",
+            "type": "number"
+          },
+          "worst": {
+            "title": "Worst",
+            "type": "number"
+          }
+        },
+        "required": [
+          "scope",
+          "distribution",
+          "paths",
+          "mean",
+          "worst",
+          "var_99",
+          "es_975",
+          "var_999"
+        ],
+        "title": "StressMCRow",
+        "type": "object"
+      },
+      "StressMCTarget": {
+        "additionalProperties": true,
+        "properties": {
+          "loss_target": {
+            "title": "Loss Target",
+            "type": "number"
+          },
+          "prob_fat_tail": {
+            "title": "Prob Fat Tail",
+            "type": "number"
+          },
+          "prob_gaussian": {
+            "title": "Prob Gaussian",
+            "type": "number"
+          },
+          "return_period_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Period Years"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "loss_target",
+          "prob_gaussian",
+          "prob_fat_tail"
+        ],
+        "title": "StressMCTarget",
+        "type": "object"
+      },
+      "StressMonteCarlo": {
+        "additionalProperties": true,
+        "description": "Stressed ten-day paths on Gaussian and fat-tailed PCA scores. Record MR-022.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "quantiles": {
+            "items": {
+              "$ref": "#/components/schemas/StressMCQuantile"
+            },
+            "title": "Quantiles",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "summary": {
+            "items": {
+              "$ref": "#/components/schemas/StressMCRow"
+            },
+            "title": "Summary",
+            "type": "array"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/StressMCTarget"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "StressMonteCarlo",
         "type": "object"
       },
       "StressPlausibility": {
@@ -22151,6 +22862,97 @@
         "summary": "Reconciliation"
       }
     },
+    "/runs/{run_id}/reverse-stress": {
+      "get": {
+        "operationId": "reverse_stress_runs__run_id__reverse_stress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReverseStress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Reverse Stress"
+      }
+    },
     "/runs/{run_id}/risk-pack": {
       "post": {
         "operationId": "risk_pack_runs__run_id__risk_pack_post",
@@ -23041,6 +23843,81 @@
           }
         },
         "summary": "Stress Explain"
+      }
+    },
+    "/runs/{run_id}/stress-monte-carlo": {
+      "get": {
+        "operationId": "stress_monte_carlo_runs__run_id__stress_monte_carlo_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressMonteCarlo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Monte Carlo"
       }
     },
     "/runs/{run_id}/summary": {

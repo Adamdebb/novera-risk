@@ -64,12 +64,15 @@ from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
 from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
-from novera.risk.stress_definitions import run_stress_definitions, stress_headline
+from novera.risk.reverse_stress import MODEL_VERSION as REVERSE_STRESS_VERSION
+from novera.risk.stress_definitions import episode_windows, run_stress_definitions, stress_headline
 from novera.risk.stress_explain import MODEL_VERSION as STRESS_EXPLAIN_VERSION
 from novera.risk.stress_explain import run_stress_explain
+from novera.risk.stress_monte_carlo import MODEL_VERSION as STRESS_MC_VERSION
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
+from novera.workflows.pca_stress import persist_reverse_stress, persist_stress_mc, run_pca_stress
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
 from novera.workflows.sweep import owner, sweep_stuck
 
@@ -89,6 +92,8 @@ MODEL_VERSIONS = {
     "market_data_proxies": PROXY_VERSION,
     "factor_stress": FACTOR_STRESS_VERSION,
     "stress_explain": STRESS_EXPLAIN_VERSION,
+    "reverse_stress": REVERSE_STRESS_VERSION,
+    "stress_monte_carlo": STRESS_MC_VERSION,
 }
 
 
@@ -118,6 +123,10 @@ class EODConfig:
     stress_explain: bool = True
     """Stress P&L by factor family, top trades, hedge-failure line and the summary of significant
     risks (MR-020); off for the same dry run."""
+    reverse_stress: bool = True
+    """The scenarios that lose each stress-loss limit, most plausible first (MR-021); off for the dry run."""
+    stress_monte_carlo: bool = True
+    """Ten-day stressed paths on fat-tailed PCA scores (MR-022); off for the dry run."""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -133,6 +142,8 @@ class EODConfig:
             "proxies": self.proxies,
             "factor_stress": self.factor_stress,
             "stress_explain": self.stress_explain,
+            "reverse_stress": self.reverse_stress,
+            "stress_monte_carlo": self.stress_monte_carlo,
         }
 
 
@@ -303,6 +314,24 @@ def run_eod(
         sexplain = (
             run_stress_explain(pf, sens, stress, limit_stress, val.table, hs) if cfg.stress_explain else None
         )
+    with _timed(timings, "pca_stress"):
+        pca = (
+            run_pca_stress(
+                pf,
+                sens,
+                history,
+                val.table,
+                limits,
+                episode_windows(history, repo.load_market_episodes()),
+                cfg.reverse_stress,
+                cfg.stress_monte_carlo,
+            )
+            if cfg.reverse_stress or cfg.stress_monte_carlo
+            else None
+        )
+        if pca:
+            timings.update({f"pca_stress:{k}": v for k, v in pca.seconds.items()})
+            dq.findings += pca.findings()
     with _timed(timings, "limits"):
         limit_table = (
             monitor(
@@ -404,6 +433,8 @@ def run_eod(
         **worst_summary,
         **(fstress.summary() if fstress else {}),
         **(sexplain.summary() if sexplain else {}),
+        **(pca.reverse.summary() if pca and pca.reverse else {}),
+        **(pca.monte_carlo.summary() if pca and pca.monte_carlo else {}),
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
@@ -462,6 +493,7 @@ def run_eod(
                     "stress_info": st_run.info,
                     "factor_stress": fstress,
                     "stress_explain": sexplain,
+                    "pca_stress": pca,
                 },
             )
         # The run stays RUNNING from here: the engines below read the stored run by id, and a
@@ -831,6 +863,11 @@ def _persist(
         persist_factor_stress(repo, rid, extras["factor_stress"])  # type: ignore[index]
     if (extras or {}).get("stress_explain") is not None:
         persist_stress_explain(repo, rid, extras["stress_explain"])  # type: ignore[index]
+    pca = (extras or {}).get("pca_stress")
+    if pca is not None and pca.reverse is not None:
+        persist_reverse_stress(repo, rid, pca.reverse)
+    if pca is not None and pca.monte_carlo is not None:
+        persist_stress_mc(repo, rid, pca.monte_carlo)
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

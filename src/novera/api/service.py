@@ -378,6 +378,41 @@ class RiskService:
         out["risk_summary"] = _records(rs) if len(rs) else []
         return out
 
+    def reverse_stress(self, run_id: str | None = None, target_id: str | None = None) -> dict[str, Any]:
+        """The scenarios that lose each stress-loss limit (most plausible first), and for one target
+        their near neighbours and what drives each loss (MR-021)."""
+        r, sol = self._frame(run_id, "reverse_stress")
+        out: dict[str, Any] = {"record": "MR-021", "run_id": r.run_id, "available": not sol.empty}
+        if sol.empty:
+            return out
+        order = {"FIRM": 0, "DESK": 1}
+        sol = sol.assign(_o=sol["level"].map(order).fillna(2)).sort_values(["_o", "target_id", "solution"])
+        out["solutions"] = _records(sol.drop(columns=["_o"]))
+        tid = target_id or str(sol["target_id"].iloc[0])
+        out["target_id"] = tid
+        nb = self.repo.load_run_frame(r.run_id, "reverse_stress_neighbours")
+        out["neighbours"] = _records(nb[nb["target_id"] == tid]) if len(nb) else []
+        mv = self.repo.load_run_frame(r.run_id, "reverse_stress_moves")
+        out["moves"] = _records(mv[mv["target_id"] == tid]) if len(mv) else []
+        space = self.repo.load_run_frame(r.run_id, "pca_space")
+        out["space"] = _records(space)[0] if len(space) else None
+        out["tail_check"] = _records(self.repo.load_run_frame(r.run_id, "pca_tail"))
+        return out
+
+    def stress_monte_carlo(self, run_id: str | None = None) -> dict[str, Any]:
+        """Gaussian and fat-tailed stressed paths for the firm and each desk, the firm's loss quantiles
+        and the share of paths losing each stress-loss limit (MR-022)."""
+        r, summ = self._frame(run_id, "stress_mc")
+        out: dict[str, Any] = {"record": "MR-022", "run_id": r.run_id, "available": not summ.empty}
+        if summ.empty:
+            return out
+        out["summary"] = _records(summ)
+        out["quantiles"] = _records(self.repo.load_run_frame(r.run_id, "stress_mc_quantiles"))
+        out["targets"] = _records(self.repo.load_run_frame(r.run_id, "stress_mc_targets"))
+        par = self.repo.load_run_frame(r.run_id, "stress_mc_parameters")
+        out["parameters"] = _records(par)[0] if len(par) else None
+        return out
+
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]:

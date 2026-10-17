@@ -63,6 +63,13 @@ from novera.workflows.eod import (
     persist_var,
     run_dir,
 )
+from novera.workflows.pca_stress import (
+    REVERSE_STRESS_TABLES,
+    STRESS_MC_TABLES,
+    persist_reverse_stress,
+    persist_stress_mc,
+    run_pca_stress,
+)
 from novera.workflows.runs import USABLE_STATUSES, AuditEvent, RunRecord, new_run_id
 from novera.workflows.sweep import owner, sweep_stuck
 
@@ -208,6 +215,35 @@ STAGES: tuple[Stage, ...] = (
         ("stress_explain", "stress_top_trades", "risk_summary"),
         (),
         ("hedge_failure", "hedge_failure_scenario", "significant_risks"),
+    ),
+    Stage(
+        "reverse_stress",
+        "Reverse stress",
+        "For each stress-loss limit, the most plausible scenarios in PCA space that lose exactly the limit, "
+        "with near neighbours, confirmed in full revaluation (MR-021).",
+        REVERSE_STRESS_TABLES,
+        (),
+        (
+            "pca_components",
+            "pca_explained",
+            "pca_tail_capture",
+            "reverse_stress_targets",
+            "reverse_stress_unreachable",
+            "reverse_firm_target",
+            "reverse_firm_sigmas",
+            "reverse_firm_probability",
+            "reverse_easiest_target",
+            "reverse_easiest_sigmas",
+        ),
+    ),
+    Stage(
+        "stress_monte_carlo",
+        "Stressed Monte Carlo",
+        "Ten-day stressed paths on fat-tailed PCA scores, Gaussian beside fat-tailed, and the share of "
+        "paths that lose each stress-loss limit (MR-022).",
+        STRESS_MC_TABLES,
+        (),
+        ("stress_mc_var_99", "stress_mc_es_975", "stress_mc_var_999", "stress_mc_tail_ratio"),
     ),
     Stage(
         "limits",
@@ -421,6 +457,33 @@ def _stage_stress_explain(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict
     return ex.summary()
 
 
+def _pca_stress(x: _Inputs, reverse: bool, monte_carlo: bool):
+    stored = x.repo.load_limits(on=x.market.as_of)
+    limits, _ = effective_limits(stored, x.repo.load_increases(status="APPROVED"), x.market.as_of)
+    return run_pca_stress(
+        x.pf,
+        x.sens,
+        x.history,
+        x.val.table,
+        limits,
+        episode_windows(x.history, x.repo.load_market_episodes()),
+        reverse,
+        monte_carlo,
+    )
+
+
+def _stage_reverse_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
+    res = _pca_stress(x, True, False).reverse
+    persist_reverse_stress(repo, rid, res)  # type: ignore[arg-type]
+    return res.summary()  # type: ignore[union-attr]
+
+
+def _stage_stress_monte_carlo(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
+    res = _pca_stress(x, False, True).monte_carlo
+    persist_stress_mc(repo, rid, res)  # type: ignore[arg-type]
+    return res.summary()  # type: ignore[union-attr]
+
+
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
     persist_stress(repo, rid, x.stress, x.stress_run.recorded, x.stress_run.info)
     return stress_headline(x.stress, x.limit_stress, x.val.table)
@@ -545,6 +608,8 @@ _STAGE_FUNCTIONS = {
     "stress": _stage_stress,
     "factor_stress": _stage_factor_stress,
     "stress_explain": _stage_stress_explain,
+    "reverse_stress": _stage_reverse_stress,
+    "stress_monte_carlo": _stage_stress_monte_carlo,
     "limits": _stage_limits,
     "concentration": _stage_concentration,
     "pnl": _stage_pnl,

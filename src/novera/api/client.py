@@ -42,6 +42,8 @@ class RiskClient(Protocol):
     def stress_explain(
         self, run_id: str | None = None, scenario_id: str | None = None, desk_id: str | None = None
     ) -> dict[str, Any]: ...
+    def reverse_stress(self, run_id: str | None = None, target_id: str | None = None) -> dict[str, Any]: ...
+    def stress_monte_carlo(self, run_id: str | None = None) -> dict[str, Any]: ...
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]: ...
@@ -290,6 +292,12 @@ class HttpClient:
         return self._get(
             f"/runs/{self._rid(run_id)}/stress-explain", scenario_id=scenario_id, desk_id=desk_id
         )
+
+    def reverse_stress(self, run_id=None, target_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/reverse-stress", target_id=target_id)
+
+    def stress_monte_carlo(self, run_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/stress-monte-carlo")
 
     def limits(self, run_id=None, status=None, level=None):
         return self._get(f"/runs/{self._rid(run_id)}/limits", status=status, level=level)

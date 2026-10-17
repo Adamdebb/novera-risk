@@ -160,6 +160,26 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Stress explain and summary of significant risks",
             ),
             MeasureSpec(
+                "MR-021",
+                "Reverse stress in PCA space",
+                "For each stress-loss limit, the most plausible market scenarios that lose exactly it, "
+                "found on the sensitivities in the space of principal components and confirmed by full "
+                "revaluation, with near neighbours and the sigmas and probability of each.",
+                "reporting currency",
+                "Stress",
+                "Reverse stress in PCA space",
+            ),
+            MeasureSpec(
+                "MR-022",
+                "Stressed Monte Carlo on fat-tailed PCA scores",
+                "Ten-day stressed paths of the whole market on Student-t principal-component scores, beside "
+                "the Gaussian version: VaR, expected shortfall and extreme quantiles for the firm and each "
+                "desk, and the chance of losing each stress-loss limit.",
+                "reporting currency",
+                "Stress",
+                "Stressed Monte Carlo on fat-tailed PCA scores",
+            ),
+            MeasureSpec(
                 "MR-007",
                 "Daily P&L explain",
                 "Day-on-day P&L as a full-revaluation waterfall (carry, factor moves, new and dead "
