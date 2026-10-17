@@ -10737,6 +10737,72 @@
             "description": "Host and process id that ran it, read by the stuck-run sweep (OPS-001)",
             "title": "Owner"
           },
+          "path_first_breach_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path First Breach Day"
+          },
+          "path_unfinished": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Unfinished"
+          },
+          "path_worst_action_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Worst Action Cost"
+          },
+          "path_worst_drawdown_frozen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Worst Drawdown Frozen"
+          },
+          "path_worst_drawdown_managed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Worst Drawdown Managed"
+          },
+          "path_worst_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Worst Id"
+          },
           "pca_components": {
             "anyOf": [
               {
@@ -10956,6 +11022,17 @@
               }
             ],
             "title": "Stress Mc Var 999"
+          },
+          "stress_paths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress Paths"
           },
           "stress_scenarios": {
             "anyOf": [
@@ -12451,6 +12528,212 @@
         "title": "StrategyAttribution",
         "type": "object"
       },
+      "StressActionRule": {
+        "additionalProperties": true,
+        "properties": {
+          "close_short_options": {
+            "title": "Close Short Options",
+            "type": "boolean"
+          },
+          "cut_fraction": {
+            "title": "Cut Fraction",
+            "type": "number"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "hedge_delta": {
+            "title": "Hedge Delta",
+            "type": "boolean"
+          },
+          "impact_coefficient": {
+            "title": "Impact Coefficient",
+            "type": "number"
+          },
+          "participation": {
+            "title": "Participation",
+            "type": "number"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "stop_loss_var_multiple": {
+            "title": "Stop Loss Var Multiple",
+            "type": "number"
+          },
+          "stressed_spread_multiple": {
+            "title": "Stressed Spread Multiple",
+            "type": "number"
+          },
+          "stressed_volume_share": {
+            "title": "Stressed Volume Share",
+            "type": "number"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "scope",
+          "enabled",
+          "stop_loss_var_multiple",
+          "cut_fraction",
+          "close_short_options",
+          "hedge_delta",
+          "participation",
+          "stressed_volume_share",
+          "stressed_spread_multiple",
+          "impact_coefficient"
+        ],
+        "title": "StressActionRule",
+        "type": "object"
+      },
+      "StressActionRuleSpec": {
+        "additionalProperties": true,
+        "description": "One row of the stress-path action rules (MR-023); a desk's row replaces the default row.",
+        "properties": {
+          "close_short_options": {
+            "default": true,
+            "title": "Close Short Options",
+            "type": "boolean"
+          },
+          "cut_fraction": {
+            "default": 0.5,
+            "title": "Cut Fraction",
+            "type": "number"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "hedge_delta": {
+            "default": true,
+            "title": "Hedge Delta",
+            "type": "boolean"
+          },
+          "impact_coefficient": {
+            "default": 1.0,
+            "title": "Impact Coefficient",
+            "type": "number"
+          },
+          "participation": {
+            "default": 0.2,
+            "title": "Participation",
+            "type": "number"
+          },
+          "scope": {
+            "default": "(default)",
+            "description": "(default), or a desk id",
+            "title": "Scope",
+            "type": "string"
+          },
+          "stop_loss_var_multiple": {
+            "default": 3.0,
+            "title": "Stop Loss Var Multiple",
+            "type": "number"
+          },
+          "stressed_spread_multiple": {
+            "default": 2.0,
+            "title": "Stressed Spread Multiple",
+            "type": "number"
+          },
+          "stressed_volume_share": {
+            "default": 0.5,
+            "title": "Stressed Volume Share",
+            "type": "number"
+          }
+        },
+        "title": "StressActionRuleSpec",
+        "type": "object"
+      },
+      "StressActionRules": {
+        "additionalProperties": true,
+        "description": "What each desk does in a stress path: the default row and any desk overrides. Record MR-023.",
+        "properties": {
+          "desks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Desks",
+            "type": "array"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/StressActionRule"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "source": {
+            "description": "stored, or defaults when no rules have been saved",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "source",
+          "rules",
+          "desks",
+          "fields"
+        ],
+        "title": "StressActionRules",
+        "type": "object"
+      },
+      "StressActionsBody": {
+        "properties": {
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/StressActionRuleSpec"
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "title": "StressActionsBody",
+        "type": "object"
+      },
       "StressCategory": {
         "additionalProperties": true,
         "properties": {
@@ -12990,6 +13273,412 @@
           "available"
         ],
         "title": "StressMonteCarlo",
+        "type": "object"
+      },
+      "StressPathAction": {
+        "additionalProperties": true,
+        "properties": {
+          "action": {
+            "description": "CUT, CLOSE_SHORT_OPTIONS or HEDGE",
+            "title": "Action",
+            "type": "string"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "desk_id": {
+            "title": "Desk Id",
+            "type": "string"
+          },
+          "first_day": {
+            "title": "First Day",
+            "type": "integer"
+          },
+          "last_day": {
+            "title": "Last Day",
+            "type": "integer"
+          },
+          "path_id": {
+            "title": "Path Id",
+            "type": "string"
+          },
+          "traded": {
+            "description": "Gross daily risk sold (CUT, CLOSE_SHORT_OPTIONS) or hedge notional",
+            "title": "Traded",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path_id",
+          "desk_id",
+          "action",
+          "first_day",
+          "last_day",
+          "traded",
+          "cost"
+        ],
+        "title": "StressPathAction",
+        "type": "object"
+      },
+      "StressPathDay": {
+        "additionalProperties": true,
+        "properties": {
+          "action_cost": {
+            "title": "Action Cost",
+            "type": "number"
+          },
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "cumulative": {
+            "title": "Cumulative",
+            "type": "number"
+          },
+          "day": {
+            "title": "Day",
+            "type": "integer"
+          },
+          "hedge_pnl": {
+            "title": "Hedge Pnl",
+            "type": "number"
+          },
+          "path_id": {
+            "title": "Path Id",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "risk_held": {
+            "description": "Share of the book's gross daily risk still held",
+            "title": "Risk Held",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path_id",
+          "book",
+          "day",
+          "pnl",
+          "cumulative",
+          "hedge_pnl",
+          "action_cost",
+          "risk_held"
+        ],
+        "title": "StressPathDay",
+        "type": "object"
+      },
+      "StressPathDesk": {
+        "additionalProperties": true,
+        "properties": {
+          "action_cost": {
+            "title": "Action Cost",
+            "type": "number"
+          },
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "completion_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Day"
+          },
+          "desk_id": {
+            "title": "Desk Id",
+            "type": "string"
+          },
+          "end_pnl": {
+            "title": "End Pnl",
+            "type": "number"
+          },
+          "hedge_pnl": {
+            "title": "Hedge Pnl",
+            "type": "number"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "number"
+          },
+          "path_id": {
+            "title": "Path Id",
+            "type": "string"
+          },
+          "stop_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Loss"
+          },
+          "trigger_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Day"
+          }
+        },
+        "required": [
+          "path_id",
+          "desk_id",
+          "book",
+          "end_pnl",
+          "max_drawdown",
+          "action_cost",
+          "hedge_pnl"
+        ],
+        "title": "StressPathDesk",
+        "type": "object"
+      },
+      "StressPathRow": {
+        "additionalProperties": true,
+        "properties": {
+          "action_cost": {
+            "title": "Action Cost",
+            "type": "number"
+          },
+          "book": {
+            "description": "FROZEN (nobody acts) or MANAGED (the action rules)",
+            "title": "Book",
+            "type": "string"
+          },
+          "completion_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Day the last triggered desk finished acting; null while any is unfinished",
+            "title": "Completion Day"
+          },
+          "desks_triggered": {
+            "title": "Desks Triggered",
+            "type": "integer"
+          },
+          "end_pnl": {
+            "title": "End Pnl",
+            "type": "number"
+          },
+          "first_breach_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Breach Day"
+          },
+          "first_breach_limit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Breach Limit"
+          },
+          "first_trigger_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Trigger Day"
+          },
+          "hedge_pnl": {
+            "title": "Hedge Pnl",
+            "type": "number"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path_id": {
+            "title": "Path Id",
+            "type": "string"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GAP_DRIFT, V or SLOW_BLEED for a scenario path",
+            "title": "Shape"
+          },
+          "source": {
+            "description": "SCENARIO, HISTORICAL or MONTE_CARLO",
+            "title": "Source",
+            "type": "string"
+          },
+          "taylor_end_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Frozen book: the end P&L on the sensitivities, for information",
+            "title": "Taylor End Pnl"
+          },
+          "unfinished_desks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unfinished Desks"
+          },
+          "worst_day": {
+            "title": "Worst Day",
+            "type": "integer"
+          },
+          "worst_day_pnl": {
+            "title": "Worst Day Pnl",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path_id",
+          "source",
+          "name",
+          "book",
+          "end_pnl",
+          "max_drawdown",
+          "worst_day",
+          "worst_day_pnl",
+          "desks_triggered",
+          "action_cost",
+          "hedge_pnl"
+        ],
+        "title": "StressPathRow",
+        "type": "object"
+      },
+      "StressPaths": {
+        "additionalProperties": true,
+        "description": "Twenty-day stress paths walked frozen and managed by the action rules, and for one path its\ndays, desks and actions. Record MR-023. ``available`` is false for a run made before round 51.",
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/StressPathAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/StressPathDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "desks": {
+            "items": {
+              "$ref": "#/components/schemas/StressPathDesk"
+            },
+            "title": "Desks",
+            "type": "array"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "path_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Id"
+          },
+          "paths": {
+            "items": {
+              "$ref": "#/components/schemas/StressPathRow"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "StressPaths",
         "type": "object"
       },
       "StressPlausibility": {
@@ -16765,6 +17454,146 @@
           }
         },
         "summary": "Set Signoff Policy"
+      }
+    },
+    "/admin/stress/actions": {
+      "get": {
+        "operationId": "stress_actions_admin_stress_actions_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressActionRules"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Actions"
+      },
+      "post": {
+        "operationId": "set_stress_actions_admin_stress_actions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressActionsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressActionRules"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Set Stress Actions"
       }
     },
     "/admin/stress/crises": {
@@ -23918,6 +24747,97 @@
           }
         },
         "summary": "Stress Monte Carlo"
+      }
+    },
+    "/runs/{run_id}/stress-paths": {
+      "get": {
+        "operationId": "stress_paths_runs__run_id__stress_paths_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Path Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressPaths"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Paths"
       }
     },
     "/runs/{run_id}/summary": {

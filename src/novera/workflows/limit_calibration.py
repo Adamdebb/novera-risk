@@ -57,7 +57,14 @@ def seed_limits(
             res = run_eod(
                 repo,
                 EODConfig(
-                    firm_id=firm_id, actor=actor, alerts=False, factor_stress=False, stress_explain=False
+                    firm_id=firm_id,
+                    actor=actor,
+                    alerts=False,
+                    factor_stress=False,
+                    stress_explain=False,
+                    reverse_stress=False,
+                    stress_monte_carlo=False,
+                    stress_paths=False,
                 ),
                 day1,
                 runs_dir=tmp / "runs",

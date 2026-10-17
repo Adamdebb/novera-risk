@@ -413,6 +413,37 @@ class RiskService:
         out["parameters"] = _records(par)[0] if len(par) else None
         return out
 
+    def stress_paths(self, run_id: str | None = None, path_id: str | None = None) -> dict[str, Any]:
+        """Every stress path frozen and managed (worst frozen drawdown first), and for one path its
+        days, desks and actions (MR-023)."""
+        r, paths = self._frame(run_id, "stress_paths")
+        out: dict[str, Any] = {"record": "MR-023", "run_id": r.run_id, "available": not paths.empty}
+        if paths.empty:
+            return out
+        worst = paths[paths["book"] == "FROZEN"].sort_values("max_drawdown")["path_id"].tolist()
+        order = {p: i for i, p in enumerate(worst)}
+        paths = paths.assign(_o=paths["path_id"].map(order), _b=paths["book"] != "FROZEN")
+        out["paths"] = _records(paths.sort_values(["_o", "_b"]).drop(columns=["_o", "_b"]))
+        pid = path_id or worst[0]
+        out["path_id"] = pid
+        for key, table in (("days", "stress_path_days"), ("desks", "stress_path_desks")):
+            f = self.repo.load_run_frame(r.run_id, table)
+            out[key] = _records(f[f["path_id"] == pid]) if len(f) else []
+        a = self.repo.load_run_frame(r.run_id, "stress_path_actions")
+        out["actions"] = _records(a[a["path_id"] == pid].sort_values(["desk_id", "action"])) if len(a) else []
+        par = self.repo.load_run_frame(r.run_id, "stress_path_parameters")
+        if len(par):
+            p = _records(par)[0]
+            p["rules"] = json.loads(p.pop("rules_json", "[]") or "[]")
+            out["parameters"] = p
+        return out
+
+    def stress_actions(self) -> dict[str, Any]:
+        """The action rules desks follow in a stress path (MR-023)."""
+        from novera.workflows import stress_paths
+
+        return stress_paths.setup(self.repo)
+
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]:
@@ -1420,6 +1451,13 @@ class RiskWriteService:
 
         require(self.user, Action.SIGNOFF_POLICY)
         return signoff.set_policy(self.repo, self.actor, list(required), comment)
+
+    def set_stress_actions(self, rules: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
+        """Replace the stress-path action rules; validated and audited (MR-023)."""
+        from novera.workflows import stress_paths
+
+        require(self.user, Action.STRESS_ACTIONS)
+        return stress_paths.set_rules(self.repo, self.actor, [dict(r) for r in rules], comment)
 
     def set_var_setup(self, measures: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
         """Replace the VaR setup; validated against the stored history and audited (OPS-004)."""

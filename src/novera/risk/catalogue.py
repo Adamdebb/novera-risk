@@ -180,6 +180,17 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Stressed Monte Carlo on fat-tailed PCA scores",
             ),
             MeasureSpec(
+                "MR-023",
+                "Stress paths with management actions",
+                "Twenty-day paths of the LIMIT scenarios, the worst historical window and the fat-tailed "
+                "Monte Carlo tail, revalued in full every day and walked twice: frozen, and managed by the "
+                "owner's rules (stop-loss, cut, buy back short options, hedge with listed futures within "
+                "stressed volume, paying spread and impact): drawdown, first breach, time to flat, cost.",
+                "reporting currency",
+                "Stress",
+                "Stress paths with management actions",
+            ),
+            MeasureSpec(
                 "MR-007",
                 "Daily P&L explain",
                 "Day-on-day P&L as a full-revaluation waterfall (carry, factor moves, new and dead "

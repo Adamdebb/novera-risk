@@ -157,6 +157,11 @@ class VarSetupBody(BaseModel):
     comment: str = ""
 
 
+class StressActionsBody(BaseModel):
+    rules: list[s.StressActionRuleSpec]
+    comment: str = ""
+
+
 class StressProposalBody(BaseModel):
     definition: s.StressDefinitionSpec
     note: str = ""
@@ -483,6 +488,11 @@ def stress_monte_carlo(run_id: str, svc: RiskService = Depends(service)):
     return svc.stress_monte_carlo(run_id)
 
 
+@app.get("/runs/{run_id}/stress-paths", response_model=s.StressPaths)
+def stress_paths(run_id: str, path_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.stress_paths(run_id, path_id)
+
+
 @app.get("/reference/stress-library", response_model=s.StressLibrary)
 def stress_library(svc: RiskService = Depends(service)):
     return svc.stress_library()
@@ -542,6 +552,16 @@ def var_setup(svc: RiskService = Depends(service)):
 @app.post("/admin/var/setup", response_model=s.VarSetup)
 def set_var_setup(body: VarSetupBody, svc: RiskWriteService = Depends(write_service)):
     return svc.set_var_setup([m.model_dump() for m in body.measures], body.comment)
+
+
+@app.get("/admin/stress/actions", response_model=s.StressActionRules)
+def stress_actions(svc: RiskService = Depends(service)):
+    return svc.stress_actions()
+
+
+@app.post("/admin/stress/actions", response_model=s.StressActionRules)
+def set_stress_actions(body: StressActionsBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.set_stress_actions([r.model_dump() for r in body.rules], body.comment)
 
 
 @app.get("/admin/stress/setup", response_model=s.StressSetup)

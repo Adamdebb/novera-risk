@@ -219,3 +219,18 @@ def test_admin_stress_scenarios_configuration(app):
     labels = {m.label for m in app.metric}
     assert {"In the daily run", "Feed limits", "Information", "Open drafts", "Reviews overdue"} <= labels
     assert any("Approved scenarios" in h.value for h in app.subheader)
+
+
+def test_admin_stress_actions_configuration(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Admin").run()
+    next(sb for sb in app.selectbox if sb.label == "Configuration").set_value("Stress actions").run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("Current rules (defaults)" in c.value for c in app.caption)
+    assert any(b.label == "Save the action rules" for b in app.button)
+
+
+def test_stress_page_shows_the_stress_paths(app):
+    next(r for r in app.sidebar.radio if r.label == "View").set_value("Stress").run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("Stress paths with management actions" in h.value for h in app.subheader)
+    assert any(sb.label == "Path" for sb in app.selectbox)

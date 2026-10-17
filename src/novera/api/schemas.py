@@ -136,6 +136,13 @@ class RunFigures(ApiModel):
     stress_mc_es_975: float | None = None
     stress_mc_var_999: float | None = None
     stress_mc_tail_ratio: float | None = None
+    stress_paths: int | None = None
+    path_worst_id: str | None = None
+    path_worst_drawdown_frozen: float | None = None
+    path_worst_drawdown_managed: float | None = None
+    path_worst_action_cost: float | None = None
+    path_first_breach_day: int | None = None
+    path_unfinished: int | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -1152,6 +1159,121 @@ class StressMonteCarlo(ApiModel):
     quantiles: list[StressMCQuantile] = Field(default_factory=list)
     targets: list[StressMCTarget] = Field(default_factory=list)
     parameters: dict[str, Any] | None = None
+
+
+class StressPathRow(ApiModel):
+    path_id: str
+    source: str = Field(description="SCENARIO, HISTORICAL or MONTE_CARLO")
+    scenario_id: str | None = None
+    name: str
+    shape: str | None = Field(default=None, description="GAP_DRIFT, V or SLOW_BLEED for a scenario path")
+    book: str = Field(description="FROZEN (nobody acts) or MANAGED (the action rules)")
+    end_pnl: float
+    max_drawdown: float
+    worst_day: int
+    worst_day_pnl: float
+    first_breach_day: int | None = None
+    first_breach_limit: str | None = None
+    first_trigger_day: int | None = None
+    desks_triggered: int
+    completion_day: int | None = Field(
+        default=None, description="Day the last triggered desk finished acting; null while any is unfinished"
+    )
+    unfinished_desks: str | None = None
+    action_cost: float
+    hedge_pnl: float
+    taylor_end_pnl: float | None = Field(
+        default=None, description="Frozen book: the end P&L on the sensitivities, for information"
+    )
+
+
+class StressPathDay(ApiModel):
+    path_id: str
+    book: str
+    day: int
+    pnl: float
+    cumulative: float
+    hedge_pnl: float
+    action_cost: float
+    risk_held: float = Field(description="Share of the book's gross daily risk still held")
+
+
+class StressPathDesk(ApiModel):
+    path_id: str
+    desk_id: str
+    book: str
+    end_pnl: float
+    max_drawdown: float
+    stop_loss: float | None = None
+    trigger_day: int | None = None
+    completion_day: int | None = None
+    action_cost: float
+    hedge_pnl: float
+
+
+class StressPathAction(ApiModel):
+    path_id: str
+    desk_id: str
+    action: str = Field(description="CUT, CLOSE_SHORT_OPTIONS or HEDGE")
+    first_day: int
+    last_day: int
+    traded: float = Field(description="Gross daily risk sold (CUT, CLOSE_SHORT_OPTIONS) or hedge notional")
+    cost: float
+
+
+class StressPaths(ApiModel):
+    """Twenty-day stress paths walked frozen and managed by the action rules, and for one path its
+    days, desks and actions. Record MR-023. ``available`` is false for a run made before round 51."""
+
+    record: str
+    run_id: str
+    available: bool
+    path_id: str | None = None
+    paths: list[StressPathRow] = Field(default_factory=list)
+    days: list[StressPathDay] = Field(default_factory=list)
+    desks: list[StressPathDesk] = Field(default_factory=list)
+    actions: list[StressPathAction] = Field(default_factory=list)
+    parameters: dict[str, Any] | None = None
+
+
+class StressActionRule(ApiModel):
+    scope: str
+    enabled: bool
+    stop_loss_var_multiple: float
+    cut_fraction: float
+    close_short_options: bool
+    hedge_delta: bool
+    participation: float
+    stressed_volume_share: float
+    stressed_spread_multiple: float
+    impact_coefficient: float
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class StressActionRuleSpec(ApiModel):
+    """One row of the stress-path action rules (MR-023); a desk's row replaces the default row."""
+
+    scope: str = Field(default="(default)", description="(default), or a desk id")
+    enabled: bool = True
+    stop_loss_var_multiple: float = 3.0
+    cut_fraction: float = 0.5
+    close_short_options: bool = True
+    hedge_delta: bool = True
+    participation: float = 0.2
+    stressed_volume_share: float = 0.5
+    stressed_spread_multiple: float = 2.0
+    impact_coefficient: float = 1.0
+
+
+class StressActionRules(ApiModel):
+    """What each desk does in a stress path: the default row and any desk overrides. Record MR-023."""
+
+    record: str
+    source: str = Field(description="stored, or defaults when no rules have been saved")
+    rules: list[StressActionRule]
+    desks: list[str]
+    fields: dict[str, str]
 
 
 class StressLibrary(ApiModel):

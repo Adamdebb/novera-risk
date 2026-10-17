@@ -213,7 +213,7 @@ Each figure is reported before and after management actions.
 | 48 | Standalone factor stress, sliding scales, jump to default, multi-horizon replays, worst-window search (done 2026-10-17, MR-019) | No |
 | 49 | Explain: factor families, Greeks, hedge-failure line, summary of significant risks (done 2026-10-17, MR-020) | No |
 | 50 | Reverse stress in PCA space, PCA Monte Carlo (done 2026-10-17, MR-021, MR-022) | No |
-| 51 | Path engine with management actions, hedging and liquidation | No |
+| 51 | Path engine with management actions, hedging and liquidation (done 2026-10-17, MR-023) | No |
 | 52 | Margin, collateral and funding chain with the liquidity spiral | No |
 | 53 | Concentration and liquidation stress | No |
 | 54 | Counterparty, largest counterparty default, CCP and prime-broker stress | No |

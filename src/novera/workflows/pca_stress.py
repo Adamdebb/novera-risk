@@ -10,7 +10,7 @@ import pandas as pd
 
 from novera.domain.limits import Limit
 from novera.market_data.history import MarketHistory
-from novera.risk.pca_space import HORIZON, build_space, quad_book
+from novera.risk.pca_space import HORIZON, PCASpace, QuadBook, build_space, quad_book
 from novera.risk.revaluation import Portfolio
 from novera.risk.reverse_stress import ReverseStressResult, run_reverse_stress, targets_from_limits
 from novera.risk.stress_monte_carlo import StressMonteCarloResult, run_stress_monte_carlo
@@ -31,6 +31,9 @@ class PCAStress:
     monte_carlo: StressMonteCarloResult | None
     seconds: dict[str, float]
     space: dict[str, object] | None = None
+    book: QuadBook | None = None
+    pca_space: PCASpace | None = None
+    """The quadratic book and the PCA space, reused by the stress paths (MR-023)."""
 
     def findings(self) -> list:
         """A MINOR data-quality finding when no component count up to the cap reproduces the firm's
@@ -87,7 +90,7 @@ def run_pca_stress(
         }
         mc = run_stress_monte_carlo(pf, book, space, scopes, targets)
         secs["stress_monte_carlo"] = round(time.perf_counter() - t, 3)
-    return PCAStress(rev, mc, secs, space.to_dict())
+    return PCAStress(rev, mc, secs, space.to_dict(), book, space)
 
 
 def persist_reverse_stress(repo, rid: str, res: ReverseStressResult) -> None:

@@ -932,6 +932,85 @@ elif page == "Stress":
                     "the fat tail's cost shows at the 99.9th percentile and beyond."
                 )
 
+    st.divider()
+    st.subheader("Stress paths with management actions")
+    pt = load("stress_paths", run_id)
+    if not pt.get("available"):
+        st.info("This run predates the stress paths (MR-023); runs from round 51 on carry them.")
+    else:
+        paths = df(pt["paths"])
+        fr = paths[paths["book"] == "FROZEN"].set_index("path_id")
+        mg = paths[paths["book"] == "MANAGED"].set_index("path_id")
+        table = pd.DataFrame(
+            {
+                "path": fr["name"],
+                "shape": fr["shape"],
+                "frozen end (m)": fr["end_pnl"] / M,
+                "frozen drawdown (m)": fr["max_drawdown"] / M,
+                "managed end (m)": mg["end_pnl"] / M,
+                "managed drawdown (m)": mg["max_drawdown"] / M,
+                "first breach, frozen (day)": fr["first_breach_day"],
+                "limit": fr["first_breach_limit"],
+                "desks act from (day)": mg["first_trigger_day"],
+                "desks acting": mg["desks_triggered"],
+                "done by (day)": mg["completion_day"],
+                "unfinished": mg["unfinished_desks"],
+                "action cost (m)": mg["action_cost"] / M,
+                "hedge P&L (m)": mg["hedge_pnl"] / M,
+                "sensitivity end (m)": fr["taylor_end_pnl"] / M,
+            }
+        )
+        st.dataframe(table.round(1), use_container_width=True)
+        pick = st.selectbox(
+            "Path",
+            list(fr.index),
+            format_func=lambda p: f"{p} — {fr.loc[p, 'name']}",
+            key="stress_path_pick",
+        )
+        one = load("stress_paths", run_id, path_id=pick)
+        days = df(one["days"])
+        if not days.empty:
+            curve = days.pivot(index="day", columns="book", values="cumulative") / M
+            st.line_chart(curve.rename(columns={"FROZEN": "Frozen", "MANAGED": "Managed"}))
+        desks = df(one["desks"])
+        if not desks.empty:
+            dm = desks[desks["book"] == "MANAGED"].set_index("desk_id")
+            dfz = desks[desks["book"] == "FROZEN"].set_index("desk_id")
+            st.markdown("**Desks on this path**")
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "frozen end (m)": dfz["end_pnl"] / M,
+                        "managed end (m)": dm["end_pnl"] / M,
+                        "stop-loss (m)": dm["stop_loss"] / M,
+                        "acts from (day)": dm["trigger_day"],
+                        "done by (day)": dm["completion_day"],
+                        "action cost (m)": dm["action_cost"] / M,
+                        "hedge P&L (m)": dm["hedge_pnl"] / M,
+                    }
+                ).round(1),
+                use_container_width=True,
+            )
+        acts = df(one["actions"])
+        if not acts.empty:
+            acts["cost"] = acts["cost"] / M
+            st.markdown("**Actions taken**")
+            st.dataframe(
+                acts.drop(columns=["path_id"]).round(2).rename(columns={"cost": "cost (m)"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+        par = one.get("parameters") or {}
+        st.caption(
+            f"{par.get('horizon_days', 20)}-day paths revalued in full at every close: each LIMIT scenario "
+            "as a gap then drift, a V and a slow bleed, the history's worst window, and the worst "
+            f"{par.get('monte_carlo_tail_paths', 20)} of {par.get('monte_carlo_paths', 2000)} fat-tailed "
+            "paths. Frozen: nobody acts. Managed: a desk acts from the day after its loss reaches its "
+            "stop-loss (a multiple of its 1-day VaR), every desk once the firm loses its stress-loss "
+            "limit; actions follow the rules in Admin, trade at most a share of stressed volume a day and "
+            "pay the stressed spread and square-root impact. Margin and funding follow in round 52."
+        )
+
 elif page == "Stress library":
     header("Stress library")
     st.caption(
@@ -993,7 +1072,9 @@ elif page == "Admin":
         "Operational configurations for risk control. Every action names an actor and is written "
         "to the audit trail. Nothing here edits a stored run."
     )
-    config = st.selectbox("Configuration", ["VaR measures", "Stress scenarios", "Sign-off policy", "Runs"])
+    config = st.selectbox(
+        "Configuration", ["VaR measures", "Stress scenarios", "Stress actions", "Sign-off policy", "Runs"]
+    )
     if config == "VaR measures":
         from novera.api.errors import ApiError
 
@@ -1123,6 +1204,49 @@ elif page == "Admin":
         from novera.ui.stress_setup import render_stress_setup
 
         render_stress_setup(client)
+    elif config == "Stress actions":
+        from novera.api.errors import ApiError
+
+        st.markdown(
+            "What each desk does in a stress path (MR-023): when it acts (its stop-loss, a multiple of its "
+            "1-day VaR; every desk acts once the firm loses its stress-loss limit), what it does (cut every "
+            "position by a share, buy back short options, hedge the remaining delta with listed futures) and "
+            "how fast it can trade. The (default) row applies to every desk without a row of its own. "
+            "The next EOD run applies the saved rules and records them; stored runs are not changed."
+        )
+        sa = client.stress_actions()
+        last = next((r for r in sa["rules"] if r.get("updated_by")), None)
+        st.caption(
+            f"Current rules ({sa['source']})"
+            + (f" · last changed by {last['updated_by']} at {str(last['updated_at'])[:19]}" if last else "")
+        )
+        cols = list(sa["fields"])
+        edited = st.data_editor(
+            pd.DataFrame([{c: r[c] for c in cols} for r in sa["rules"]], columns=cols),
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key="stress_actions_editor",
+            column_config={
+                "scope": st.column_config.SelectboxColumn(
+                    "scope", options=["(default)", *sa["desks"]], required=True
+                ),
+            },
+        )
+        with st.expander("What each column means"):
+            st.markdown("\n".join(f"- **{k}**: {v}" for k, v in sa["fields"].items()))
+        comment = st.text_input("Comment", key="stress_actions_comment")
+        if st.button("Save the action rules"):
+            rows = [
+                {k: v for k, v in r.items() if v is not None and not (isinstance(v, float) and pd.isna(v))}
+                for r in edited.to_dict(orient="records")
+            ]
+            try:
+                res = client.set_stress_actions(rows, comment.strip())
+                st.success(f"Saved {len(res['rules'])} rule rows.")
+                st.cache_data.clear()
+            except ApiError as e:
+                st.error(str(e))
     elif config == "Sign-off policy":
         from novera.api.errors import ApiError
 

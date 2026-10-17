@@ -556,3 +556,25 @@ def test_eod_stores_reverse_stress_and_monte_carlo_and_their_stages_rerun_exactl
         sol = repo.load_run_frame(result.run.run_id, "reverse_stress")
         confirmed = sol[sol["status"] == "CONFIRMED"]
         assert len(confirmed) and (confirmed["full_loss"] / confirmed["loss_target"] - 1).abs().max() < 0.02
+
+
+def test_eod_stores_stress_paths_and_the_stage_reruns_exactly(db_path, result, tmp_path):
+    """MR-023 runs every EOD with the recorded action rules; a re-run of the stage reproduces it."""
+    from novera.workflows.rerun import rerun_stage
+    from novera.workflows.stress_paths import STRESS_PATH_TABLES
+
+    s = result.run.summary
+    assert s["stress_paths"] >= 3 and "stress_paths" in result.run.timings
+    assert result.run.config["stress_action_rules"][0]["scope"] == "(default)"
+    with DuckDBRepository(db_path) as repo:
+        frames = {t: repo.load_run_frame(result.run.run_id, t) for t in STRESS_PATH_TABLES}
+        assert all(len(frames[t]) for t in STRESS_PATH_TABLES if t != "stress_path_actions")
+        res = rerun_stage(
+            repo, result.run.run_id, "stress_paths", "Risk Control", "fixture check", runs_dir=tmp_path
+        )
+        for t in STRESS_PATH_TABLES:
+            again = repo.load_run_frame(res.run.run_id, t)
+            pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
+        assert res.run.summary["path_worst_drawdown_frozen"] == pytest.approx(s["path_worst_drawdown_frozen"])
+        paths = frames["stress_paths"]
+        assert set(paths["book"]) == {"FROZEN", "MANAGED"}

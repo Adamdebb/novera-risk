@@ -713,6 +713,28 @@ def test_signoff_endpoints(client, tokens):
     assert any(e["event_type"] == "METRIC_SIGNED" for e in events)
 
 
+def test_stress_path_endpoints(client, tokens):
+    """MR-023: the paths of the latest run, one path's detail, and the action rules in Admin."""
+    sp = client.get("/runs/latest/stress-paths").json()
+    assert sp["record"] == "MR-023" and sp["available"]
+    first = sp["paths"][0]
+    assert first["book"] == "FROZEN" and sp["path_id"] == first["path_id"]
+    assert {d["book"] for d in sp["days"]} == {"FROZEN", "MANAGED"}
+    st = client.get("/admin/stress/actions").json()
+    assert st["source"] == "defaults" and st["rules"][0]["scope"] == "(default)" and st["desks"]
+    rules = [{"scope": "(default)"}, {"scope": st["desks"][0], "cut_fraction": 1.0}]
+    denied = client.post("/admin/stress/actions", json={"rules": rules}, **as_(tokens, "risk-control"))
+    assert denied.status_code == 403
+    cro = as_(tokens, "cro")
+    bad = client.post("/admin/stress/actions", json={"rules": [{"scope": "NOPE"}]}, **cro)
+    assert bad.status_code == 409 and "(default)" in bad.json()["detail"]
+    ok = client.post("/admin/stress/actions", json={"rules": rules, "comment": "test"}, **cro)
+    assert ok.status_code == 200 and ok.json()["source"] == "stored" and len(ok.json()["rules"]) == 2
+    events = client.get("/audit", params={"subject": "stress_action_rules"}).json()
+    assert any(e["event_type"] == "STRESS_ACTIONS_CHANGED" for e in events)
+    client.post("/admin/stress/actions", json={"rules": [{"scope": "(default)"}]}, **cro)
+
+
 def test_var_setup_endpoints(client, tokens):
     cro = as_(tokens, "cro")
     st = client.get("/admin/var/setup").json()

@@ -69,11 +69,14 @@ from novera.risk.stress_definitions import episode_windows, run_stress_definitio
 from novera.risk.stress_explain import MODEL_VERSION as STRESS_EXPLAIN_VERSION
 from novera.risk.stress_explain import run_stress_explain
 from novera.risk.stress_monte_carlo import MODEL_VERSION as STRESS_MC_VERSION
+from novera.risk.stress_paths import MODEL_VERSION as STRESS_PATHS_VERSION
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
 from novera.workflows.pca_stress import persist_reverse_stress, persist_stress_mc, run_pca_stress
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
+from novera.workflows.stress_paths import persist_stress_paths
+from novera.workflows.stress_paths import run_stage as run_stress_paths_stage
 from novera.workflows.sweep import owner, sweep_stuck
 
 log = logging.getLogger(__name__)
@@ -94,6 +97,7 @@ MODEL_VERSIONS = {
     "stress_explain": STRESS_EXPLAIN_VERSION,
     "reverse_stress": REVERSE_STRESS_VERSION,
     "stress_monte_carlo": STRESS_MC_VERSION,
+    "stress_paths": STRESS_PATHS_VERSION,
 }
 
 
@@ -127,6 +131,10 @@ class EODConfig:
     """The scenarios that lose each stress-loss limit, most plausible first (MR-021); off for the dry run."""
     stress_monte_carlo: bool = True
     """Ten-day stressed paths on fat-tailed PCA scores (MR-022); off for the dry run."""
+    stress_paths: bool = True
+    """Twenty-day stress paths walked frozen and managed by the action rules (MR-023); off for the dry run."""
+    stress_action_rules: list[dict[str, Any]] | None = None
+    """The action rules the paths apply (MR-023); None reads the stored rules, or the defaults."""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -144,6 +152,8 @@ class EODConfig:
             "stress_explain": self.stress_explain,
             "reverse_stress": self.reverse_stress,
             "stress_monte_carlo": self.stress_monte_carlo,
+            "stress_paths": self.stress_paths,
+            "stress_action_rules": self.stress_action_rules,
         }
 
 
@@ -215,6 +225,10 @@ def run_eod(
         from novera.workflows.stress_setup import definitions_for_run
 
         cfg = replace(cfg, stress_scenarios=definitions_for_run(repo))
+    if cfg.stress_paths and cfg.stress_action_rules is None:
+        from novera.workflows.stress_paths import rules_for_run
+
+        cfg = replace(cfg, stress_action_rules=[r.to_dict() for r in rules_for_run(repo)])
     timings: dict[str, float] = {}
     events: list[AuditEvent] = []
 
@@ -354,6 +368,26 @@ def run_eod(
         }
         liq = liquidity(val.table, hs.var, far)
         lookthrough = look_through(list(snapshot.trades), market, reporting)
+    with _timed(timings, "stress_paths"):
+        spaths = (
+            run_stress_paths_stage(
+                pf,
+                sens,
+                history,
+                val.table,
+                liq.by_trade,
+                hs,
+                limits,
+                limit_stress,
+                episode_windows(history, repo.load_market_episodes()),
+                cfg.stress_action_rules or [],
+                pca.book if pca else None,
+                pca.pca_space if pca else None,
+                cfg.workers,
+            )
+            if cfg.stress_paths
+            else None
+        )
     with _timed(timings, "pnl"):
         pnl = None
         if prev_market is not None:
@@ -435,6 +469,7 @@ def run_eod(
         **(sexplain.summary() if sexplain else {}),
         **(pca.reverse.summary() if pca and pca.reverse else {}),
         **(pca.monte_carlo.summary() if pca and pca.monte_carlo else {}),
+        **(spaths.summary() if spaths else {}),
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
@@ -494,6 +529,7 @@ def run_eod(
                     "factor_stress": fstress,
                     "stress_explain": sexplain,
                     "pca_stress": pca,
+                    "stress_paths": spaths,
                 },
             )
         # The run stays RUNNING from here: the engines below read the stored run by id, and a
@@ -868,6 +904,8 @@ def _persist(
         persist_reverse_stress(repo, rid, pca.reverse)
     if pca is not None and pca.monte_carlo is not None:
         persist_stress_mc(repo, rid, pca.monte_carlo)
+    if (extras or {}).get("stress_paths") is not None:
+        persist_stress_paths(repo, rid, extras["stress_paths"])  # type: ignore[index]
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

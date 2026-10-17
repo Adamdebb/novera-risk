@@ -71,6 +71,8 @@ from novera.workflows.pca_stress import (
     run_pca_stress,
 )
 from novera.workflows.runs import USABLE_STATUSES, AuditEvent, RunRecord, new_run_id
+from novera.workflows.stress_paths import STRESS_PATH_TABLES, persist_stress_paths
+from novera.workflows.stress_paths import run_stage as run_stress_paths_stage
 from novera.workflows.sweep import owner, sweep_stuck
 
 MODEL_VERSION = "1.1.0"
@@ -280,6 +282,24 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
+        "stress_paths",
+        "Stress paths",
+        "Twenty-day paths of the LIMIT scenarios in three shapes, the worst historical window and the "
+        "fat-tailed Monte Carlo tail, revalued in full every day, walked frozen and managed by the "
+        "action rules the parent run recorded (MR-023).",
+        STRESS_PATH_TABLES,
+        (),
+        (
+            "stress_paths",
+            "path_worst_id",
+            "path_worst_drawdown_frozen",
+            "path_worst_drawdown_managed",
+            "path_worst_action_cost",
+            "path_first_breach_day",
+            "path_unfinished",
+        ),
+    ),
+    Stage(
         "pnl",
         "P&L explain",
         "Day-on-day P&L waterfall with its sensitivity challenger (MR-007); needs a previous market "
@@ -338,6 +358,7 @@ class _Inputs:
             regulatory=c.get("regulatory"),
             exposure_paths=c.get("exposure_paths"),
             proxies=c.get("proxies"),
+            stress_action_rules=c.get("stress_action_rules"),
         )
         self.reporting = parent.reporting_currency
         self.market = repo.load_run_market(parent.run_id)
@@ -484,6 +505,37 @@ def _stage_stress_monte_carlo(x: _Inputs, repo, rid: str, runs_dir, workers) -> 
     return res.summary()  # type: ignore[union-attr]
 
 
+def _stage_stress_paths(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
+    from novera.workflows.stress_paths import rules_for_run
+
+    stored = x.repo.load_limits(on=x.market.as_of)
+    limits, _ = effective_limits(stored, x.repo.load_increases(status="APPROVED"), x.market.as_of)
+    far = {
+        t.trade_id
+        for t in x.snapshot.trades
+        if t.product_type.value == "COMMODITY_FUTURE"
+        and (t.instrument.expiry_date - x.market.as_of).days > 300
+    }
+    rules = x.cfg.stress_action_rules
+    if rules is None:  # a run made before the stress paths existed: today's rules
+        rules = [r.to_dict() for r in rules_for_run(repo)]
+    res = run_stress_paths_stage(
+        x.pf,
+        x.sens,
+        x.history,
+        x.val.table,
+        liquidity(x.val.table, x.hs.var, far).by_trade,
+        x.hs,
+        limits,
+        x.limit_stress,
+        episode_windows(x.history, x.repo.load_market_episodes()),
+        rules,
+        workers=workers,
+    )
+    persist_stress_paths(repo, rid, res)
+    return res.summary()
+
+
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
     persist_stress(repo, rid, x.stress, x.stress_run.recorded, x.stress_run.info)
     return stress_headline(x.stress, x.limit_stress, x.val.table)
@@ -612,6 +664,7 @@ _STAGE_FUNCTIONS = {
     "stress_monte_carlo": _stage_stress_monte_carlo,
     "limits": _stage_limits,
     "concentration": _stage_concentration,
+    "stress_paths": _stage_stress_paths,
     "pnl": _stage_pnl,
     "regulatory": _stage_regulatory,
     "counterparty": _stage_counterparty,

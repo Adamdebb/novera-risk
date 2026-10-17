@@ -2272,6 +2272,90 @@ Context: the fifth round of the stress framework (`docs/08-stress-framework.md`,
   `/stress-monte-carlo`; the Stress page; MR-021, MR-022; `tests/test_reverse_stress.py`,
   `tests/test_workflows.py`.
 
+## Round 51 — Stress paths with management actions, hedging and liquidation (2026-10-17)
+
+Context: the sixth round of the stress framework (`docs/08-stress-framework.md`, part E). One question round.
+Margin, collateral, funding and the liquidity spiral stay in round 52 and redemptions in round 56, so this round
+covers the P&L path, the triggers and the actions.
+
+### 51.1 Which paths
+- Options: LIMIT set in three shapes + the worst historical window + the Monte Carlo tail ★ · LIMIT set, one
+  shape · the whole library in three shapes
+- Choice (owner): **the LIMIT scenarios as gap then drift, V and slow bleed, the history's worst 20-day window
+  replayed close by close, and the worst 1% of 2,000 fat-tailed daily PCA paths** (66 paths on the bank, 63 on
+  the fund), every EOD, as the re-runnable stage `stress_paths`.
+
+### 51.2 Horizon
+- Options: 20 days ★ · 10 days · 60 days
+- Choice (owner): **20 business days.**
+
+### 51.3 Trigger
+- Options: stop-loss at 3× desk VaR, editable per desk in Admin ★ · the desk's stress-loss limit · a fixed day
+- Choice (owner): **a desk acts from the day after its path loss reaches 3× its standalone 1-day VaR; every desk
+  acts once the firm's path loss reaches the firm's stress-loss limit.** The rules live in a new table
+  `stress_action_rule`, edited in Admin → Stress actions or `novera stress-setup actions` by Head of Market Risk
+  or CRO (role matrix `STRESS_ACTIONS`), audited `STRESS_ACTIONS_CHANGED`. A run records the rules it applied.
+
+### 51.4 Actions
+- Options: cut 50%, hedge delta, close short options ★ · cut to flat · hedge only
+- Choice (owner): **cut every position by half, buy back short options, hedge the remaining delta every day with
+  listed futures**; at most 20% of stressed volume a day (stressed volume half of normal), half the stressed
+  spread (twice normal) plus square-root impact (Y = 1), and the hedge takes the same path.
+- "Most liquid first" is the result of the volume limit, not a ranking: every position is cut in proportion,
+  each at its own pace, so liquid positions finish first. Ranking by liquidity would sell the liquid hedge leg
+  first and leave the illiquid risk naked.
+
+### 51.5 Taken from the framework, not asked
+- **Full revaluation at every close.** The first version valued the paths on delta-gamma-vega; on the fund's
+  fat-tailed paths it was 324m away from full revaluation (option books), so every trade is now revalued in full
+  at each of the 20 closes of every path (about 1,300 revaluations per firm, 22 s on the bank, 16 s on the fund
+  with all cores). The sensitivities still screen the Monte Carlo and historical candidates and give the hedge
+  ratios; the frozen book's sensitivity end is stored beside the full one.
+- **The shapes carry no noise.** The framework says the hypothetical end point goes "through the simulator's
+  bridge". A Brownian bridge of stressed daily noise moved the bank by ±100m a day around the shape, more than
+  most scenarios lose, so the stop-losses fired on noise. The randomness lives in the Monte Carlo paths.
+- **Prices compound as log returns on the Monte Carlo paths.** Summed simple returns took USD/ARS down 89% on
+  one path and an ARS forward to −748m.
+
+### 51.6 Not asked, chosen here
+- **Impact on net risk sold, spread on every trade.** Charging square-root impact per trade made a hedged rates
+  desk pay impact on both legs (23m to halve USD rates). Impact is now charged on the desk's net risk sold that
+  day (measured in the PCA space), spread on every trade.
+- **Execution lag.** Orders decided at a close execute at the next close: the day in between hits the old
+  position.
+- **Hedge instruments.** Rate futures (2-year for tenors up to 3 years, 10-year beyond) in USD, EUR, GBP, JPY,
+  AUD, CAD and CHF; single names on their regional index future with a beta of one; index, FX, commodity and
+  crypto exposures on their own futures. Credit, vega, basis and EM rates are not hedged.
+- **Futures volumes** (`HEDGE_VOLUME`) are set, not observed.
+- The limit-calibration dry run now also skips reverse stress and the stressed Monte Carlo, which round 50
+  documented but did not switch off.
+
+### Results on the demo (latest runs)
+| | Bank (15 Sep) | Fund (14 Sep) |
+|---|---|---|
+| Paths | 66 | 63 |
+| Worst path (frozen drawdown → managed) | Monte Carlo #1: −1,068m → −695m, actions cost 68m | Monte Carlo #2: −299m → −234m, cost 13m |
+| Scenario paths: average drawdown change from acting, gap / bleed / V | +11m / +18m / **−34m** | +12m / +17m / +5m |
+| Worst historical window | 12 Jan 2022: −359m → **−401m** | 17 Jan 2025: −125m → −112m |
+| Paths that breach a stress-loss limit, frozen → managed | 19 → 8 | 2 → 0 |
+| Paths where a triggered desk does not finish in 20 days | 24 | 13 |
+| Largest gap, full revaluation against sensitivities (frozen end) | 88m | 324m |
+
+- **Acting in a V costs money.** A desk that triggers near the bottom sells and hedges there, and the hedge loses
+  as the market comes back: on the bank's V paths the managed drawdown is 34m worse on average (global risk off:
+  −98m frozen, −214m managed). On the worst historical window the bank's actions add 42m of loss.
+- **The bank's ENERGY desk never finishes.** It acts on 20 paths and is unfinished on all 20: far-dated Brent
+  futures trade 2,000 contracts a day (MR-013), so half the position takes more than a month at 20% of stressed
+  volume.
+- On the fund, EQ_LS_US is unfinished on 9 of 14 paths (single-name positions large against volume).
+- No demo rebuild: the latest bank and fund runs got the stage by single-stage re-run (`run_mvcbwh6f_dea362`,
+  `run_mvcbwzm5_ba2b77`), chained on the round-50 re-runs.
+- Where: `risk/stress_paths.py`; `workflows/stress_paths.py`; `workflows/eod.py` (step `stress_paths`, model
+  version, `stress_action_rules` in the config); `workflows/rerun.py` (stage); `workflows/pca_stress.py` (shares
+  the PCA space); `storage` (`stress_action_rule`); `security/permissions.py`; `GET /runs/{run_id}/stress-paths`,
+  `GET`/`POST /admin/stress/actions`; `novera stress-setup actions`; Stress page and Admin page; MR-023;
+  `tests/test_stress_paths.py`, `tests/test_workflows.py`, `tests/test_api.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names
@@ -2376,3 +2460,9 @@ Context: the fifth round of the stress framework (`docs/08-stress-framework.md`,
     residual to the Monte Carlo, or a name-level shock set for reverse stress, would close it.
 32. **Reverse stress search is local** (50): a book with strong short gamma may hide a more plausible solution
     the search does not find; the angle constraint and the start on the linear solution are the only guards.
+33. **Positions are cut in proportion, with no compression** (51.4, 51.6): a desk that closes its riskiest
+    positions first or compresses offsetting trades would cut faster and cheaper; spread is paid on both legs.
+34. **The hedge set is narrow** (51.6): no vega, credit, basis or EM-rates hedge; single names hedge on their
+    index with a beta of one; futures volumes are set, not observed.
+35. **Actions are judged without margin or funding** (51): a managed book that loses less may still run out of
+    cash; round 52 adds margin calls, collateral and funding to the same paths.

@@ -540,7 +540,8 @@ def rerun_cmd(
     run_id: str = typer.Argument("latest", help="Parent run id, or latest"),
     stage: str = typer.Option(
         ...,
-        help="valuation, sensitivities, var, backtest, stress, limits, concentration, pnl, regulatory, "
+        help="valuation, sensitivities, var, backtest, stress, factor_stress, stress_explain, "
+        "reverse_stress, stress_monte_carlo, limits, concentration, stress_paths, pnl, regulatory, "
         "counterparty, fund",
     ),
     actor: str = typer.Option("risk-control", help="Who asked for the re-run (audit trail)"),
@@ -700,6 +701,50 @@ def stress_setup_show(fund: bool = typer.Option(False)) -> None:
 
     with DuckDBRepository(_db(fund), read_only=True) as repo:
         _print_stress_setup(RiskService(repo).stress_setup())
+
+
+def _print_stress_actions(st: dict) -> None:
+    typer.echo(f"Stress-path action rules ({st['source']}, MR-023):")
+    for r in st["rules"]:
+        acts = ", ".join(
+            a
+            for a, on in (
+                (f"cut {r['cut_fraction']:.0%}", r["cut_fraction"] > 0),
+                ("close short options", r["close_short_options"]),
+                ("hedge delta", r["hedge_delta"]),
+            )
+            if on
+        )
+        typer.echo(
+            f"  {r['scope']:<18} {'on ' if r['enabled'] else 'off'} "
+            f"stop-loss {r['stop_loss_var_multiple']:g}x VaR; "
+            f"{acts or 'no action'}; {r['participation']:.0%} of {r['stressed_volume_share']:.0%} volume, "
+            f"spread x{r['stressed_spread_multiple']:g}, impact {r['impact_coefficient']:g}"
+        )
+
+
+@stress_setup_app.command("actions")
+def stress_setup_actions(
+    file: str = typer.Option("", help="JSON list of rules to store; empty shows the current rules"),
+    actor: str = typer.Option("head-of-market-risk", help="Head of Market Risk or CRO changes them"),
+    comment: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Show or replace what desks do in a stress path: stop-loss, cut, hedge, execution limits (MR-023)."""
+    import json
+
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    if not file:
+        with DuckDBRepository(_db(fund), read_only=True) as repo:
+            _print_stress_actions(RiskService(repo).stress_actions())
+        return
+    path = Path(file)
+    if not path.exists():
+        raise typer.BadParameter(f"no such file {file}")
+    rules = json.loads(path.read_text())
+    _print_stress_actions(_write(fund, actor, lambda svc: svc.set_stress_actions(rules, comment)))
 
 
 @stress_setup_app.command("seed")
