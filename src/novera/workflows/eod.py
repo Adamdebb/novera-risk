@@ -65,6 +65,8 @@ from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
 from novera.risk.pnl_attribution import MODEL_VERSION as PNL_VERSION
 from novera.risk.stress_definitions import run_stress_definitions, stress_headline
+from novera.risk.stress_explain import MODEL_VERSION as STRESS_EXPLAIN_VERSION
+from novera.risk.stress_explain import run_stress_explain
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
@@ -86,6 +88,7 @@ MODEL_VERSIONS = {
     "lookthrough": LOOKTHROUGH_VERSION,
     "market_data_proxies": PROXY_VERSION,
     "factor_stress": FACTOR_STRESS_VERSION,
+    "stress_explain": STRESS_EXPLAIN_VERSION,
 }
 
 
@@ -112,6 +115,9 @@ class EODConfig:
     factor_stress: bool = True
     """Standalone shocks, sliding scales, jump to default and worst windows (MR-019); off only for
     the limit-calibration dry run, which reads none of them."""
+    stress_explain: bool = True
+    """Stress P&L by factor family, top trades, hedge-failure line and the summary of significant
+    risks (MR-020); off for the same dry run."""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +132,7 @@ class EODConfig:
             "exposure_paths": self.exposure_paths,
             "proxies": self.proxies,
             "factor_stress": self.factor_stress,
+            "stress_explain": self.stress_explain,
         }
 
 
@@ -292,6 +299,10 @@ def run_eod(
         dq.findings += st_run.findings(market.as_of)
     with _timed(timings, "factor_stress"):
         fstress = run_factor_stress(pf, sens, history, val.table) if cfg.factor_stress else None
+    with _timed(timings, "stress_explain"):
+        sexplain = (
+            run_stress_explain(pf, sens, stress, limit_stress, val.table, hs) if cfg.stress_explain else None
+        )
     with _timed(timings, "limits"):
         limit_table = (
             monitor(
@@ -392,6 +403,7 @@ def run_eod(
         "fund_holdings": int(lookthrough.holdings["trade_id"].nunique()) if len(lookthrough.holdings) else 0,
         **worst_summary,
         **(fstress.summary() if fstress else {}),
+        **(sexplain.summary() if sexplain else {}),
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
@@ -449,6 +461,7 @@ def run_eod(
                     "lookthrough": lookthrough,
                     "stress_info": st_run.info,
                     "factor_stress": fstress,
+                    "stress_explain": sexplain,
                 },
             )
         # The run stays RUNNING from here: the engines below read the stored run by id, and a
@@ -743,6 +756,17 @@ def persist_factor_stress(repo, rid: str, fs) -> None:
     repo.save_run_frame(rid, "worst_windows", fs.windows)
 
 
+STRESS_EXPLAIN_TABLES = ("stress_explain", "stress_top_trades", "risk_summary")
+
+
+def persist_stress_explain(repo, rid: str, ex) -> None:
+    """Stress P&L by desk and factor family, the worst trades per scenario and the summary of
+    significant risks (MR-020)."""
+    repo.save_run_frame(rid, "stress_explain", ex.explain)
+    repo.save_run_frame(rid, "stress_top_trades", ex.top_trades)
+    repo.save_run_frame(rid, "risk_summary", ex.risk_summary)
+
+
 def persist_backtest(repo, rid: str, bts, btl, bth=None) -> None:
     rows = [bts.summary(), btl.summary()] + ([bth.summary()] if bth is not None and bth.days else [])
     repo.save_run_frame(rid, "backtest_summary", pd.DataFrame(rows))
@@ -805,6 +829,8 @@ def _persist(
     persist_stress(repo, rid, stress, run.config.get("stress_scenarios"), (extras or {}).get("stress_info"))
     if (extras or {}).get("factor_stress") is not None:
         persist_factor_stress(repo, rid, extras["factor_stress"])  # type: ignore[index]
+    if (extras or {}).get("stress_explain") is not None:
+        persist_stress_explain(repo, rid, extras["stress_explain"])  # type: ignore[index]
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

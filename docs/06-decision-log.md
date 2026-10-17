@@ -2171,6 +2171,50 @@ Context: the third round of the stress framework (`docs/08-stress-framework.md`,
   /runs/{run_id}/factor-stress`; the Stress page; MR-019; `tests/test_factor_stress.py`,
   `tests/test_workflows.py`.
 
+## Round 49 — Explain the stress result (2026-10-17)
+
+Context: the fourth round of the stress framework (`docs/08-stress-framework.md`, part C). The owner
+asked for the round without further instruction, so the choices below were taken from the framework's
+wording and are open to change; no question round was held.
+
+### 49.1 How the loss is taken apart
+- Chosen: each factor family's shocks applied alone in full revaluation; the family's Taylor terms
+  (delta, gamma, vega from the stored sensitivities); **higher order** is the family's loss less
+  those terms; **cross-family** is the scenario total less the sum of the families alone.
+- Why: the framework asks for delta, gamma, vega, cross terms and "the full-revaluation residual".
+  Doing it this way makes the columns add up to the stored scenario loss exactly, per desk, which
+  a test checks. A pure Taylor split would leave one unexplained residual with no meaning.
+- Families: RATES, BASIS, CREDIT, FX, EQUITY, COMMODITY, CRYPTO, VOLATILITY, RATES_VOL.
+
+### 49.2 Hedge-failure line
+- Chosen: the **BASIS family alone** (tenor basis and cross-currency basis), for every scenario.
+- A hedge failing for another reason (single name against index, equity against future) is not
+  on this line; see second-look item 30.
+
+### 49.3 Summary of significant risks
+- Chosen: VaR (headline measure, component) beside the worst LIMIT stress. A desk is significant at
+  10% of the firm's VaR or of its worst stress loss; a position at 2%, the 30 largest by worst stress.
+  Each desk also shows its P&L in the firm's worst scenario, so the desks add to the firm.
+- The cap of 30 bites on both demo firms.
+
+### Results on the demo (latest bank and fund runs)
+| | Bank (15 Sep) | Fund (14 Sep) |
+|---|---|---|
+| Firm VaR / worst LIMIT stress | 64.0m / −338.9m (credit +150bp) | 28.2m / −137.7m (credit +150bp) |
+| Largest desk by VaR | ENERGY 36%, EUR_RATES 34% | EQ_LS_US 51%, COMMODITY_TREND 42% |
+| Largest desk by worst-scenario loss | EUR_RATES 98%, ENERGY 89% | EQ_LS_US 108% |
+| Worst basis line | European rearmament −3.4m | EURIBOR basis +20bp −4.2m |
+| Desks flagged significant | 5 of 15 | 5 of 9 |
+
+- Desks with negative component VaR (hedgers) and shares above 100% exist: a desk can lose more than the
+  firm in a scenario because other desks gain.
+- No demo rebuild. The latest bank and fund runs got the step by single-stage re-run
+  (`novera rerun latest --stage stress_explain`), which cost 10 s and 7 s.
+- Where: `risk/stress_explain.py`; `workflows/eod.py` (step `stress_explain`, `persist_stress_explain`,
+  model version); `workflows/rerun.py` (stage); `workflows/limit_calibration.py`; `GET
+  /runs/{run_id}/stress-explain`; the Stress page; MR-020; `tests/test_stress_explain.py`,
+  `tests/test_workflows.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names
@@ -2267,3 +2311,6 @@ Context: the third round of the stress framework (`docs/08-stress-framework.md`,
 29. **The Lab database predates the current trade model** (44): `data/lab/lab_demo.duckdb` cannot
     load its portfolio snapshot (integrity check), so anything that reads the trades fails there.
     Re-running the Lab sandbox rebuilds it.
+30. **Hedge failure is the basis family only** (49.2): a hedge that fails through a single name against
+    an index, an equity against a future, or a changed correlation is not on its own line. Pairwise
+    cross-family terms would show the interactions (one more revaluation per pair).

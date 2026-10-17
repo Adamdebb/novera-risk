@@ -119,6 +119,9 @@ class RunFigures(ApiModel):
     worst_window_days: int | None = None
     worst_window_version: str | None = None
     worst_window: float | None = None
+    hedge_failure: float | None = None
+    hedge_failure_scenario: str | None = None
+    significant_risks: int | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -972,6 +975,63 @@ class FactorStress(ApiModel):
     scales: list[SlidingScaleRow] = Field(default_factory=list)
     jump_to_default: list[JumpToDefaultRow] = Field(default_factory=list)
     windows: list[WorstWindowRow] = Field(default_factory=list)
+
+
+class ExplainScenarioRow(ApiModel):
+    scenario_id: str
+    name: str
+    goal: str
+    total: float
+    hedge_failure: float
+
+
+class ExplainFamilyRow(ApiModel):
+    family: str
+    delta: float
+    gamma: float
+    vega: float
+    higher_order: float
+    cross_family: float
+    total: float
+
+
+class ExplainTradeRow(ApiModel):
+    rank: int
+    trade_id: str
+    desk_id: str
+    asset_class: str
+    product_type: str
+    pnl: float
+
+
+class RiskSummaryRow(ApiModel):
+    level: str
+    key: str
+    desk_id: str
+    var: float
+    var_share: float
+    worst_stress: float
+    worst_scenario: str
+    stress_in_firm_worst: float
+    stress_share: float
+    significant: bool
+
+
+class StressExplain(ApiModel):
+    """One scenario's loss by factor family and term, its worst trades, the hedge-failure line of
+    every scenario and the summary of significant risks. Record MR-020. ``available`` is false for
+    a run made before round 49."""
+
+    record: str
+    run_id: str
+    available: bool
+    scenario_id: str | None = None
+    desk_id: str | None = None
+    desks: list[str] = Field(default_factory=list)
+    scenarios: list[ExplainScenarioRow] = Field(default_factory=list)
+    families: list[ExplainFamilyRow] = Field(default_factory=list)
+    top_trades: list[ExplainTradeRow] = Field(default_factory=list)
+    risk_summary: list[RiskSummaryRow] = Field(default_factory=list)
 
 
 class StressLibrary(ApiModel):

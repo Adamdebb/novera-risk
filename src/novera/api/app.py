@@ -463,6 +463,16 @@ def factor_stress(
     return svc.factor_stress(run_id, desk_id, top)
 
 
+@app.get("/runs/{run_id}/stress-explain", response_model=s.StressExplain)
+def stress_explain(
+    run_id: str,
+    scenario_id: str | None = None,
+    desk_id: str | None = None,
+    svc: RiskService = Depends(service),
+):
+    return svc.stress_explain(run_id, scenario_id, desk_id)
+
+
 @app.get("/reference/stress-library", response_model=s.StressLibrary)
 def stress_library(svc: RiskService = Depends(service)):
     return svc.stress_library()

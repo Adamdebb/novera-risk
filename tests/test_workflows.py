@@ -507,3 +507,25 @@ def test_eod_stores_factor_stress_and_its_stage_reruns_exactly(db_path, result, 
             again = repo.load_run_frame(res.run.run_id, t)
             pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
         assert res.run.summary["worst_factor"] == pytest.approx(s["worst_factor"])
+
+
+def test_eod_stores_stress_explain_and_its_stage_reruns_exactly(db_path, result, tmp_path):
+    """MR-020 runs every EOD; its parts add up to each scenario's loss and a stage re-run reproduces it."""
+    from novera.workflows.eod import STRESS_EXPLAIN_TABLES
+    from novera.workflows.rerun import rerun_stage
+
+    s = result.run.summary
+    assert s["significant_risks"] >= 1 and "stress_explain" in result.run.timings
+    with DuckDBRepository(db_path) as repo:
+        frames = {t: repo.load_run_frame(result.run.run_id, t) for t in STRESS_EXPLAIN_TABLES}
+        assert all(len(f) for f in frames.values())
+        totals = repo.load_run_frame(result.run.run_id, "stress_summary").set_index("scenario_id")["total"]
+        got = frames["stress_explain"].groupby("scenario_id")["total"].sum()
+        assert got.reindex(totals.index).to_numpy() == pytest.approx(totals.to_numpy(), abs=1e-3)
+        res = rerun_stage(
+            repo, result.run.run_id, "stress_explain", "Risk Control", "fixture check", runs_dir=tmp_path
+        )
+        for t in STRESS_EXPLAIN_TABLES:
+            again = repo.load_run_frame(res.run.run_id, t)
+            pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
+        assert res.run.summary["significant_risks"] == s["significant_risks"]

@@ -56,7 +56,9 @@ def seed_limits(
             day1 = min(d for _, d, *_ in repo.list_portfolio_snapshots())
             res = run_eod(
                 repo,
-                EODConfig(firm_id=firm_id, actor=actor, alerts=False, factor_stress=False),
+                EODConfig(
+                    firm_id=firm_id, actor=actor, alerts=False, factor_stress=False, stress_explain=False
+                ),
                 day1,
                 runs_dir=tmp / "runs",
             )

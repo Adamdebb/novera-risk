@@ -150,6 +150,16 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Factor stress, jump to default and worst windows",
             ),
             MeasureSpec(
+                "MR-020",
+                "Stress explain and summary of significant risks",
+                "Each stress scenario's loss by factor family split into delta, gamma, vega, higher-order "
+                "and cross-family terms, its worst trades, the basis (hedge-failure) line, and VaR beside "
+                "the worst stress per desk and for the positions that matter.",
+                "reporting currency",
+                "Stress",
+                "Stress explain and summary of significant risks",
+            ),
+            MeasureSpec(
                 "MR-007",
                 "Daily P&L explain",
                 "Day-on-day P&L as a full-revaluation waterfall (carry, factor moves, new and dead "

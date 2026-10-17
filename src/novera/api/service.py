@@ -339,6 +339,45 @@ class RiskService:
             out["windows"] = _records(w.sort_values(["horizon_days", "version", "rank"]))
         return out
 
+    def stress_explain(
+        self, run_id: str | None = None, scenario_id: str | None = None, desk_id: str | None = None
+    ) -> dict[str, Any]:
+        """One scenario's loss by factor family and term (firm or one desk), its worst trades, the
+        hedge-failure line of every scenario and the summary of significant risks (MR-020)."""
+        r, ex = self._frame(run_id, "stress_explain")
+        out: dict[str, Any] = {"record": "MR-020", "run_id": r.run_id, "available": not ex.empty}
+        if ex.empty:
+            return out
+        summ = self.repo.load_run_frame(r.run_id, "stress_summary").set_index("scenario_id")
+        firm = ex.groupby("scenario_id")["total"].sum()
+        basis = ex[ex["family"] == "BASIS"].groupby("scenario_id")["total"].sum()
+        out["desks"] = sorted(str(d) for d in ex["desk_id"].unique())
+        out["scenarios"] = [
+            {
+                "scenario_id": sid,
+                "name": str(summ["name"].get(sid, sid)),
+                "goal": str(summ["goal"].get(sid, "LIMIT")),
+                "total": float(firm[sid]),
+                "hedge_failure": float(basis.get(sid, 0.0)),
+            }
+            for sid in firm.sort_values().index
+        ]
+        sid = scenario_id or out["scenarios"][0]["scenario_id"]
+        out["scenario_id"], out["desk_id"] = sid, desk_id
+        rows = ex[ex["scenario_id"] == sid]
+        if desk_id:
+            rows = rows[rows["desk_id"] == desk_id]
+        terms = ["delta", "gamma", "vega", "higher_order", "cross_family", "total"]
+        out["families"] = _records(rows.groupby("family", as_index=False)[terms].sum().sort_values("total"))
+        top = self.repo.load_run_frame(r.run_id, "stress_top_trades")
+        top = top[top["scenario_id"] == sid]
+        if desk_id:
+            top = top[top["desk_id"] == desk_id]
+        out["top_trades"] = _records(top.sort_values("pnl").drop(columns=["scenario_id"]).head(10))
+        rs = self.repo.load_run_frame(r.run_id, "risk_summary")
+        out["risk_summary"] = _records(rs) if len(rs) else []
+        return out
+
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]:

@@ -738,6 +738,90 @@ elif page == "Stress":
                 "revaluation confirms the three worst that do not overlap."
             )
 
+    st.divider()
+    st.subheader("Explain the stress result")
+    ex_all = load("stress_explain", run_id)
+    if not ex_all.get("available"):
+        st.info("This run predates the stress explain (MR-020); runs from round 49 on carry it.")
+    else:
+        names = {x["scenario_id"]: f"{x['name']} ({x['total'] / M:,.0f}m)" for x in ex_all["scenarios"]}
+        c_sc, c_desk = st.columns(2)
+        sid = c_sc.selectbox("Scenario", list(names), format_func=names.get, key="explain_scenario")
+        desk_pick = c_desk.selectbox("For", ["Firm", *ex_all["desks"]], key="explain_desk")
+        ex = load(
+            "stress_explain",
+            run_id,
+            scenario_id=sid,
+            desk_id=None if desk_pick == "Firm" else desk_pick,
+        )
+        t_fam, t_trades, t_hedge, t_sig = st.tabs(
+            ["By factor family", "Top trades", "Hedge failure", "Significant risks"]
+        )
+        with t_fam:
+            f = df(ex["families"])
+            if not f.empty:
+                for c in ("delta", "gamma", "vega", "higher_order", "cross_family", "total"):
+                    f[c] = f[c] / M
+                st.dataframe(
+                    f.round(2).rename(
+                        columns={"higher_order": "higher order", "cross_family": "cross-family"}
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            st.caption(
+                "Each family's shocks applied alone in full revaluation, split into the Taylor terms of the "
+                "stored sensitivities and the higher-order remainder (smile, convexity, exotic payoffs); "
+                "the cross-family row is what the families do to each other when they move together. "
+                "The columns add up to the scenario loss (millions)."
+            )
+        with t_trades:
+            tt = df(ex["top_trades"])
+            if not tt.empty:
+                tt["pnl"] = tt["pnl"] / M
+                st.dataframe(
+                    tt.round(2).rename(columns={"pnl": "P&L (m)"}), use_container_width=True, hide_index=True
+                )
+            st.caption("The ten worst trades in this scenario for the selection.")
+        with t_hedge:
+            h = df(ex_all["scenarios"])[["name", "goal", "total", "hedge_failure"]]
+            h["total"], h["hedge_failure"] = h["total"] / M, h["hedge_failure"] / M
+            st.dataframe(
+                h.round(2).rename(columns={"total": "scenario (m)", "hedge_failure": "basis loss (m)"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "The basis family alone (tenor basis and cross-currency basis): what a hedge keeps when "
+                "its two legs do not move together. Shown for every scenario, whatever the sign."
+            )
+        with t_sig:
+            g = df(ex_all["risk_summary"])
+            if not g.empty:
+                for c in ("var", "worst_stress", "stress_in_firm_worst"):
+                    g[c] = g[c] / M
+                for c in ("var_share", "stress_share"):
+                    g[c] = g[c] * 100
+                st.dataframe(
+                    g.drop(columns=["significant"])
+                    .round(1)
+                    .rename(
+                        columns={
+                            "var": "VaR (m)",
+                            "var_share": "VaR %",
+                            "worst_stress": "worst stress (m)",
+                            "stress_in_firm_worst": "in firm's worst (m)",
+                            "stress_share": "stress %",
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            st.caption(
+                "VaR (component, headline measure) beside the worst LIMIT stress: the firm, every desk, and "
+                "the positions that carry at least 2% of the firm's VaR or of its worst stress loss."
+            )
+
 elif page == "Stress library":
     header("Stress library")
     st.caption(

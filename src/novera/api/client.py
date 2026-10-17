@@ -39,6 +39,9 @@ class RiskClient(Protocol):
     def factor_stress(
         self, run_id: str | None = None, desk_id: str | None = None, top: int = 25
     ) -> dict[str, Any]: ...
+    def stress_explain(
+        self, run_id: str | None = None, scenario_id: str | None = None, desk_id: str | None = None
+    ) -> dict[str, Any]: ...
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]: ...
@@ -282,6 +285,11 @@ class HttpClient:
 
     def factor_stress(self, run_id=None, desk_id=None, top=25):
         return self._get(f"/runs/{self._rid(run_id)}/factor-stress", desk_id=desk_id, top=top)
+
+    def stress_explain(self, run_id=None, scenario_id=None, desk_id=None):
+        return self._get(
+            f"/runs/{self._rid(run_id)}/stress-explain", scenario_id=scenario_id, desk_id=desk_id
+        )
 
     def limits(self, run_id=None, status=None, level=None):
         return self._get(f"/runs/{self._rid(run_id)}/limits", status=status, level=level)

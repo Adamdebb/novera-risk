@@ -3894,6 +3894,123 @@
         "title": "ExoticStyle",
         "type": "string"
       },
+      "ExplainFamilyRow": {
+        "additionalProperties": true,
+        "properties": {
+          "cross_family": {
+            "title": "Cross Family",
+            "type": "number"
+          },
+          "delta": {
+            "title": "Delta",
+            "type": "number"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "gamma": {
+            "title": "Gamma",
+            "type": "number"
+          },
+          "higher_order": {
+            "title": "Higher Order",
+            "type": "number"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "vega": {
+            "title": "Vega",
+            "type": "number"
+          }
+        },
+        "required": [
+          "family",
+          "delta",
+          "gamma",
+          "vega",
+          "higher_order",
+          "cross_family",
+          "total"
+        ],
+        "title": "ExplainFamilyRow",
+        "type": "object"
+      },
+      "ExplainScenarioRow": {
+        "additionalProperties": true,
+        "properties": {
+          "goal": {
+            "title": "Goal",
+            "type": "string"
+          },
+          "hedge_failure": {
+            "title": "Hedge Failure",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "name",
+          "goal",
+          "total",
+          "hedge_failure"
+        ],
+        "title": "ExplainScenarioRow",
+        "type": "object"
+      },
+      "ExplainTradeRow": {
+        "additionalProperties": true,
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "desk_id": {
+            "title": "Desk Id",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "product_type": {
+            "title": "Product Type",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "trade_id": {
+            "title": "Trade Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rank",
+          "trade_id",
+          "desk_id",
+          "asset_class",
+          "product_type",
+          "pnl"
+        ],
+        "title": "ExplainTradeRow",
+        "type": "object"
+      },
       "ExposureProfilePoint": {
         "additionalProperties": true,
         "properties": {
@@ -9725,6 +9842,65 @@
         "title": "RiskPackFiles",
         "type": "object"
       },
+      "RiskSummaryRow": {
+        "additionalProperties": true,
+        "properties": {
+          "desk_id": {
+            "title": "Desk Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "significant": {
+            "title": "Significant",
+            "type": "boolean"
+          },
+          "stress_in_firm_worst": {
+            "title": "Stress In Firm Worst",
+            "type": "number"
+          },
+          "stress_share": {
+            "title": "Stress Share",
+            "type": "number"
+          },
+          "var": {
+            "title": "Var",
+            "type": "number"
+          },
+          "var_share": {
+            "title": "Var Share",
+            "type": "number"
+          },
+          "worst_scenario": {
+            "title": "Worst Scenario",
+            "type": "string"
+          },
+          "worst_stress": {
+            "title": "Worst Stress",
+            "type": "number"
+          }
+        },
+        "required": [
+          "level",
+          "key",
+          "desk_id",
+          "var",
+          "var_share",
+          "worst_stress",
+          "worst_scenario",
+          "stress_in_firm_worst",
+          "stress_share",
+          "significant"
+        ],
+        "title": "RiskSummaryRow",
+        "type": "object"
+      },
       "RunBody": {
         "properties": {
           "advance": {
@@ -10063,6 +10239,28 @@
             ],
             "title": "Fund Holdings"
           },
+          "hedge_failure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hedge Failure"
+          },
+          "hedge_failure_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hedge Failure Scenario"
+          },
           "limits_monitored": {
             "anyOf": [
               {
@@ -10207,6 +10405,17 @@
                 "type": "null"
               }
             ]
+          },
+          "significant_risks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Significant Risks"
           },
           "stress_limit_scenarios": {
             "anyOf": [
@@ -11951,6 +12160,88 @@
           "kind"
         ],
         "title": "StressDefinitionSpec",
+        "type": "object"
+      },
+      "StressExplain": {
+        "additionalProperties": true,
+        "description": "One scenario's loss by factor family and term, its worst trades, the hedge-failure line of\nevery scenario and the summary of significant risks. Record MR-020. ``available`` is false for\na run made before round 49.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "desk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desk Id"
+          },
+          "desks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Desks",
+            "type": "array"
+          },
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainFamilyRow"
+            },
+            "title": "Families",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "risk_summary": {
+            "items": {
+              "$ref": "#/components/schemas/RiskSummaryRow"
+            },
+            "title": "Risk Summary",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainScenarioRow"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "top_trades": {
+            "items": {
+              "$ref": "#/components/schemas/ExplainTradeRow"
+            },
+            "title": "Top Trades",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "StressExplain",
         "type": "object"
       },
       "StressLibrary": {
@@ -22643,6 +22934,113 @@
           }
         },
         "summary": "Stress"
+      }
+    },
+    "/runs/{run_id}/stress-explain": {
+      "get": {
+        "operationId": "stress_explain_runs__run_id__stress_explain_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desk_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desk Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressExplain"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Explain"
       }
     },
     "/runs/{run_id}/summary": {

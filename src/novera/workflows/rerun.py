@@ -48,6 +48,7 @@ from novera.risk.stress_definitions import (
     run_stress_definitions,
     stress_headline,
 )
+from novera.risk.stress_explain import run_stress_explain
 from novera.risk.var_measures import DEFAULT_MEASURES, MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.eod import (
@@ -58,6 +59,7 @@ from novera.workflows.eod import (
     persist_factor_stress,
     persist_pnl,
     persist_stress,
+    persist_stress_explain,
     persist_var,
     run_dir,
 )
@@ -197,6 +199,15 @@ STAGES: tuple[Stage, ...] = (
             "worst_window_version",
             "worst_window",
         ),
+    ),
+    Stage(
+        "stress_explain",
+        "Stress explain",
+        "Each stress scenario's loss by factor family (delta, gamma, vega, higher order, cross-family), "
+        "its worst trades, the hedge-failure line and the summary of significant risks (MR-020).",
+        ("stress_explain", "stress_top_trades", "risk_summary"),
+        (),
+        ("hedge_failure", "hedge_failure_scenario", "significant_risks"),
     ),
     Stage(
         "limits",
@@ -404,6 +415,12 @@ def _stage_factor_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[
     return fs.summary()
 
 
+def _stage_stress_explain(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
+    ex = run_stress_explain(x.pf, x.sens, x.stress, x.limit_stress, x.val.table, x.hs)
+    persist_stress_explain(repo, rid, ex)
+    return ex.summary()
+
+
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
     persist_stress(repo, rid, x.stress, x.stress_run.recorded, x.stress_run.info)
     return stress_headline(x.stress, x.limit_stress, x.val.table)
@@ -527,6 +544,7 @@ _STAGE_FUNCTIONS = {
     "backtest": _stage_backtest,
     "stress": _stage_stress,
     "factor_stress": _stage_factor_stress,
+    "stress_explain": _stage_stress_explain,
     "limits": _stage_limits,
     "concentration": _stage_concentration,
     "pnl": _stage_pnl,
