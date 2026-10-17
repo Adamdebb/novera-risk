@@ -1008,7 +1008,103 @@ elif page == "Stress":
             "paths. Frozen: nobody acts. Managed: a desk acts from the day after its loss reaches its "
             "stop-loss (a multiple of its 1-day VaR), every desk once the firm loses its stress-loss "
             "limit; actions follow the rules in Admin, trade at most a share of stressed volume a day and "
-            "pay the stressed spread and square-root impact. Margin and funding follow in round 52."
+            "pay the stressed spread and square-root impact. The cash side is below (MR-024)."
+        )
+
+    st.divider()
+    st.subheader("Margin, collateral and funding on the stress paths")
+    lq = load("stress_liquidity", run_id)
+    if not lq.get("available"):
+        st.info("This run predates the funding chain (MR-024); runs from round 52 on carry it.")
+    else:
+        lp = df(lq["paths"])
+        par = lq.get("parameters") or {}
+        fund_face = par.get("face") == "fund"
+        start = float(lp["start_liquidity"].iloc[0])
+        mgd = lp[lp["book"] == "MANAGED"]
+        frz = lp[lp["book"] == "FROZEN"]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(
+            "Liquidity today", f"{start / M:,.0f}m", "NAV less PB margin" if fund_face else "cash + HQLA"
+        )
+        c2.metric("Lowest, managed", f"{mgd['min_liquidity'].min() / M:,.0f}m")
+        c3.metric("Paths short, frozen", int((~frz["survives"]).sum()), f"of {len(frz)}", delta_color="off")
+        c4.metric("Paths short, managed", int((~mgd["survives"]).sum()), f"of {len(mgd)}", delta_color="off")
+        scen = st.radio(
+            "Funding scenario", ["NORMAL", "FIRM_SPECIFIC", "MARKET_WIDE"], horizontal=True, key="liq_scen"
+        )
+        one_s = lp[lp["funding_scenario"] == scen]
+        f_ = one_s[one_s["book"] == "FROZEN"].set_index("path_id")
+        m_ = one_s[one_s["book"] == "MANAGED"].set_index("path_id")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "lowest, frozen (m)": f_["min_liquidity"] / M,
+                    "lowest, managed (m)": m_["min_liquidity"] / M,
+                    "peak cash out, frozen (m)": f_["peak_cash_out"] / M,
+                    "short on day, frozen": f_["survival_day"],
+                    "short on day, managed": m_["survival_day"],
+                    "variation margin (m)": f_["variation_margin"] / M,
+                    "collateral (m)": f_["collateral"] / M,
+                    "initial margin (m)": f_["initial_margin"] / M,
+                    "HQLA (m)": f_["hqla"] / M,
+                    "forced-sale days": m_["forced_sale_days"],
+                    "forced-sale cost (m)": m_["forced_sale_cost"] / M,
+                    "permanent impact (m)": m_["permanent_impact"] / M,
+                    "spiral rounds": m_["spiral_rounds_max"],
+                }
+            ).round(1),
+            use_container_width=True,
+        )
+        pick_l = st.selectbox("Path", list(dict.fromkeys(lp["path_id"])), key="liq_path_pick")
+        one_l = load("stress_liquidity", run_id, path_id=pick_l)
+        ld = df(one_l["days"])
+        if not ld.empty:
+            ld = ld[ld["funding_scenario"] == scen]
+            curve = ld.pivot(index="day", columns="book", values="net_liquidity") / M
+            st.line_chart(curve.rename(columns={"FROZEN": "Frozen", "MANAGED": "Managed"}))
+            comp = ld[ld["book"] == "FROZEN"].set_index("day")[
+                ["variation_margin", "collateral", "initial_margin", "hqla", "contractual"]
+            ]
+            st.caption(
+                "Frozen book, by close: variation margin and contractual flows are paid that day; "
+                "collateral, initial margin and HQLA are the change since today (millions)."
+            )
+            st.dataframe((comp / M).round(1), use_container_width=True)
+        inst = df(lq["instant"])
+        if not inst.empty:
+            st.markdown("**Every stress scenario as an instantaneous call** (before any action)")
+            iv = inst[inst["funding_scenario"] == scen].set_index("scenario_id")
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "scenario": iv["name"],
+                        "set": iv["stress_set"],
+                        "P&L (m)": iv["pnl"] / M,
+                        "variation margin (m)": iv["variation_margin"] / M,
+                        "collateral (m)": iv["collateral"] / M,
+                        "initial margin (m)": iv["initial_margin"] / M,
+                        "HQLA (m)": iv["hqla"] / M,
+                        "liquidity used (m)": iv["net_call"] / M,
+                        "liquidity left (m)": iv["net_liquidity"] / M,
+                    }
+                ).round(1),
+                use_container_width=True,
+            )
+        st.caption(
+            "Cash on the same paths (MR-024). Cleared, listed and short positions pay variation margin each "
+            "day; CSA sets call collateral beyond their thresholds; posted initial margin follows each set's "
+            "risk at the stressed point, and a CCP's also its realised volatility (capped). "
+            + (
+                "The fund's liquidity is NAV less prime-broker margin, which follows gross exposure. "
+                if fund_face
+                else "Liquidity is the cash buffer plus long government bonds after haircut, less the "
+                "collateral behind net repo borrowing. "
+            )
+            + "Firm-specific: a downgrade removes our CSA thresholds and repo lenders ask more haircut "
+            "at each roll; market-wide: haircuts double. When the managed book is short it sells a share of "
+            "every position within stressed volume; part of the impact stays in the price and calls more "
+            "margin, up to a fixed point. Funding rules are in Admin → Stress funding."
         )
 
 elif page == "Stress library":
@@ -1073,7 +1169,8 @@ elif page == "Admin":
         "to the audit trail. Nothing here edits a stored run."
     )
     config = st.selectbox(
-        "Configuration", ["VaR measures", "Stress scenarios", "Stress actions", "Sign-off policy", "Runs"]
+        "Configuration",
+        ["VaR measures", "Stress scenarios", "Stress actions", "Stress funding", "Sign-off policy", "Runs"],
     )
     if config == "VaR measures":
         from novera.api.errors import ApiError
@@ -1244,6 +1341,52 @@ elif page == "Admin":
             try:
                 res = client.set_stress_actions(rows, comment.strip())
                 st.success(f"Saved {len(res['rules'])} rule rows.")
+                st.cache_data.clear()
+            except ApiError as e:
+                st.error(str(e))
+    elif config == "Stress funding":
+        from novera.api.errors import ApiError
+
+        st.markdown(
+            "What the firm holds against margin calls on a stress path and how funding terms change "
+            "(MR-024). The (resources) row sets the bank's cash buffer, the haircuts and the spiral; the "
+            "three scenarios change the terms from day one. The next EOD run applies the saved rules and "
+            "records them; stored runs are not changed."
+        )
+        sf = client.stress_funding()
+        last = next((r for r in sf["rules"] if r.get("updated_by")), None)
+        st.caption(
+            f"Current rules ({sf['source']})"
+            + (f" · last changed by {last['updated_by']} at {str(last['updated_at'])[:19]}" if last else "")
+        )
+        res_row = {k: v for k, v in sf["rules"][0].items() if k not in ("updated_at", "updated_by")}
+        scen_rows = [
+            {k: v for k, v in r.items() if k not in ("updated_at", "updated_by")} for r in sf["rules"][1:]
+        ]
+        res_edit = st.data_editor(
+            pd.DataFrame([res_row]),
+            use_container_width=True,
+            hide_index=True,
+            key="stress_funding_resources",
+            disabled=["scope"],
+        )
+        scen_edit = st.data_editor(
+            pd.DataFrame(scen_rows),
+            use_container_width=True,
+            hide_index=True,
+            key="stress_funding_scenarios",
+            disabled=["scope"],
+        )
+        with st.expander("What each column means"):
+            st.markdown("\n".join(f"- **{k}**: {v}" for k, v in sf["fields"].items()))
+        comment = st.text_input("Comment", key="stress_funding_comment")
+        if st.button("Save the funding rules"):
+            res_out = res_edit.to_dict(orient="records")[0]
+            res_out["spiral_max_rounds"] = int(res_out["spiral_max_rounds"])
+            rows = [res_out, *scen_edit.to_dict(orient="records")]
+            try:
+                client.set_stress_funding(rows, comment.strip())
+                st.success("Saved the funding rules.")
                 st.cache_data.clear()
             except ApiError as e:
                 st.error(str(e))

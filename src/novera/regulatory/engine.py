@@ -90,6 +90,20 @@ def exotic_gross_notional(trades, market, reporting: str) -> pd.Series:
     return pd.Series(out, dtype=float)
 
 
+def simm_base_vols(market) -> dict[str, float]:
+    """The base volatilities SIMM-lite scales vega by: 3-month ATM per surface, the mean swaption
+    normal vol per currency (REG-004)."""
+    out = {
+        u: market.vol_surface(u).atm(0.25)
+        for u in {f.split(":")[1] for f in market.factors_with_prefix("VOL:")}
+    }
+    for ccy in {f.split(":")[1] for f in market.factors_with_prefix("SWVOL:")}:
+        out[f"SWVOL:{ccy}"] = float(
+            np.mean([market.values[f] for f in market.factors_with_prefix(f"SWVOL:{ccy}:")])
+        )
+    return out
+
+
 def run_regulatory(
     repo: DuckDBRepository,
     run_id: str,
@@ -109,14 +123,7 @@ def run_regulatory(
     counterparties = {c.counterparty_id: c for c in repo.load_counterparties()}
     reporting = run.reporting_currency
     ccp = build_ccp_sets(snap.trades, repo.load_organisation(run.config.get("firm_id", "GMB")))
-    base_vols = {
-        u: market.vol_surface(u).atm(0.25)
-        for u in {f.split(":")[1] for f in market.factors_with_prefix("VOL:")}
-    }
-    for ccy in {f.split(":")[1] for f in market.factors_with_prefix("SWVOL:")}:
-        base_vols[f"SWVOL:{ccy}"] = float(
-            np.mean([market.values[f] for f in market.factors_with_prefix(f"SWVOL:{ccy}:")])
-        )
+    base_vols = simm_base_vols(market)
     exotic_notional = exotic_gross_notional(snap.trades, market, reporting)
     # Valuation lacks netting_set_id; add it from the snapshot for SIMM.
     ns_by_trade = {t.trade_id: t.netting_set_id for t in snap.trades} | ccp.by_trade

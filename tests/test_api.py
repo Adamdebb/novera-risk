@@ -735,6 +735,30 @@ def test_stress_path_endpoints(client, tokens):
     client.post("/admin/stress/actions", json={"rules": [{"scope": "(default)"}]}, **cro)
 
 
+def test_stress_liquidity_endpoints(client, tokens):
+    """MR-024: the funding chain of the latest run and the funding rules in Admin."""
+    lq = client.get("/runs/latest/stress-liquidity").json()
+    assert lq["record"] == "MR-024" and lq["available"] and lq["instant"]
+    assert lq["path_id"] == lq["paths"][0]["path_id"]
+    assert {d["funding_scenario"] for d in lq["days"]} == {"NORMAL", "FIRM_SPECIFIC", "MARKET_WIDE"}
+    st = client.get("/admin/stress/funding").json()
+    assert st["source"] == "defaults" and st["rules"][0]["scope"] == "(resources)"
+    rows = [{k: v for k, v in r.items() if k not in ("updated_at", "updated_by")} for r in st["rules"]]
+    rows[0]["cash_buffer"] = 2.0e9
+    denied = client.post("/admin/stress/funding", json={"rules": rows}, **as_(tokens, "risk-control"))
+    assert denied.status_code == 403
+    cro = as_(tokens, "cro")
+    bad = client.post("/admin/stress/funding", json={"rules": rows[:2]}, **cro)
+    assert bad.status_code == 409 and "exactly" in bad.json()["detail"]
+    ok = client.post("/admin/stress/funding", json={"rules": rows, "comment": "test"}, **cro)
+    assert ok.status_code == 200 and ok.json()["source"] == "stored"
+    assert ok.json()["rules"][0]["cash_buffer"] == 2.0e9
+    events = client.get("/audit", params={"subject": "stress_funding_rules"}).json()
+    assert any(e["event_type"] == "STRESS_FUNDING_CHANGED" for e in events)
+    rows[0]["cash_buffer"] = 1.0e9
+    client.post("/admin/stress/funding", json={"rules": rows}, **cro)
+
+
 def test_var_setup_endpoints(client, tokens):
     cro = as_(tokens, "cro")
     st = client.get("/admin/var/setup").json()

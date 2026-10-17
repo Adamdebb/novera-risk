@@ -747,6 +747,47 @@ def stress_setup_actions(
     _print_stress_actions(_write(fund, actor, lambda svc: svc.set_stress_actions(rules, comment)))
 
 
+def _print_stress_funding(st: dict) -> None:
+    typer.echo(f"Stress-path funding rules ({st['source']}, MR-024):")
+    res, *scen = st["rules"]
+    typer.echo(
+        f"  resources: cash buffer {res['cash_buffer'] / 1e6:,.0f}m; HQLA haircut "
+        f"{res['hqla_haircut_level1']:.0%} level 1, {res['hqla_haircut_other']:.0%} other; IM collateral "
+        f"{res['im_collateral_haircut']:.0%}; permanent impact {res['permanent_impact_share']:.0%}, "
+        f"{res['spiral_max_rounds']} rounds; CCP margin cap {res['ccp_margin_cap']:g}x"
+    )
+    for r in scen:
+        typer.echo(
+            f"  {r['scope']:<14} thresholds x{r['threshold_we_post_multiplier']:g}, repo haircut "
+            f"+{r['repo_haircut_addon']:.0%} on roll, haircuts x{r['haircut_multiplier']:g}, CCP "
+            f"{'procyclical' if r['ccp_procyclical'] else 'flat'}, PB margin x{r['pb_margin_multiplier']:g}"
+        )
+
+
+@stress_setup_app.command("funding")
+def stress_setup_funding(
+    file: str = typer.Option("", help="JSON list of rows to store; empty shows the current rules"),
+    actor: str = typer.Option("head-of-market-risk", help="Head of Market Risk or CRO changes them"),
+    comment: str = typer.Option(""),
+    fund: bool = typer.Option(False),
+) -> None:
+    """Show or replace the liquidity resources and the funding scenarios of the stress paths (MR-024)."""
+    import json
+
+    from novera.api.service import RiskService
+    from novera.storage.duckdb_repository import DuckDBRepository
+
+    if not file:
+        with DuckDBRepository(_db(fund), read_only=True) as repo:
+            _print_stress_funding(RiskService(repo).stress_funding())
+        return
+    path = Path(file)
+    if not path.exists():
+        raise typer.BadParameter(f"no such file {file}")
+    rules = json.loads(path.read_text())
+    _print_stress_funding(_write(fund, actor, lambda svc: svc.set_stress_funding(rules, comment)))
+
+
 @stress_setup_app.command("seed")
 def stress_setup_seed(
     actor: str = typer.Option("head-of-market-risk", help="Head of Market Risk or CRO adopts the built-ins"),

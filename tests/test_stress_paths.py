@@ -28,6 +28,11 @@ H = sp.HORIZON
 
 @pytest.fixture(scope="module")
 def world():
+    return build_world()
+
+
+def build_world():
+    """A 300-trade bank with its sensitivities, PCA space and liquidity (shared with test_funding_chain)."""
     org = build_global_macro_bank()
     cp = build_counterparty_universe(org)
     md = generate_market_data(MarketSimConfig(end_date=AS_OF, years=2.5, seed=51))

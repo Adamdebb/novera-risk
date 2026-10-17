@@ -45,6 +45,7 @@ class RiskClient(Protocol):
     def reverse_stress(self, run_id: str | None = None, target_id: str | None = None) -> dict[str, Any]: ...
     def stress_monte_carlo(self, run_id: str | None = None) -> dict[str, Any]: ...
     def stress_paths(self, run_id: str | None = None, path_id: str | None = None) -> dict[str, Any]: ...
+    def stress_liquidity(self, run_id: str | None = None, path_id: str | None = None) -> dict[str, Any]: ...
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]: ...
@@ -88,6 +89,8 @@ class RiskClient(Protocol):
     def stress_setup(self) -> dict[str, Any]: ...
     def stress_actions(self) -> dict[str, Any]: ...
     def set_stress_actions(self, rules: list[dict[str, Any]], comment: str = "") -> dict[str, Any]: ...
+    def stress_funding(self) -> dict[str, Any]: ...
+    def set_stress_funding(self, rules: list[dict[str, Any]], comment: str = "") -> dict[str, Any]: ...
     def propose_stress_scenario(self, definition: dict[str, Any], note: str = "") -> dict[str, Any]: ...
     def decide_stress_scenario(
         self, scenario_id: str, version: int, approve: bool, note: str = ""
@@ -118,6 +121,7 @@ WRITE_METHODS = {
     "set_signoff_policy",
     "set_var_setup",
     "set_stress_actions",
+    "set_stress_funding",
     "apply_var_template",
     "propose_stress_scenario",
     "decide_stress_scenario",
@@ -306,6 +310,9 @@ class HttpClient:
     def stress_paths(self, run_id=None, path_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/stress-paths", path_id=path_id)
 
+    def stress_liquidity(self, run_id=None, path_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/stress-liquidity", path_id=path_id)
+
     def limits(self, run_id=None, status=None, level=None):
         return self._get(f"/runs/{self._rid(run_id)}/limits", status=status, level=level)
 
@@ -392,6 +399,12 @@ class HttpClient:
 
     def set_stress_actions(self, rules, comment=""):
         return self._post("/admin/stress/actions", rules=[dict(r) for r in rules], comment=comment)
+
+    def stress_funding(self):
+        return self._get("/admin/stress/funding")
+
+    def set_stress_funding(self, rules, comment=""):
+        return self._post("/admin/stress/funding", rules=[dict(r) for r in rules], comment=comment)
 
     def stress_setup(self):
         return self._get("/admin/stress/setup")

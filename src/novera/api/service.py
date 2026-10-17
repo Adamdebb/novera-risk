@@ -438,6 +438,47 @@ class RiskService:
             out["parameters"] = p
         return out
 
+    def stress_liquidity(self, run_id: str | None = None, path_id: str | None = None) -> dict[str, Any]:
+        """The margin, collateral and funding chain on every stress path (lowest liquidity first), one
+        path's days, and every scenario as an instantaneous call (MR-024)."""
+        r, paths = self._frame(run_id, "stress_liquidity")
+        out: dict[str, Any] = {"record": "MR-024", "run_id": r.run_id, "available": not paths.empty}
+        if paths.empty:
+            return out
+        order = (
+            paths[paths["book"] == "MANAGED"]
+            .groupby("path_id")["min_liquidity"]
+            .min()
+            .sort_values(kind="stable")
+            .index.tolist()
+        )
+        rank = {p: i for i, p in enumerate(order)}
+        scen = {s: i for i, s in enumerate(("NORMAL", "FIRM_SPECIFIC", "MARKET_WIDE"))}
+        paths = paths.assign(
+            _o=paths["path_id"].map(rank),
+            _b=paths["book"] != "FROZEN",
+            _s=paths["funding_scenario"].map(scen),
+        )
+        out["paths"] = _records(paths.sort_values(["_o", "_s", "_b"]).drop(columns=["_o", "_b", "_s"]))
+        pid = path_id or order[0]
+        out["path_id"] = pid
+        d = self.repo.load_run_frame(r.run_id, "stress_liquidity_days")
+        out["days"] = _records(d[d["path_id"] == pid]) if len(d) else []
+        inst = self.repo.load_run_frame(r.run_id, "stress_liquidity_instant")
+        out["instant"] = _records(inst.sort_values("net_liquidity", kind="stable")) if len(inst) else []
+        par = self.repo.load_run_frame(r.run_id, "stress_liquidity_parameters")
+        if len(par):
+            p = _records(par)[0]
+            p["rules"] = json.loads(p.pop("rules_json", "[]") or "[]")
+            out["parameters"] = p
+        return out
+
+    def stress_funding(self) -> dict[str, Any]:
+        """The funding scenarios and liquidity resources the stress paths' cash walks apply (MR-024)."""
+        from novera.workflows import stress_paths
+
+        return stress_paths.funding_setup(self.repo)
+
     def stress_actions(self) -> dict[str, Any]:
         """The action rules desks follow in a stress path (MR-023)."""
         from novera.workflows import stress_paths
@@ -1451,6 +1492,13 @@ class RiskWriteService:
 
         require(self.user, Action.SIGNOFF_POLICY)
         return signoff.set_policy(self.repo, self.actor, list(required), comment)
+
+    def set_stress_funding(self, rules: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
+        """Replace the funding rules and liquidity resources; validated and audited (MR-024)."""
+        from novera.workflows import stress_paths
+
+        require(self.user, Action.STRESS_FUNDING)
+        return stress_paths.set_funding_rules(self.repo, self.actor, [dict(r) for r in rules], comment)
 
     def set_stress_actions(self, rules: list[dict[str, Any]], comment: str = "") -> dict[str, Any]:
         """Replace the stress-path action rules; validated and audited (MR-023)."""

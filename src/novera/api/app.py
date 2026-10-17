@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -159,6 +159,13 @@ class VarSetupBody(BaseModel):
 
 class StressActionsBody(BaseModel):
     rules: list[s.StressActionRuleSpec]
+    comment: str = ""
+
+
+class StressFundingBody(BaseModel):
+    rules: list[dict[str, Any]] = Field(
+        description="The (resources) row and the NORMAL, FIRM_SPECIFIC and MARKET_WIDE rows (MR-024)"
+    )
     comment: str = ""
 
 
@@ -493,6 +500,11 @@ def stress_paths(run_id: str, path_id: str | None = None, svc: RiskService = Dep
     return svc.stress_paths(run_id, path_id)
 
 
+@app.get("/runs/{run_id}/stress-liquidity", response_model=s.StressLiquidity)
+def stress_liquidity(run_id: str, path_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.stress_liquidity(run_id, path_id)
+
+
 @app.get("/reference/stress-library", response_model=s.StressLibrary)
 def stress_library(svc: RiskService = Depends(service)):
     return svc.stress_library()
@@ -562,6 +574,16 @@ def stress_actions(svc: RiskService = Depends(service)):
 @app.post("/admin/stress/actions", response_model=s.StressActionRules)
 def set_stress_actions(body: StressActionsBody, svc: RiskWriteService = Depends(write_service)):
     return svc.set_stress_actions([r.model_dump() for r in body.rules], body.comment)
+
+
+@app.get("/admin/stress/funding", response_model=s.StressFundingRules)
+def stress_funding(svc: RiskService = Depends(service)):
+    return svc.stress_funding()
+
+
+@app.post("/admin/stress/funding", response_model=s.StressFundingRules)
+def set_stress_funding(body: StressFundingBody, svc: RiskWriteService = Depends(write_service)):
+    return svc.set_stress_funding([dict(r) for r in body.rules], body.comment)
 
 
 @app.get("/admin/stress/setup", response_model=s.StressSetup)

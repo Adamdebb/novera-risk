@@ -286,7 +286,8 @@ STAGES: tuple[Stage, ...] = (
         "Stress paths",
         "Twenty-day paths of the LIMIT scenarios in three shapes, the worst historical window and the "
         "fat-tailed Monte Carlo tail, revalued in full every day, walked frozen and managed by the "
-        "action rules the parent run recorded (MR-023).",
+        "action rules the parent run recorded (MR-023), with the margin, collateral and funding chain and "
+        "the liquidity spiral under the recorded funding rules (MR-024).",
         STRESS_PATH_TABLES,
         (),
         (
@@ -297,6 +298,16 @@ STAGES: tuple[Stage, ...] = (
             "path_worst_action_cost",
             "path_first_breach_day",
             "path_unfinished",
+            "liquidity_start",
+            "liquidity_worst_path_id",
+            "liquidity_worst_funding",
+            "liquidity_worst_min",
+            "liquidity_failures_frozen",
+            "liquidity_failures_managed",
+            "liquidity_first_failure_day",
+            "liquidity_spiral_paths",
+            "liquidity_worst_instant_scenario",
+            "liquidity_worst_instant",
         ),
     ),
     Stage(
@@ -359,6 +370,7 @@ class _Inputs:
             exposure_paths=c.get("exposure_paths"),
             proxies=c.get("proxies"),
             stress_action_rules=c.get("stress_action_rules"),
+            stress_funding_rules=c.get("stress_funding_rules"),
         )
         self.reporting = parent.reporting_currency
         self.market = repo.load_run_market(parent.run_id)
@@ -516,9 +528,16 @@ def _stage_stress_paths(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[s
         if t.product_type.value == "COMMODITY_FUTURE"
         and (t.instrument.expiry_date - x.market.as_of).days > 300
     }
+    from novera.risk.funding_chain import FundingRules
+    from novera.risk.stress_paths import HORIZON
+    from novera.workflows.stress_paths import funding_inputs, funding_rules_for_run
+
     rules = x.cfg.stress_action_rules
     if rules is None:  # a run made before the stress paths existed: today's rules
         rules = [r.to_dict() for r in rules_for_run(repo)]
+    funding_rules = x.cfg.stress_funding_rules
+    if funding_rules is None:  # a run made before the funding chain existed (round 52): today's rules
+        funding_rules = funding_rules_for_run(repo).to_list()
     res = run_stress_paths_stage(
         x.pf,
         x.sens,
@@ -531,6 +550,18 @@ def _stage_stress_paths(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[s
         episode_windows(x.history, x.repo.load_market_episodes()),
         rules,
         workers=workers,
+        funding=funding_inputs(
+            x.repo,
+            x.pf,
+            x.sens,
+            x.val.table,
+            x.cfg.firm_id,
+            FundingRules.from_list(funding_rules),
+            x.settings.im_threshold,
+            HORIZON,
+        ),
+        funding_rules=funding_rules,
+        all_results=x.stress,
     )
     persist_stress_paths(repo, rid, res)
     return res.summary()

@@ -212,6 +212,12 @@ CREATE TABLE IF NOT EXISTS stress_action_rule (
     actor VARCHAR NOT NULL,
     updated_at VARCHAR NOT NULL
 );
+CREATE TABLE IF NOT EXISTS stress_funding_rule (
+    scope VARCHAR PRIMARY KEY,
+    rule_json VARCHAR NOT NULL,
+    actor VARCHAR NOT NULL,
+    updated_at VARCHAR NOT NULL
+);
 CREATE TABLE IF NOT EXISTS signoff_policy (
     metric_id VARCHAR PRIMARY KEY,
     required BOOLEAN NOT NULL,
@@ -1260,6 +1266,23 @@ class DuckDBRepository:
             return []
         rows = self._conn.execute(
             "SELECT scope, rule_json, actor, updated_at FROM stress_action_rule ORDER BY scope"
+        ).fetchall()
+        return [{"scope": r[0], "rule": json.loads(r[1]), "actor": r[2], "updated_at": r[3]} for r in rows]
+
+    def save_stress_funding_rules(self, rows: list[dict]) -> None:
+        """Replace the funding rules of the stress paths (MR-024): the resources row and one row per
+        funding scenario, each as JSON."""
+        self._conn.execute("DELETE FROM stress_funding_rule")
+        self._conn.executemany(
+            "INSERT INTO stress_funding_rule VALUES (?, ?, ?, ?)",
+            [(r["scope"], json.dumps(r["rule"]), r["actor"], r["updated_at"]) for r in rows],
+        )
+
+    def load_stress_funding_rules(self) -> list[dict]:
+        if not self._has_table("stress_funding_rule"):
+            return []
+        rows = self._conn.execute(
+            "SELECT scope, rule_json, actor, updated_at FROM stress_funding_rule ORDER BY scope"
         ).fetchall()
         return [{"scope": r[0], "rule": json.loads(r[1]), "actor": r[2], "updated_at": r[3]} for r in rows]
 

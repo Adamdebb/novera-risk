@@ -48,6 +48,7 @@ from scipy import sparse
 
 from novera.market_data.history import MarketHistory
 from novera.risk import scenario_covariance as sc_cov
+from novera.risk.funding_chain import FundingChain
 from novera.risk.pca_space import PCASpace, QuadBook
 from novera.risk.revaluation import Portfolio
 from novera.risk.reverse_stress import PRICE_FLOOR, Target
@@ -444,6 +445,33 @@ class _Outcome:
     days: list[dict[str, Any]]
     desks: list[dict[str, Any]]
     actions: list[dict[str, Any]]
+    forced_cost: float = 0.0
+
+
+class _Seller:
+    """What a forced sale may trade at one close and what it costs (MR-024): the day's stressed volume
+    less what the desks already sold, at the MR-023 cost. Cost and impact are priced on the day's
+    cumulative forced sale and each round pays the increment: the square-root law is concave, so the
+    spiral's rounds shrink."""
+
+    def __init__(self, engine: PathEngine, sold_today: np.ndarray) -> None:
+        self.engine, self.sold = engine, sold_today
+        self.forced = np.zeros_like(sold_today)
+        self._cost = np.zeros_like(sold_today)
+        self._remark = np.zeros_like(sold_today)
+
+    def room(self, h: np.ndarray) -> np.ndarray:
+        return np.minimum(np.maximum(self.engine.cap - self.sold - self.forced, 0.0), h)
+
+    def trade(self, dh: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Sell ``dh`` more: the extra cost per trade and the extra price impact per unit of each full
+        position (before the permanent share)."""
+        self.forced = self.forced + dh
+        cost, impact = self.engine.costs(self.forced)
+        remark = self.engine.remark(self.forced, impact)
+        out = cost - self._cost, remark - self._remark
+        self._cost, self._remark = cost, remark
+        return out
 
 
 def _drawdown(cum: np.ndarray) -> float:
@@ -480,6 +508,7 @@ class PathEngine:
         th = sens[sens["measure"] == "THETA"].groupby("trade_id")["value"].sum()
         self.theta = th.reindex(trades).fillna(0.0).to_numpy() * THETA_DAYS
         bmat = np.asarray(book.A @ _daily_scale(space)) / book.bump[:, None]
+        self.bmat = bmat  # J x k: sensitivity-row moves per unit daily score
         self.loading = np.asarray(self.L @ bmat)  # trades x k: daily P&L per unit daily score
         self.std = np.sqrt((self.loading**2).sum(axis=1))
         liq = liquidity_by_trade.drop_duplicates("trade_id").set_index("trade_id")
@@ -531,9 +560,57 @@ class PathEngine:
         self.firm_limit = float(firm[0].loss) if firm else np.inf
         self.firm_limit_id = firm[0].target_id if firm else None
 
+    # -- costs of a trade -------------------------------------------------------------------------
+    def costs(self, dh: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Cost per trade of reducing each position by ``dh`` today, and the square-root impact paid
+        per desk: spread on every trade, impact on the desk's net risk sold (decision 51.6)."""
+        cost_tr = dh * self.half_spread * self.mult
+        impact = np.zeros(len(self.desks))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            qv = np.where(np.isfinite(self.cap) & (self.cap > 0), dh * self.part / self.cap, 0.0)
+        for d in np.unique(self.desk_index[dh > 0]):
+            m = (self.desk_index == d) & (dh > 0)
+            w = dh[m] * self.std[m] * np.sqrt(qv[m])
+            net = float(np.linalg.norm(dh[m] @ self.loading[m]))
+            gross = float((dh[m] * self.std[m]).sum())
+            if w.sum() > 0 and gross > 0:
+                add = self.impact[m] * net * w / gross
+                cost_tr[m] += add
+                impact[d] = float(add.sum())
+        return cost_tr, impact
+
+    def remark(self, dh: np.ndarray, impact: np.ndarray) -> np.ndarray:
+        """Price impact left by a sale, as P&L per unit of each full position: a desk's impact cost
+        spread over the risk it still holds in proportion to each trade's daily risk (MR-024). The
+        caller scales it by the permanent share."""
+        sold = np.bincount(self.desk_index, weights=dh * self.std, minlength=len(self.desks))
+        per = np.divide(impact, sold, out=np.zeros_like(impact), where=sold > 0)
+        return per[self.desk_index] * self.std
+
+    def stressed_loadings(self, path: StressPath) -> list[np.ndarray]:
+        """Each trade's daily P&L loading on the PCA scores at every close of ``path``, its delta taken
+        at the day's moves (lin + 2·quad·y): what initial margin reads (MR-024)."""
+        y = self.book.moves(path.moves)
+        return [
+            np.asarray((self.L + self.Q.multiply(2.0 * y[t][None, :])).tocsr() @ self.bmat)
+            for t in range(len(y))
+        ]
+
+    def frozen_walk(self, walk: Any, path: StressPath, full: np.ndarray) -> None:
+        """The frozen book's cash: every close at full size, nobody sells."""
+        dv = np.diff(np.vstack([np.zeros(full.shape[1]), full]), axis=0).T
+        fr_tr = dv + self.theta[:, None]
+        cum = np.cumsum(fr_tr, axis=1)
+        h = np.ones(len(self.theta))
+        walk.begin()
+        for t in range(fr_tr.shape[1]):
+            walk.close(t + 1, h, h, fr_tr[:, t], cum[:, t], 0.0, 0.0, np.zeros((0, 0)))
+
     # -- one path ----------------------------------------------------------------------------------
-    def run(self, path: StressPath, full: np.ndarray) -> _Outcome:
-        """``full``: each trade's full-revaluation P&L at each day's close against today (H x trades)."""
+    def run(self, path: StressPath, full: np.ndarray, walk: Any | None = None) -> _Outcome:
+        """``full``: each trade's full-revaluation P&L at each day's close against today (H x trades).
+        ``walk`` (MR-024): the funding walk of one funding scenario; the managed book then also sells
+        what the walk forces at each close (the liquidity spiral)."""
         book, hz = self.book, path.moves.shape[0] - 1
         y = book.moves(path.moves)  # (H+1) x J, for the hedge ratios
         dv = np.diff(np.vstack([np.zeros(full.shape[1]), full]), axis=0).T  # trades x H
@@ -573,33 +650,33 @@ class PathEngine:
         acts: dict[tuple[str, str], dict[str, Any]] = {}
         risk0 = float(self.std.sum()) or 1.0
         firm_cum = 0.0
+        forced_cost = 0.0
 
         def act(desk: int, action: str, day: int, traded: float, cost: float) -> None:
             k = (self.desks[desk], action)
             a = acts.setdefault(k, {"first_day": day, "last_day": day, "traded": 0.0, "cost": 0.0})
             a["last_day"], a["traded"], a["cost"] = day, a["traded"] + traded, a["cost"] + cost
 
+        if walk is not None:
+            walk.begin()
+            fr_cum_tr = np.cumsum(fr_tr, axis=1)
         for t in range(hz):
             day = t + 1
+            h_prev = h.copy()
             tr = h * fr_tr[:, t]
             hp = hedge @ dyb[t] if nb else np.zeros(nd)
             # Orders decided at yesterday's close execute at today's close.
             cost_tr = np.zeros(n)
+            dh_today = np.zeros(n)
             act_mask = triggered[self.desk_index] & self.enabled[self.desk_index]
             if act_mask.any():
                 dh = np.where(act_mask, np.clip(h - target_h, 0.0, self.cap), 0.0)
                 if dh.any():
-                    with np.errstate(divide="ignore", invalid="ignore"):
-                        qv = np.where(np.isfinite(self.cap) & (self.cap > 0), dh * self.part / self.cap, 0.0)
                     # Spread on every trade; impact on the desk's net risk sold (offsetting trades net).
-                    cost_tr = dh * self.half_spread * self.mult
+                    cost_tr, _ = self.costs(dh)
+                    dh_today = dh
                     for d in np.unique(self.desk_index[dh > 0]):
                         m = (self.desk_index == d) & (dh > 0)
-                        w = dh[m] * self.std[m] * np.sqrt(qv[m])
-                        net = float(np.linalg.norm(dh[m] @ self.loading[m]))
-                        gross = float((dh[m] * self.std[m]).sum())
-                        if w.sum() > 0 and gross > 0:
-                            cost_tr[m] += self.impact[m] * net * w / gross
                         short = m & self.short_option & self.close_short
                         cut = m & ~short
                         if cut.any():
@@ -637,6 +714,23 @@ class PathEngine:
                     hcost[d] = float(c.sum())
                     if notional.sum() > 0:
                         act(d, "HEDGE", day, float(notional.sum()), hcost[d])
+            if walk is not None:
+                # The cash side of today's close; a shortfall forces a sale at the same close.
+                fdh, fcost, fremark = walk.close(
+                    day,
+                    h_prev,
+                    h,
+                    tr,
+                    fr_cum_tr[:, t],
+                    float(cost_tr.sum() + hcost.sum()),
+                    float(hp.sum()),
+                    hedge,
+                    _Seller(self, dh_today),
+                )
+                if fdh.any():
+                    h = h - fdh
+                    cost_tr = cost_tr + fcost + fremark
+                    forced_cost += float(fcost.sum())
             net_tr = tr - cost_tr
             desk_day = np.asarray(self.Dm @ net_tr).ravel() + hp - hcost
             desk_cum += desk_day
@@ -785,7 +879,7 @@ class PathEngine:
                 }
             )
         actions = [{"path_id": path.path_id, "desk_id": k[0], "action": k[1], **a} for k, a in acts.items()]
-        return _Outcome(summary, days, desks, actions)
+        return _Outcome(summary, days, desks, actions, forced_cost)
 
 
 # --- the stage ------------------------------------------------------------------------------------
@@ -797,11 +891,14 @@ class StressPathsResult:
     desks: pd.DataFrame
     actions: pd.DataFrame
     parameters: dict[str, Any] = field(default_factory=dict)
+    liquidity: Any | None = None
+    """The margin, collateral and funding chain on the same paths (``LiquidityResult``, MR-024)."""
 
     def summary(self) -> dict[str, Any]:
         s = self.summary_table
         if s.empty:
             return {"stress_paths": 0}
+        extra = self.liquidity.summary() if self.liquidity is not None else {}
         fr = s[s["book"] == "FROZEN"].set_index("path_id")
         mg = s[s["book"] == "MANAGED"].set_index("path_id")
         worst = str(fr["max_drawdown"].idxmin())
@@ -814,6 +911,7 @@ class StressPathsResult:
             "path_worst_action_cost": float(mg.loc[worst, "action_cost"]),
             "path_first_breach_day": int(breach.min()) if len(breach) else None,
             "path_unfinished": int(mg["unfinished_desks"].notna().sum()),
+            **extra,
         }
 
 
@@ -831,9 +929,15 @@ def run_stress_paths(
     rules: list[ActionRule],
     horizon: int = HORIZON,
     workers: int | None = None,
+    funding: Any | None = None,
+    funding_rules: Any | None = None,
+    all_results: list[Any] | None = None,
 ) -> StressPathsResult:
     """Every path of the three sources, revalued in full at every close, walked frozen and managed.
-    The sensitivity approximation of each frozen end is kept beside it for information."""
+    The sensitivity approximation of each frozen end is kept beside it for information. With
+    ``funding`` (``FundingInputs``, MR-024) each path is also walked for cash under every funding
+    scenario of ``funding_rules``, and every scenario of ``all_results`` is read as an instantaneous
+    call on the firm's liquidity."""
     uni = pf.universe or {}
     relative = np.array([f in uni and uni[f].shock_type != "ABSOLUTE" for f in book.factors])
     firm = book.scope(list(book.trades))
@@ -847,13 +951,17 @@ def run_stress_paths(
     full = _full_pnl(pf, book.factors, rows, workers) if len(rows) else np.zeros((0, len(book.trades)))
     theta_total = float(engine.theta.sum()) * horizon
     summary, days, desks, actions = [], [], [], []
+    chain = FundingChain(engine, funding, funding_rules) if funding is not None else None
     for k, p in enumerate(paths):
-        o = engine.run(p, full[k * horizon : (k + 1) * horizon])
+        fk = full[k * horizon : (k + 1) * horizon]
+        o = engine.run(p, fk)
         o.summary[0]["taylor_end_pnl"] = float(book.pnl(p.moves[-1], *firm)[0]) + theta_total
         summary += o.summary
         days += o.days
         desks += o.desks
         actions += o.actions
+        if chain is not None:
+            chain.walk_path(p, fk, float(o.summary[0]["end_pnl"]))
     params = {
         "horizon_days": horizon,
         "shapes": ", ".join(SHAPES),
@@ -869,10 +977,18 @@ def run_stress_paths(
         "firm_limit": engine.firm_limit if np.isfinite(engine.firm_limit) else None,
         "rules": [r.to_dict() for r in rules],
     }
-    return StressPathsResult(
+    out = StressPathsResult(
         pd.DataFrame(summary, columns=SUMMARY_COLUMNS),
         pd.DataFrame(days, columns=DAY_COLUMNS),
         pd.DataFrame(desks, columns=DESK_COLUMNS),
         pd.DataFrame(actions, columns=ACTION_COLUMNS),
         params,
     )
+    if chain is not None:
+        chain.instant(
+            all_results if all_results is not None else limit_results,
+            relative,
+            {r.scenario.scenario_id for r in limit_results},
+        )
+        out.liquidity = chain.result()
+    return out

@@ -143,6 +143,16 @@ class RunFigures(ApiModel):
     path_worst_action_cost: float | None = None
     path_first_breach_day: int | None = None
     path_unfinished: int | None = None
+    liquidity_start: float | None = None
+    liquidity_worst_path_id: str | None = None
+    liquidity_worst_funding: str | None = None
+    liquidity_worst_min: float | None = None
+    liquidity_failures_frozen: int | None = None
+    liquidity_failures_managed: int | None = None
+    liquidity_first_failure_day: int | None = None
+    liquidity_spiral_paths: int | None = None
+    liquidity_worst_instant_scenario: str | None = None
+    liquidity_worst_instant: float | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -1234,6 +1244,106 @@ class StressPaths(ApiModel):
     desks: list[StressPathDesk] = Field(default_factory=list)
     actions: list[StressPathAction] = Field(default_factory=list)
     parameters: dict[str, Any] | None = None
+
+
+class StressLiquidityRow(ApiModel):
+    path_id: str
+    book: str = Field(
+        description="FROZEN (nobody acts, nobody sells) or MANAGED (action rules and forced sales)"
+    )
+    funding_scenario: str = Field(description="NORMAL, FIRM_SPECIFIC or MARKET_WIDE")
+    start_liquidity: float = Field(
+        description="Today: cash buffer + HQLA less repo encumbrance (bank); NAV less "
+        "prime-broker margin (fund)"
+    )
+    min_liquidity: float
+    min_liquidity_day: int
+    end_liquidity: float
+    peak_cash_out: float = Field(description="Largest fall of liquidity below today's")
+    survival_day: int | None = Field(
+        default=None,
+        description="First close liquidity is below zero after any "
+        "forced sale; null when the firm lasts the horizon",
+    )
+    survives: bool
+    variation_margin: float = Field(description="Cumulative cash from margined P&L (fund: all P&L)")
+    collateral: float = Field(description="CSA collateral change at the end, haircut included")
+    initial_margin: float = Field(
+        description="Change in initial margin we post at the end (negative: we post more)"
+    )
+    hqla: float = Field(description="Change in HQLA value less encumbrance at the end")
+    contractual: float
+    forced_sale_days: int
+    forced_sold: float = Field(description="Share of positions sold by force, summed over trades and days")
+    forced_sale_cost: float
+    permanent_impact: float = Field(
+        description="Loss on held positions from the price impact forced sales left"
+    )
+    spiral_rounds_max: int
+    unresolved: bool = Field(description="The spiral sold what it could and liquidity stayed below zero")
+    end_pnl: float
+
+
+class StressLiquidityDay(ApiModel):
+    path_id: str
+    book: str
+    funding_scenario: str
+    day: int
+    variation_margin: float
+    collateral: float
+    initial_margin: float
+    hqla: float
+    contractual: float
+    sale_proceeds: float
+    costs: float
+    net_liquidity: float
+    forced_sold: float
+    spiral_rounds: int
+    permanent_impact: float
+
+
+class StressLiquidityInstant(ApiModel):
+    scenario_id: str
+    name: str
+    stress_set: str = Field(description="LIMIT or INFORMATION")
+    funding_scenario: str
+    pnl: float
+    variation_margin: float
+    collateral: float
+    initial_margin: float
+    hqla: float
+    net_call: float = Field(description="Liquidity consumed by the instantaneous move before any action")
+    start_liquidity: float
+    net_liquidity: float
+    survives: bool
+
+
+class StressLiquidity(ApiModel):
+    """Margin, collateral and funding chain on the stress paths under three funding scenarios, one
+    path's days, and every stress scenario as an instantaneous call on liquidity. Record MR-024.
+    ``available`` is false for a run made before round 52."""
+
+    record: str
+    run_id: str
+    available: bool
+    path_id: str | None = None
+    paths: list[StressLiquidityRow] = Field(default_factory=list)
+    days: list[StressLiquidityDay] = Field(default_factory=list)
+    instant: list[StressLiquidityInstant] = Field(default_factory=list)
+    parameters: dict[str, Any] | None = None
+
+
+class StressFundingRules(ApiModel):
+    """The liquidity resources row and the three funding scenarios the stress paths' cash walks
+    apply. Record MR-024."""
+
+    record: str
+    source: str = Field(description="stored, or defaults when no rules have been saved")
+    rules: list[dict[str, Any]] = Field(
+        description="(resources) first, then NORMAL, FIRM_SPECIFIC, MARKET_WIDE"
+    )
+    scenarios: list[str]
+    fields: dict[str, str]
 
 
 class StressActionRule(ApiModel):

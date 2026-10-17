@@ -60,6 +60,8 @@ from novera.risk.backtest import MODEL_VERSION as BACKTEST_VERSION
 from novera.risk.concentration import MODEL_VERSION as CONC_VERSION
 from novera.risk.factor_stress import MODEL_VERSION as FACTOR_STRESS_VERSION
 from novera.risk.factor_stress import run_factor_stress
+from novera.risk.funding_chain import MODEL_VERSION as FUNDING_CHAIN_VERSION
+from novera.risk.funding_chain import FundingRules
 from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
 from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
@@ -69,13 +71,14 @@ from novera.risk.stress_definitions import episode_windows, run_stress_definitio
 from novera.risk.stress_explain import MODEL_VERSION as STRESS_EXPLAIN_VERSION
 from novera.risk.stress_explain import run_stress_explain
 from novera.risk.stress_monte_carlo import MODEL_VERSION as STRESS_MC_VERSION
+from novera.risk.stress_paths import HORIZON as STRESS_PATH_HORIZON
 from novera.risk.stress_paths import MODEL_VERSION as STRESS_PATHS_VERSION
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
 from novera.workflows.pca_stress import persist_reverse_stress, persist_stress_mc, run_pca_stress
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
-from novera.workflows.stress_paths import persist_stress_paths
+from novera.workflows.stress_paths import funding_inputs, persist_stress_paths
 from novera.workflows.stress_paths import run_stage as run_stress_paths_stage
 from novera.workflows.sweep import owner, sweep_stuck
 
@@ -98,6 +101,7 @@ MODEL_VERSIONS = {
     "reverse_stress": REVERSE_STRESS_VERSION,
     "stress_monte_carlo": STRESS_MC_VERSION,
     "stress_paths": STRESS_PATHS_VERSION,
+    "funding_chain": FUNDING_CHAIN_VERSION,
 }
 
 
@@ -135,6 +139,9 @@ class EODConfig:
     """Twenty-day stress paths walked frozen and managed by the action rules (MR-023); off for the dry run."""
     stress_action_rules: list[dict[str, Any]] | None = None
     """The action rules the paths apply (MR-023); None reads the stored rules, or the defaults."""
+    stress_funding_rules: list[dict[str, Any]] | None = None
+    """The funding rules and liquidity resources the paths' cash walks apply (MR-024); None reads the
+    stored rules, or the defaults."""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -154,6 +161,7 @@ class EODConfig:
             "stress_monte_carlo": self.stress_monte_carlo,
             "stress_paths": self.stress_paths,
             "stress_action_rules": self.stress_action_rules,
+            "stress_funding_rules": self.stress_funding_rules,
         }
 
 
@@ -229,6 +237,10 @@ def run_eod(
         from novera.workflows.stress_paths import rules_for_run
 
         cfg = replace(cfg, stress_action_rules=[r.to_dict() for r in rules_for_run(repo)])
+    if cfg.stress_paths and cfg.stress_funding_rules is None:
+        from novera.workflows.stress_paths import funding_rules_for_run
+
+        cfg = replace(cfg, stress_funding_rules=funding_rules_for_run(repo).to_list())
     timings: dict[str, float] = {}
     events: list[AuditEvent] = []
 
@@ -384,6 +396,18 @@ def run_eod(
                 pca.book if pca else None,
                 pca.pca_space if pca else None,
                 cfg.workers,
+                funding=funding_inputs(
+                    repo,
+                    pf,
+                    sens,
+                    val.table,
+                    cfg.firm_id,
+                    FundingRules.from_list(cfg.stress_funding_rules or []),
+                    settings.im_threshold,
+                    STRESS_PATH_HORIZON,
+                ),
+                funding_rules=cfg.stress_funding_rules,
+                all_results=stress,
             )
             if cfg.stress_paths
             else None

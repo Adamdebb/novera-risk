@@ -29,6 +29,7 @@ class Action(StrEnum):
     STRESS_DECIDE = "approve or reject a stress scenario"
     STRESS_REVIEW = "review a stress scenario"
     STRESS_ACTIONS = "change the stress-path action rules"
+    STRESS_FUNDING = "change the stress-path funding rules and liquidity resources"
     LIMIT_RECALIBRATE = "propose a limit recalibration"
     LIMIT_DRAFT_DECIDE = "decide a limit draft"
     BREACH_ACKNOWLEDGE = "acknowledge this breach"
@@ -59,6 +60,7 @@ FIRM_WIDE: dict[Action, set[Role]] = {
     Action.STRESS_DECIDE: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.STRESS_REVIEW: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.STRESS_ACTIONS: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
+    Action.STRESS_FUNDING: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.LIMIT_RECALIBRATE: {Role.HEAD_OF_MARKET_RISK, Role.CRO},
     Action.LIMIT_DRAFT_DECIDE: _APPROVERS,
     Action.INCREASE_DECIDE: _APPROVERS,

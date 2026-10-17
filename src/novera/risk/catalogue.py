@@ -191,6 +191,17 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Stress paths with management actions",
             ),
             MeasureSpec(
+                "MR-024",
+                "Margin, collateral and funding chain with the liquidity spiral",
+                "The cash side of the same stress paths under normal, firm-specific and market-wide funding: "
+                "variation margin, CSA collateral, initial margin at the stressed delta (CCP procyclical), "
+                "HQLA less repo encumbrance or NAV less prime-broker margin, forced sales and the liquidity "
+                "spiral, and the day liquidity runs out; every scenario also as an instantaneous call.",
+                "reporting currency",
+                "Stress",
+                "Margin, collateral and funding chain with the liquidity spiral",
+            ),
+            MeasureSpec(
                 "MR-007",
                 "Daily P&L explain",
                 "Day-on-day P&L as a full-revaluation waterfall (carry, factor moves, new and dead "

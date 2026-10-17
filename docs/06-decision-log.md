@@ -2356,6 +2356,90 @@ covers the P&L path, the triggers and the actions.
   `GET`/`POST /admin/stress/actions`; `novera stress-setup actions`; Stress page and Admin page; MR-023;
   `tests/test_stress_paths.py`, `tests/test_workflows.py`, `tests/test_api.py`.
 
+## Round 52 — Margin, collateral and funding on the stress paths, with the liquidity spiral (2026-10-17)
+
+Context: the seventh round of the stress framework (`docs/08-stress-framework.md`, part D and the spiral of part E).
+One question round. The cash chain walks the same paths as round 51 (MR-023), whose tables are unchanged.
+
+### 52.1 Liquidity held against calls
+- Options: book HQLA plus a set cash amount ★ · one set amount per firm · cash out only, no survival
+- Choice (owner): **book HQLA plus a cash buffer set in Admin** (bank; default 1bn); **NAV less prime-broker margin**
+  (fund, the 15% unencumbered cash inside it). HQLA is long government bonds at their path value less a monetisation
+  haircut (2% level 1, 15% other), less the collateral behind net repo borrowing. Round 57 moves the bank's figures
+  into its resources table.
+
+### 52.2 Initial margin on the path
+- Options: stressed delta plus CCP procyclicality ★ · today's IM held fixed · full SIMM recompute every close
+- Choice (owner): **SIMM-lite of today per exchanged set × the set's risk at the stressed point** (delta at the day's
+  moves, so gamma raises it and cuts lower it); **CCP sets also × their realised volatility** (EWMA, λ 0.94);
+  **fund PB margin follows gross exposure**.
+
+### 52.3 Funding scenarios
+- Options: defaults editable in Admin ★ · fixed in code · market-wide only
+- Choice (owner): **three scenarios stored in `stress_funding_rule`, edited in Admin → Stress funding or
+  `novera stress-setup funding`** by Head of Market Risk or CRO (role matrix `STRESS_FUNDING`), audited
+  `STRESS_FUNDING_CHANGED`; a run records the rules it applied (`stress_funding_rules`). Normal: today's terms.
+  Firm-specific: our CSA thresholds go to zero (downgrade), repo lenders ask +5 points of haircut at each roll.
+  Market-wide: collateral haircuts (CSA, IM collateral, HQLA) double.
+
+### 52.4 The spiral
+- Options: managed book sells to a fixed point ★ · report the shortfall only · spiral on both books
+- Choice (owner): **the managed book sells a share of every position when a close leaves it short**, within the day's
+  stressed volume less what the desks already sold, at the MR-023 cost; **half the square-root impact stays in the price**
+  and re-marks what is held, which calls more margin; at most 10 rounds a close. A close still short is the day the
+  firm fails. **The frozen book never sells**: it reports the day its liquidity runs out.
+
+### 52.5 Not asked, chosen here
+- **CCP margin is capped at 2× today's** (`ccp_margin_cap`, editable). Uncapped, one instantaneous Credit +150bp read as a
+  14-sigma day tripled LCH London margin (237m → 845m) and the instant table showed 1.15bn of IM. CCPs damp this by rule
+  (EMIR anti-procyclicality tools); real increases in March 2020 were of the order of 2×.
+- **Impact is priced on the day's cumulative forced sale; each spiral round pays the increment.** Pricing each round as a
+  fresh sale never converged: the square-root re-mark of a small sale is as large as its proceeds. With the cumulative
+  sale the law is concave and the rounds shrink. A shortfall within 10⁻⁶ of today's liquidity counts as met.
+- **Margin regime per trade**: cleared, listed futures, listed options sold and short securities pay variation margin daily;
+  CSA sets call collateral beyond thresholds (posted as bonds at the CSA haircut); owned securities and unmargined trades
+  move no cash. Minimum transfer amounts, rounding and independent amounts are left out.
+- **Contractual flows** count only on trades that are neither margined nor under a CSA, and exclude principals.
+- **Every stress scenario is also read as an instantaneous call** before any action (framework part D, "for each scenario").
+- **The hedge futures post margin** (`HEDGE_MARGIN`: 2% rates, 6% equity index, 3% FX, 10% commodity, 35% crypto).
+
+### Results on the demo (latest runs)
+| | Bank (15 Sep) | Fund (14 Sep) |
+|---|---|---|
+| Liquidity today | 1,961m (1,000m cash buffer + 961m HQLA after net repo encumbrance) | 1,033m (NAV 2,000m less PB margin 967m) |
+| Paths × books × funding scenarios | 66 × 2 × 3 | 63 × 2 × 3 |
+| Lowest liquidity, frozen (normal / firm-specific / market-wide) | 657m / **470m** / 554m | 578m in all three |
+| Lowest liquidity, managed | 1,192m / 1,021m / 1,143m | 922m in all three |
+| Peak cash out, frozen | 1,304m / 1,491m / 1,407m | 455m |
+| Worst path | Monte Carlo #4, firm-specific: frozen VM −1,027m and posted IM +469m by day 20 | Monte Carlo #2: P&L −225m and margin +231m |
+| Paths where liquidity runs out (frozen / managed) | 0 / 0 | 0 / 0 |
+| Spiral (forced sales) | never needed | never needed |
+| Worst instantaneous call | Credit +150bp, market-wide: 918m used, 1,043m left | Inflation shock: 127m used, 906m left |
+| Stage time (paths and chain) | 28 s (22 s in round 51) | 18 s (16 s) |
+
+- **Neither firm runs out on any path at the default buffer.** The bank's frozen book comes closest: on its worst
+  fat-tailed path, firm-specific, liquidity falls from 1,961m to 470m. With a cash buffer under about 0.5bn that path
+  would fail. The cash buffer is the number to set with Treasury.
+- **Acting saves liquidity as well as P&L.** On the same path the managed book loses about as much (−642m against −655m
+  frozen), but its lowest liquidity is 1,021m, not 470m. The desks' cuts lower the margin they post and turn bonds
+  into cash (HQLA −1,762m, matched by sale proceeds).
+- **Initial margin is the largest call.** On the bank's worst frozen path posted IM rises by 469m in 20 days, half the VM.
+  Gamma at the stressed point and the procyclical CCP sets drive it; LCH London alone posts 237m today.
+- **The firm-specific scenario costs the bank about 200m more than normal.** The downgrade calls 45m on day one;
+  2.25bn of repo rolls in the first week at +5 points (113m); the rest is the thresholds lost on the path.
+- **The fund's scenarios coincide**, as expected (52.3): it has no thresholds, haircuts or repo.
+- The spiral and the failure day are exercised in the tests: with no cash buffer, the 300-trade test bank's frozen book
+  runs out on day 15 and the managed book sells and survives.
+
+- No demo rebuild: the latest bank and fund runs got the stage by single-stage re-run (`run_mvceg8ez_07575a`, `run_mvcegyp8_a874e6`), chained on the
+  round-51 re-runs. The MR-023 tables are unchanged by the re-run.
+- Where: `risk/funding_chain.py`; `risk/stress_paths.py` (`costs`, `remark`, `stressed_loadings`, `frozen_walk`, `_Seller`,
+  the walk in the managed loop); `workflows/stress_paths.py` (`funding_inputs`, funding rules); `workflows/eod.py`
+  (`stress_funding_rules`, model version `funding_chain`); `workflows/rerun.py`; `regulatory/engine.py` (`simm_base_vols`);
+  `storage` (`stress_funding_rule`); `security/permissions.py`; `GET /runs/{run_id}/stress-liquidity`,
+  `GET`/`POST /admin/stress/funding`; `novera stress-setup funding`; Stress page and Admin page; MR-024;
+  `tests/test_funding_chain.py`, `tests/test_workflows.py`, `tests/test_api.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names
@@ -2464,5 +2548,14 @@ covers the P&L path, the triggers and the actions.
     positions first or compresses offsetting trades would cut faster and cheaper; spread is paid on both legs.
 34. **The hedge set is narrow** (51.6): no vega, credit, basis or EM-rates hedge; single names hedge on their
     index with a beta of one; futures volumes are set, not observed.
-35. **Actions are judged without margin or funding** (51): a managed book that loses less may still run out of
-    cash; round 52 adds margin calls, collateral and funding to the same paths.
+35. **Closed in round 52** (MR-024): the same paths carry margin, collateral, funding and days of survival. Was:
+    **Actions are judged without margin or funding** (51).
+36. **No balance sheet behind the bank's liquidity** (52.1): unsecured funding, deposits and the funding of the bond
+    inventory are absent, short bonds are assumed covered outside the book and HQLA nets repo borrowing against
+    reverse repo; the cash buffer is a set number until round 57's resources table.
+37. **No initial margin on the existing listed book** (52): listed futures pay variation margin but hold no exchange margin
+    today, so a listed book's cash out is understated; only the hedge futures post margin.
+38. **The fund's three funding scenarios coincide** (52.3): its CSAs carry no thresholds or haircuts, so firm-specific and
+    market-wide differ from normal only through the PB margin multiplier, 1 until round 56 tightens terms.
+39. **CCP procyclicality cap and permanent impact are set, not calibrated** (52.4, 52.5): 2× and 50% decide how hard the
+    spiral bites.

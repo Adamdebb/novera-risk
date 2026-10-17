@@ -10658,6 +10658,39 @@
             ],
             "title": "Liquidity Adjusted Var"
           },
+          "liquidity_failures_frozen": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Failures Frozen"
+          },
+          "liquidity_failures_managed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Failures Managed"
+          },
+          "liquidity_first_failure_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity First Failure Day"
+          },
           "liquidity_flags": {
             "anyOf": [
               {
@@ -10679,6 +10712,83 @@
               }
             ],
             "title": "Liquidity Horizon Days"
+          },
+          "liquidity_spiral_paths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Spiral Paths"
+          },
+          "liquidity_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Start"
+          },
+          "liquidity_worst_funding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Worst Funding"
+          },
+          "liquidity_worst_instant": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Worst Instant"
+          },
+          "liquidity_worst_instant_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Worst Instant Scenario"
+          },
+          "liquidity_worst_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Worst Min"
+          },
+          "liquidity_worst_path_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidity Worst Path Id"
           },
           "lookthrough_flags": {
             "anyOf": [
@@ -13056,6 +13166,76 @@
         "title": "StressExplain",
         "type": "object"
       },
+      "StressFundingBody": {
+        "properties": {
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "rules": {
+            "description": "The (resources) row and the NORMAL, FIRM_SPECIFIC and MARKET_WIDE rows (MR-024)",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "title": "StressFundingBody",
+        "type": "object"
+      },
+      "StressFundingRules": {
+        "additionalProperties": true,
+        "description": "The liquidity resources row and the three funding scenarios the stress paths' cash walks\napply. Record MR-024.",
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "rules": {
+            "description": "(resources) first, then NORMAL, FIRM_SPECIFIC, MARKET_WIDE",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "scenarios": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "source": {
+            "description": "stored, or defaults when no rules have been saved",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "source",
+          "rules",
+          "scenarios",
+          "fields"
+        ],
+        "title": "StressFundingRules",
+        "type": "object"
+      },
       "StressLibrary": {
         "additionalProperties": true,
         "description": "The stress library by category with the shocks each scenario applies, and for\nhistorical windows the realised moves of headline factors. Record MR-005.",
@@ -13091,6 +13271,372 @@
           "summary"
         ],
         "title": "StressLibrary",
+        "type": "object"
+      },
+      "StressLiquidity": {
+        "additionalProperties": true,
+        "description": "Margin, collateral and funding chain on the stress paths under three funding scenarios, one\npath's days, and every stress scenario as an instantaneous call on liquidity. Record MR-024.\n``available`` is false for a run made before round 52.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/StressLiquidityDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "instant": {
+            "items": {
+              "$ref": "#/components/schemas/StressLiquidityInstant"
+            },
+            "title": "Instant",
+            "type": "array"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "path_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Id"
+          },
+          "paths": {
+            "items": {
+              "$ref": "#/components/schemas/StressLiquidityRow"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "StressLiquidity",
+        "type": "object"
+      },
+      "StressLiquidityDay": {
+        "additionalProperties": true,
+        "properties": {
+          "book": {
+            "title": "Book",
+            "type": "string"
+          },
+          "collateral": {
+            "title": "Collateral",
+            "type": "number"
+          },
+          "contractual": {
+            "title": "Contractual",
+            "type": "number"
+          },
+          "costs": {
+            "title": "Costs",
+            "type": "number"
+          },
+          "day": {
+            "title": "Day",
+            "type": "integer"
+          },
+          "forced_sold": {
+            "title": "Forced Sold",
+            "type": "number"
+          },
+          "funding_scenario": {
+            "title": "Funding Scenario",
+            "type": "string"
+          },
+          "hqla": {
+            "title": "Hqla",
+            "type": "number"
+          },
+          "initial_margin": {
+            "title": "Initial Margin",
+            "type": "number"
+          },
+          "net_liquidity": {
+            "title": "Net Liquidity",
+            "type": "number"
+          },
+          "path_id": {
+            "title": "Path Id",
+            "type": "string"
+          },
+          "permanent_impact": {
+            "title": "Permanent Impact",
+            "type": "number"
+          },
+          "sale_proceeds": {
+            "title": "Sale Proceeds",
+            "type": "number"
+          },
+          "spiral_rounds": {
+            "title": "Spiral Rounds",
+            "type": "integer"
+          },
+          "variation_margin": {
+            "title": "Variation Margin",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path_id",
+          "book",
+          "funding_scenario",
+          "day",
+          "variation_margin",
+          "collateral",
+          "initial_margin",
+          "hqla",
+          "contractual",
+          "sale_proceeds",
+          "costs",
+          "net_liquidity",
+          "forced_sold",
+          "spiral_rounds",
+          "permanent_impact"
+        ],
+        "title": "StressLiquidityDay",
+        "type": "object"
+      },
+      "StressLiquidityInstant": {
+        "additionalProperties": true,
+        "properties": {
+          "collateral": {
+            "title": "Collateral",
+            "type": "number"
+          },
+          "funding_scenario": {
+            "title": "Funding Scenario",
+            "type": "string"
+          },
+          "hqla": {
+            "title": "Hqla",
+            "type": "number"
+          },
+          "initial_margin": {
+            "title": "Initial Margin",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net_call": {
+            "description": "Liquidity consumed by the instantaneous move before any action",
+            "title": "Net Call",
+            "type": "number"
+          },
+          "net_liquidity": {
+            "title": "Net Liquidity",
+            "type": "number"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "start_liquidity": {
+            "title": "Start Liquidity",
+            "type": "number"
+          },
+          "stress_set": {
+            "description": "LIMIT or INFORMATION",
+            "title": "Stress Set",
+            "type": "string"
+          },
+          "survives": {
+            "title": "Survives",
+            "type": "boolean"
+          },
+          "variation_margin": {
+            "title": "Variation Margin",
+            "type": "number"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "name",
+          "stress_set",
+          "funding_scenario",
+          "pnl",
+          "variation_margin",
+          "collateral",
+          "initial_margin",
+          "hqla",
+          "net_call",
+          "start_liquidity",
+          "net_liquidity",
+          "survives"
+        ],
+        "title": "StressLiquidityInstant",
+        "type": "object"
+      },
+      "StressLiquidityRow": {
+        "additionalProperties": true,
+        "properties": {
+          "book": {
+            "description": "FROZEN (nobody acts, nobody sells) or MANAGED (action rules and forced sales)",
+            "title": "Book",
+            "type": "string"
+          },
+          "collateral": {
+            "description": "CSA collateral change at the end, haircut included",
+            "title": "Collateral",
+            "type": "number"
+          },
+          "contractual": {
+            "title": "Contractual",
+            "type": "number"
+          },
+          "end_liquidity": {
+            "title": "End Liquidity",
+            "type": "number"
+          },
+          "end_pnl": {
+            "title": "End Pnl",
+            "type": "number"
+          },
+          "forced_sale_cost": {
+            "title": "Forced Sale Cost",
+            "type": "number"
+          },
+          "forced_sale_days": {
+            "title": "Forced Sale Days",
+            "type": "integer"
+          },
+          "forced_sold": {
+            "description": "Share of positions sold by force, summed over trades and days",
+            "title": "Forced Sold",
+            "type": "number"
+          },
+          "funding_scenario": {
+            "description": "NORMAL, FIRM_SPECIFIC or MARKET_WIDE",
+            "title": "Funding Scenario",
+            "type": "string"
+          },
+          "hqla": {
+            "description": "Change in HQLA value less encumbrance at the end",
+            "title": "Hqla",
+            "type": "number"
+          },
+          "initial_margin": {
+            "description": "Change in initial margin we post at the end (negative: we post more)",
+            "title": "Initial Margin",
+            "type": "number"
+          },
+          "min_liquidity": {
+            "title": "Min Liquidity",
+            "type": "number"
+          },
+          "min_liquidity_day": {
+            "title": "Min Liquidity Day",
+            "type": "integer"
+          },
+          "path_id": {
+            "title": "Path Id",
+            "type": "string"
+          },
+          "peak_cash_out": {
+            "description": "Largest fall of liquidity below today's",
+            "title": "Peak Cash Out",
+            "type": "number"
+          },
+          "permanent_impact": {
+            "description": "Loss on held positions from the price impact forced sales left",
+            "title": "Permanent Impact",
+            "type": "number"
+          },
+          "spiral_rounds_max": {
+            "title": "Spiral Rounds Max",
+            "type": "integer"
+          },
+          "start_liquidity": {
+            "description": "Today: cash buffer + HQLA less repo encumbrance (bank); NAV less prime-broker margin (fund)",
+            "title": "Start Liquidity",
+            "type": "number"
+          },
+          "survival_day": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First close liquidity is below zero after any forced sale; null when the firm lasts the horizon",
+            "title": "Survival Day"
+          },
+          "survives": {
+            "title": "Survives",
+            "type": "boolean"
+          },
+          "unresolved": {
+            "description": "The spiral sold what it could and liquidity stayed below zero",
+            "title": "Unresolved",
+            "type": "boolean"
+          },
+          "variation_margin": {
+            "description": "Cumulative cash from margined P&L (fund: all P&L)",
+            "title": "Variation Margin",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path_id",
+          "book",
+          "funding_scenario",
+          "start_liquidity",
+          "min_liquidity",
+          "min_liquidity_day",
+          "end_liquidity",
+          "peak_cash_out",
+          "survives",
+          "variation_margin",
+          "collateral",
+          "initial_margin",
+          "hqla",
+          "contractual",
+          "forced_sale_days",
+          "forced_sold",
+          "forced_sale_cost",
+          "permanent_impact",
+          "spiral_rounds_max",
+          "unresolved",
+          "end_pnl"
+        ],
+        "title": "StressLiquidityRow",
         "type": "object"
       },
       "StressMCQuantile": {
@@ -17740,6 +18286,146 @@
           }
         },
         "summary": "Decide Stress Scenario"
+      }
+    },
+    "/admin/stress/funding": {
+      "get": {
+        "operationId": "stress_funding_admin_stress_funding_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressFundingRules"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Funding"
+      },
+      "post": {
+        "operationId": "set_stress_funding_admin_stress_funding_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressFundingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressFundingRules"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Set Stress Funding"
       }
     },
     "/admin/stress/narratives": {
@@ -24672,6 +25358,97 @@
           }
         },
         "summary": "Stress Explain"
+      }
+    },
+    "/runs/{run_id}/stress-liquidity": {
+      "get": {
+        "operationId": "stress_liquidity_runs__run_id__stress_liquidity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Path Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressLiquidity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Stress Liquidity"
       }
     },
     "/runs/{run_id}/stress-monte-carlo": {

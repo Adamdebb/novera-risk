@@ -578,3 +578,14 @@ def test_eod_stores_stress_paths_and_the_stage_reruns_exactly(db_path, result, t
         assert res.run.summary["path_worst_drawdown_frozen"] == pytest.approx(s["path_worst_drawdown_frozen"])
         paths = frames["stress_paths"]
         assert set(paths["book"]) == {"FROZEN", "MANAGED"}
+        # MR-024: the funding chain walks the same paths under the recorded funding rules.
+        assert [r["scope"] for r in result.run.config["stress_funding_rules"]][0] == "(resources)"
+        liq = frames["stress_liquidity"]
+        assert len(liq) == 3 * len(paths) and set(liq["funding_scenario"]) == {
+            "NORMAL",
+            "FIRM_SPECIFIC",
+            "MARKET_WIDE",
+        }
+        assert s["liquidity_start"] > 0 and res.run.summary["liquidity_start"] == pytest.approx(
+            s["liquidity_start"]
+        )

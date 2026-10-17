@@ -103,9 +103,9 @@ configuration (`stress_action_rules`).
 - Theta accrues on calendar days at today's rate.
 
 ## Limitations
-- **No margin, collateral or funding** (round 52), **no redemptions** (round 56) and no counterparty
-  default (round 54): cash out and days of survival are not yet reported.
-- **No feedback of our selling on prices** beyond the impact cost: the liquidity spiral is round 52.
+- **Cash is a separate record.** Margin, collateral, funding, days of survival and the liquidity spiral are
+  MR-024, on the same paths; this record's managed book follows the action rules only (no forced sales).
+  No redemptions (round 56) and no counterparty default (round 54).
 - Positions are cut proportionally; a desk that would close its riskiest positions first, or net
   offsetting trades by compression, would do better.
 - The impact of the net risk sold is measured in the PCA space, which carries no idiosyncratic risk.
@@ -128,3 +128,4 @@ currency without listed futures is not hedged; Monte Carlo compounds prices as l
 | Version | Date | Change | Author |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-10-17 | Frozen and managed 20-day stress paths with stop-loss triggers, cuts, option buy-backs and futures hedges (decision 51) | Novera |
+| 1.0.0 | 2026-10-17 | The engine also walks the MR-024 funding chain (forced sales at the same close, priced on the day's cumulative sale); this record's outputs are unchanged (decision 52) | Novera |
