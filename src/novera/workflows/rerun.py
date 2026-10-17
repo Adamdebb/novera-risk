@@ -63,6 +63,7 @@ from novera.workflows.eod import (
     persist_var,
     run_dir,
 )
+from novera.workflows.liquidation_stress import LIQUIDATION_TABLES
 from novera.workflows.pca_stress import (
     REVERSE_STRESS_TABLES,
     STRESS_MC_TABLES,
@@ -311,6 +312,28 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
+        "liquidation_stress",
+        "Liquidation stress",
+        "Stressed exit horizons per market, the cost of getting out (spread and square-root impact) and its "
+        "concentration add-on, every scenario's loss scaled for slow exits, and sector shocks (MR-025).",
+        LIQUIDATION_TABLES,
+        (),
+        (
+            "liquidation_exit_cost",
+            "liquidation_concentration_addon",
+            "liquidation_longest_market",
+            "liquidation_longest_days",
+            "liquidation_markets_over_10d",
+            "liquidation_worst_scenario",
+            "liquidation_worst_loss",
+            "liquidation_worst_plain",
+            "liquidation_largest_horizon_addon_scenario",
+            "liquidation_largest_horizon_addon",
+            "liquidation_worst_sector",
+            "liquidation_worst_sector_loss",
+        ),
+    ),
+    Stage(
         "pnl",
         "P&L explain",
         "Day-on-day P&L waterfall with its sensitivity challenger (MR-007); needs a previous market "
@@ -371,6 +394,7 @@ class _Inputs:
             proxies=c.get("proxies"),
             stress_action_rules=c.get("stress_action_rules"),
             stress_funding_rules=c.get("stress_funding_rules"),
+            liquidation_stress=c.get("liquidation_stress", True),
         )
         self.reporting = parent.reporting_currency
         self.market = repo.load_run_market(parent.run_id)
@@ -567,6 +591,34 @@ def _stage_stress_paths(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[s
     return res.summary()
 
 
+def _stage_liquidation_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
+    from novera.workflows.liquidation_stress import persist_liquidation, run_stage
+    from novera.workflows.stress_paths import rules_for_run
+
+    far = {
+        t.trade_id
+        for t in x.snapshot.trades
+        if t.product_type.value == "COMMODITY_FUTURE"
+        and (t.instrument.expiry_date - x.market.as_of).days > 300
+    }
+    rules = x.cfg.stress_action_rules
+    if rules is None:
+        rules = [r.to_dict() for r in rules_for_run(repo)]
+    res = run_stage(
+        x.pf,
+        x.sens,
+        x.history,
+        x.val.table,
+        liquidity(x.val.table, x.hs.var, far).by_trade,
+        x.stress,
+        x.limit_stress,
+        rules,
+        episode_windows(x.history, x.repo.load_market_episodes()),
+    )
+    persist_liquidation(repo, rid, res)
+    return res.summary()
+
+
 def _stage_stress(x: _Inputs, repo, rid: str, runs_dir, workers) -> dict[str, Any]:
     persist_stress(repo, rid, x.stress, x.stress_run.recorded, x.stress_run.info)
     return stress_headline(x.stress, x.limit_stress, x.val.table)
@@ -696,6 +748,7 @@ _STAGE_FUNCTIONS = {
     "limits": _stage_limits,
     "concentration": _stage_concentration,
     "stress_paths": _stage_stress_paths,
+    "liquidation_stress": _stage_liquidation_stress,
     "pnl": _stage_pnl,
     "regulatory": _stage_regulatory,
     "counterparty": _stage_counterparty,

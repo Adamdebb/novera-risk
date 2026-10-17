@@ -541,8 +541,8 @@ def rerun_cmd(
     stage: str = typer.Option(
         ...,
         help="valuation, sensitivities, var, backtest, stress, factor_stress, stress_explain, "
-        "reverse_stress, stress_monte_carlo, limits, concentration, stress_paths, pnl, regulatory, "
-        "counterparty, fund",
+        "reverse_stress, stress_monte_carlo, limits, concentration, stress_paths, liquidation_stress, pnl, "
+        "regulatory, counterparty, fund",
     ),
     actor: str = typer.Option("risk-control", help="Who asked for the re-run (audit trail)"),
     reason: str = typer.Option("", help="Why (audit trail)"),

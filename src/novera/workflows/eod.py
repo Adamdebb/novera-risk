@@ -62,6 +62,7 @@ from novera.risk.factor_stress import MODEL_VERSION as FACTOR_STRESS_VERSION
 from novera.risk.factor_stress import run_factor_stress
 from novera.risk.funding_chain import MODEL_VERSION as FUNDING_CHAIN_VERSION
 from novera.risk.funding_chain import FundingRules
+from novera.risk.liquidation_stress import MODEL_VERSION as LIQUIDATION_VERSION
 from novera.risk.liquidity import MODEL_VERSION as LIQ_VERSION
 from novera.risk.lookthrough import MODEL_VERSION as LOOKTHROUGH_VERSION
 from novera.risk.monte_carlo import MODEL_VERSION as MC_VERSION
@@ -76,6 +77,8 @@ from novera.risk.stress_paths import MODEL_VERSION as STRESS_PATHS_VERSION
 from novera.risk.var_measures import MeasureSet, VaRMeasure, compute_measures
 from novera.storage.duckdb_repository import DuckDBRepository
 from novera.workflows.alerts import alerts_from_run, channels_from_settings, dispatch
+from novera.workflows.liquidation_stress import persist_liquidation
+from novera.workflows.liquidation_stress import run_stage as run_liquidation_stage
 from novera.workflows.pca_stress import persist_reverse_stress, persist_stress_mc, run_pca_stress
 from novera.workflows.runs import AuditEvent, RunRecord, new_run_id
 from novera.workflows.stress_paths import funding_inputs, persist_stress_paths
@@ -102,6 +105,7 @@ MODEL_VERSIONS = {
     "stress_monte_carlo": STRESS_MC_VERSION,
     "stress_paths": STRESS_PATHS_VERSION,
     "funding_chain": FUNDING_CHAIN_VERSION,
+    "liquidation_stress": LIQUIDATION_VERSION,
 }
 
 
@@ -139,6 +143,9 @@ class EODConfig:
     """Twenty-day stress paths walked frozen and managed by the action rules (MR-023); off for the dry run."""
     stress_action_rules: list[dict[str, Any]] | None = None
     """The action rules the paths apply (MR-023); None reads the stored rules, or the defaults."""
+    liquidation_stress: bool = True
+    """Exit horizons, liquidation cost, concentration add-ons and liquidity-adjusted stress losses (MR-025);
+    off for the dry run."""
     stress_funding_rules: list[dict[str, Any]] | None = None
     """The funding rules and liquidity resources the paths' cash walks apply (MR-024); None reads the
     stored rules, or the defaults."""
@@ -162,6 +169,7 @@ class EODConfig:
             "stress_paths": self.stress_paths,
             "stress_action_rules": self.stress_action_rules,
             "stress_funding_rules": self.stress_funding_rules,
+            "liquidation_stress": self.liquidation_stress,
         }
 
 
@@ -412,6 +420,24 @@ def run_eod(
             if cfg.stress_paths
             else None
         )
+    with _timed(timings, "liquidation_stress"):
+        liquidation = (
+            run_liquidation_stage(
+                pf,
+                sens,
+                history,
+                val.table,
+                liq.by_trade,
+                stress,
+                limit_stress,
+                cfg.stress_action_rules,
+                episode_windows(history, repo.load_market_episodes()),
+                pca.book if pca else None,
+                pca.pca_space if pca else None,
+            )
+            if cfg.liquidation_stress
+            else None
+        )
     with _timed(timings, "pnl"):
         pnl = None
         if prev_market is not None:
@@ -494,6 +520,7 @@ def run_eod(
         **(pca.reverse.summary() if pca and pca.reverse else {}),
         **(pca.monte_carlo.summary() if pca and pca.monte_carlo else {}),
         **(spaths.summary() if spaths else {}),
+        **(liquidation.summary() if liquidation else {}),
         "limits_monitored": int(len(limit_table)),
         "breaches": breaches,
         "warnings": warnings,
@@ -554,6 +581,7 @@ def run_eod(
                     "stress_explain": sexplain,
                     "pca_stress": pca,
                     "stress_paths": spaths,
+                    "liquidation_stress": liquidation,
                 },
             )
         # The run stays RUNNING from here: the engines below read the stored run by id, and a
@@ -930,6 +958,8 @@ def _persist(
         persist_stress_mc(repo, rid, pca.monte_carlo)
     if (extras or {}).get("stress_paths") is not None:
         persist_stress_paths(repo, rid, extras["stress_paths"])  # type: ignore[index]
+    if (extras or {}).get("liquidation_stress") is not None:
+        persist_liquidation(repo, rid, extras["liquidation_stress"])  # type: ignore[index]
     if len(limit_table):
         repo.save_run_frame(rid, "limits", limit_table)
     repo.save_run_frame(

@@ -473,6 +473,31 @@ class RiskService:
             out["parameters"] = p
         return out
 
+    def liquidation_stress(self, run_id: str | None = None, scenario_id: str | None = None) -> dict[str, Any]:
+        """Markets by exit cost, issuers, sectors, every scenario's liquidity-adjusted loss, and for one
+        scenario (the worst by default) its desks and the positions that add most (MR-025)."""
+        r, sc = self._frame(run_id, "liquidation_stress")
+        out: dict[str, Any] = {"record": "MR-025", "run_id": r.run_id, "available": not sc.empty}
+        if sc.empty:
+            return out
+        sc = sc.sort_values("liquidation_loss", kind="stable")
+        out["scenarios"] = _records(sc)
+        sid = scenario_id or str(sc.iloc[0]["scenario_id"])
+        out["scenario_id"] = sid
+        for key, table in (("desks", "liquidation_desks"), ("positions", "liquidation_positions")):
+            f = self.repo.load_run_frame(r.run_id, table)
+            out[key] = _records(f[f["scenario_id"] == sid]) if len(f) else []
+        m = self.repo.load_run_frame(r.run_id, "liquidation_markets")
+        out["markets"] = (
+            _records(m.sort_values("exit_cost", ascending=False, kind="stable").head(50)) if len(m) else []
+        )
+        for key, table in (("issuers", "liquidation_issuers"), ("sectors", "liquidation_sectors")):
+            f = self.repo.load_run_frame(r.run_id, table)
+            out[key] = _records(f.head(50)) if len(f) else []
+        par = self.repo.load_run_frame(r.run_id, "liquidation_parameters")
+        out["parameters"] = _records(par)[0] if len(par) else None
+        return out
+
     def stress_funding(self) -> dict[str, Any]:
         """The funding scenarios and liquidity resources the stress paths' cash walks apply (MR-024)."""
         from novera.workflows import stress_paths

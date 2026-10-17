@@ -558,6 +558,25 @@ def test_eod_stores_reverse_stress_and_monte_carlo_and_their_stages_rerun_exactl
         assert len(confirmed) and (confirmed["full_loss"] / confirmed["loss_target"] - 1).abs().max() < 0.02
 
 
+def test_eod_stores_liquidation_stress_and_the_stage_reruns_exactly(db_path, result, tmp_path):
+    """MR-025 runs every EOD; a re-run of the stage reproduces every table."""
+    from novera.workflows.liquidation_stress import LIQUIDATION_TABLES
+    from novera.workflows.rerun import rerun_stage
+
+    s = result.run.summary
+    assert s["liquidation_exit_cost"] > 0 and "liquidation_stress" in result.run.timings
+    with DuckDBRepository(db_path) as repo:
+        frames = {t: repo.load_run_frame(result.run.run_id, t) for t in LIQUIDATION_TABLES}
+        assert all(len(frames[t]) for t in ("liquidation_markets", "liquidation_stress", "liquidation_desks"))
+        res = rerun_stage(
+            repo, result.run.run_id, "liquidation_stress", "Risk Control", "fixture check", runs_dir=tmp_path
+        )
+        for t in LIQUIDATION_TABLES:
+            again = repo.load_run_frame(res.run.run_id, t)
+            pd.testing.assert_frame_equal(again.reset_index(drop=True), frames[t].reset_index(drop=True))
+        assert res.changed == {}
+
+
 def test_eod_stores_stress_paths_and_the_stage_reruns_exactly(db_path, result, tmp_path):
     """MR-023 runs every EOD with the recorded action rules; a re-run of the stage reproduces it."""
     from novera.workflows.rerun import rerun_stage

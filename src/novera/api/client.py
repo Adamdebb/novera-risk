@@ -46,6 +46,9 @@ class RiskClient(Protocol):
     def stress_monte_carlo(self, run_id: str | None = None) -> dict[str, Any]: ...
     def stress_paths(self, run_id: str | None = None, path_id: str | None = None) -> dict[str, Any]: ...
     def stress_liquidity(self, run_id: str | None = None, path_id: str | None = None) -> dict[str, Any]: ...
+    def liquidation_stress(
+        self, run_id: str | None = None, scenario_id: str | None = None
+    ) -> dict[str, Any]: ...
     def limits(
         self, run_id: str | None = None, status: str | None = None, level: str | None = None
     ) -> list[dict]: ...
@@ -312,6 +315,9 @@ class HttpClient:
 
     def stress_liquidity(self, run_id=None, path_id=None):
         return self._get(f"/runs/{self._rid(run_id)}/stress-liquidity", path_id=path_id)
+
+    def liquidation_stress(self, run_id=None, scenario_id=None):
+        return self._get(f"/runs/{self._rid(run_id)}/liquidation-stress", scenario_id=scenario_id)
 
     def limits(self, run_id=None, status=None, level=None):
         return self._get(f"/runs/{self._rid(run_id)}/limits", status=status, level=level)

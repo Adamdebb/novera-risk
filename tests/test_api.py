@@ -759,6 +759,20 @@ def test_stress_liquidity_endpoints(client, tokens):
     client.post("/admin/stress/funding", json={"rules": rows}, **cro)
 
 
+def test_liquidation_stress_endpoint(client):
+    """MR-025: scenarios worst first, one scenario's desks and positions, markets, issuers, sectors."""
+    lz = client.get("/runs/latest/liquidation-stress").json()
+    assert lz["record"] == "MR-025" and lz["available"] and lz["markets"]
+    losses = [x["liquidation_loss"] for x in lz["scenarios"]]
+    assert losses == sorted(losses) and lz["scenario_id"] == lz["scenarios"][0]["scenario_id"]
+    one = client.get(
+        "/runs/latest/liquidation-stress", params={"scenario_id": lz["scenarios"][-1]["scenario_id"]}
+    )
+    assert one.status_code == 200 and all(
+        d["scenario_id"] == one.json()["scenario_id"] for d in one.json()["desks"]
+    )
+
+
 def test_var_setup_endpoints(client, tokens):
     cro = as_(tokens, "cro")
     st = client.get("/admin/var/setup").json()

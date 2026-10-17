@@ -505,6 +505,11 @@ def stress_liquidity(run_id: str, path_id: str | None = None, svc: RiskService =
     return svc.stress_liquidity(run_id, path_id)
 
 
+@app.get("/runs/{run_id}/liquidation-stress", response_model=s.LiquidationStress)
+def liquidation_stress(run_id: str, scenario_id: str | None = None, svc: RiskService = Depends(service)):
+    return svc.liquidation_stress(run_id, scenario_id)
+
+
 @app.get("/reference/stress-library", response_model=s.StressLibrary)
 def stress_library(svc: RiskService = Depends(service)):
     return svc.stress_library()

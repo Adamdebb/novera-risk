@@ -2440,6 +2440,66 @@ One question round. The cash chain walks the same paths as round 51 (MR-023), wh
   `GET`/`POST /admin/stress/funding`; `novera stress-setup funding`; Stress page and Admin page; MR-024;
   `tests/test_funding_chain.py`, `tests/test_workflows.py`, `tests/test_api.py`.
 
+## Round 53 — Concentration and liquidation stress (2026-10-17)
+
+Context: the eighth round of the stress framework (`docs/08-stress-framework.md`, part D: liquidation cost,
+screen against liquidation value, concentration add-ons). One question round.
+
+### 53.1 Loss of a slow exit
+- Options: scale by √(H/10) above 10 days ★ · scale by √H above one day · no scaling, exit cost only
+- Choice (owner): **each trade's scenario P&L × √(H/10) where its market takes longer than 10 days to exit**,
+  capped at √12 (120 days, FRTB's longest horizon). H is the market's net position over participation × stressed
+  volume (MR-023 default rule: 20% of 50% of normal).
+
+### 53.2 Screen price against liquidation value
+- Options: square-root impact per market ★ · a haircut table by bucket · spread only
+- Choice (owner): **trades sharing one volume are pooled into a market and exited together**: stressed half spread
+  on the net share plus Y·σ·√(Q/V), σ the market's daily stressed P&L volatility; the **concentration add-on** is
+  that cost less the same cost trade by trade.
+
+### 53.3 Groupings
+- Choice (owner): **issuer/name, sector, option strike, delivery month** (all four). Sector: names of a sector held
+  through two or more names move together beyond their market by the 99th-percentile 10-day residual of the stored
+  history, in the direction that hurts.
+
+### 53.4 Scope
+- Options: every scenario, information ★ · LIMIT set only · feed the stress-loss limits now
+- Choice (owner): **every stress scenario of the run, information only, every EOD** (re-runnable stage
+  `liquidation_stress`); promotion waits for round 58.
+
+### 53.5 Not asked, chosen here
+- **OTC trades are not pooled.** The first version pooled swaps by product and currency: USD swaps took 22 days to
+  exit against MR-013's per-trade volume, and scaling the swaps but not their bond hedges added 515m to Credit
+  +150bp. OTC is unwound dealer by dealer, so each OTC trade is its own market.
+- **σ comes from the full stressed covariance** (every PCA component, MR-021), not from the kept components:
+  the fund's tail is single-name (round 50) and the kept components drop it.
+- **Exit cost is scenario-independent** (stressed regime volatility); the liquidation loss is the adjusted P&L less
+  the cost of exiting the whole book.
+- A market's cost is shared among its trades by their trade-view cost, for the desk view.
+
+### Results on the demo (latest runs)
+| | Bank (15 Sep) | Fund (14 Sep) |
+|---|---|---|
+| Markets / slower than 10 days | 922 / 3 | 603 / 2 |
+| Slowest market | Brent Aug 2027 future (ENERGY): 50 days | NVDA (EQ_LS_US, four trades): 68 days, 17 each |
+| Exit cost of the whole book | 274m | 65m |
+| Concentration add-on | −62m (offsets net: bonds by issuer and month) | +11m (NVDA alone +17.5m) |
+| Worst LIMIT scenario, plain → slow-exit adjusted → liquidation loss | Credit +150bp: −339m → −779m → −1,053m | Credit +150bp: −138m → −494m → −559m |
+| Of the slow-exit add-on, one market | Brent Aug 2027 alone −446m (the rest nets +6m) | NVDA −353m of −356m |
+| Worst sector shock | Consumer, +13% beyond the index: −5m | Technology, −6.7%: −19m plain, −53m adjusted |
+
+- **One position each.** The bank's add-on is the far-dated Brent future, the illiquid pocket the demo plants
+  (it is also the desk that never finishes its cut in round 51). The fund's is the NVDA block: four trades that each
+  look like 17 days but share one volume and take 68 together.
+- The fund's Credit +150bp liquidation loss (559m) is almost twice its 300m stress-loss limit; for information until
+  round 58.
+- No demo rebuild: the latest runs got the stage by re-run (`run_mvcn8urq_ae6484`, `run_mvcn99fh_6946a1`),
+  chained on the round-52 re-runs.
+- Where: `risk/liquidation_stress.py`; `workflows/liquidation_stress.py`; `workflows/eod.py` (step, model version,
+  `liquidation_stress` config); `workflows/rerun.py`; `workflows/limit_calibration.py` (off in the dry run);
+  `GET /runs/{run_id}/liquidation-stress`; Stress page; `risk/catalogue.py`; MR-025;
+  `tests/test_liquidation_stress.py`, `tests/test_workflows.py`, `tests/test_api.py`.
+
 ## Standing instructions given outside the question rounds
 
 - Do not read or use `../z-My_Tests` (private brainstorming), except a subfolder the owner names
@@ -2559,3 +2619,7 @@ One question round. The cash chain walks the same paths as round 51 (MR-023), wh
     market-wide differ from normal only through the PB margin multiplier, 1 until round 56 tightens terms.
 39. **CCP procyclicality cap and permanent impact are set, not calibrated** (52.4, 52.5): 2× and 50% decide how hard the
     spiral bites.
+40. **OTC concentration is not pooled** (53.5): many swaps in one currency and tenor show only through the trade view;
+    a DV01-based OTC market with dealer capacity would pool them.
+41. **Volumes are per product, not per name or month** (53, MR-013): two names of one product differ only through size,
+    so the slowest markets are the largest positions by construction.

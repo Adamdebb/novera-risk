@@ -153,6 +153,18 @@ class RunFigures(ApiModel):
     liquidity_spiral_paths: int | None = None
     liquidity_worst_instant_scenario: str | None = None
     liquidity_worst_instant: float | None = None
+    liquidation_exit_cost: float | None = None
+    liquidation_concentration_addon: float | None = None
+    liquidation_longest_market: str | None = None
+    liquidation_longest_days: float | None = None
+    liquidation_markets_over_10d: int | None = None
+    liquidation_worst_scenario: str | None = None
+    liquidation_worst_loss: float | None = None
+    liquidation_worst_plain: float | None = None
+    liquidation_largest_horizon_addon_scenario: str | None = None
+    liquidation_largest_horizon_addon: float | None = None
+    liquidation_worst_sector: str | None = None
+    liquidation_worst_sector_loss: float | None = None
     limits_monitored: int | None = None
     breaches: int | None = None
     warnings: int | None = None
@@ -1330,6 +1342,63 @@ class StressLiquidity(ApiModel):
     paths: list[StressLiquidityRow] = Field(default_factory=list)
     days: list[StressLiquidityDay] = Field(default_factory=list)
     instant: list[StressLiquidityInstant] = Field(default_factory=list)
+    parameters: dict[str, Any] | None = None
+
+
+class LiquidationMarket(ApiModel):
+    market: str = Field(
+        description="Trades sharing one volume: a name, a contract month, an option strike bucket, "
+        "or one OTC trade"
+    )
+    kind: str = Field(description="NAME, DELIVERY, STRIKE or OTC")
+    issuer: str
+    sector: str
+    desks: str
+    trades: int
+    net_exposure: float
+    gross_exposure: float
+    net_share: float
+    horizon_days: float = Field(
+        description="Days to exit the net position at the stressed volume and participation"
+    )
+    trade_horizon_days: float = Field(description="The longest of its trades on its own")
+    loss_scale: float = Field(description="√(horizon / 10), from 1 to √12")
+    daily_vol: float = Field(description="Daily stressed P&L volatility of the net position")
+    spread_cost: float
+    impact_cost: float
+    exit_cost: float = Field(description="Gap between screen price and liquidation value")
+    trade_view_cost: float = Field(
+        description="The same cost trade by trade, as if each had the market to itself"
+    )
+    concentration_addon: float = Field(description="exit_cost - trade_view_cost (negative when offsets net)")
+
+
+class LiquidationScenario(ApiModel):
+    scenario_id: str
+    name: str
+    stress_set: str
+    pnl: float
+    adjusted_pnl: float = Field(description="Each trade's P&L × its market's loss scale")
+    horizon_addon: float
+    exit_cost: float
+    liquidation_loss: float = Field(description="adjusted_pnl - exit_cost")
+    scaled_trades: int
+
+
+class LiquidationStress(ApiModel):
+    """Concentration and liquidation stress: markets, issuers and sectors, every scenario's liquidity-adjusted
+    loss, and one scenario's desks and positions. Record MR-025. ``available`` is false before round 53."""
+
+    record: str
+    run_id: str
+    available: bool
+    scenario_id: str | None = None
+    scenarios: list[LiquidationScenario] = Field(default_factory=list)
+    desks: list[dict[str, Any]] = Field(default_factory=list)
+    positions: list[dict[str, Any]] = Field(default_factory=list)
+    markets: list[LiquidationMarket] = Field(default_factory=list)
+    issuers: list[dict[str, Any]] = Field(default_factory=list)
+    sectors: list[dict[str, Any]] = Field(default_factory=list)
     parameters: dict[str, Any] | None = None
 
 

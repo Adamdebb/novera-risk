@@ -6536,6 +6536,264 @@
         "title": "LimitRow",
         "type": "object"
       },
+      "LiquidationMarket": {
+        "additionalProperties": true,
+        "properties": {
+          "concentration_addon": {
+            "description": "exit_cost - trade_view_cost (negative when offsets net)",
+            "title": "Concentration Addon",
+            "type": "number"
+          },
+          "daily_vol": {
+            "description": "Daily stressed P&L volatility of the net position",
+            "title": "Daily Vol",
+            "type": "number"
+          },
+          "desks": {
+            "title": "Desks",
+            "type": "string"
+          },
+          "exit_cost": {
+            "description": "Gap between screen price and liquidation value",
+            "title": "Exit Cost",
+            "type": "number"
+          },
+          "gross_exposure": {
+            "title": "Gross Exposure",
+            "type": "number"
+          },
+          "horizon_days": {
+            "description": "Days to exit the net position at the stressed volume and participation",
+            "title": "Horizon Days",
+            "type": "number"
+          },
+          "impact_cost": {
+            "title": "Impact Cost",
+            "type": "number"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "kind": {
+            "description": "NAME, DELIVERY, STRIKE or OTC",
+            "title": "Kind",
+            "type": "string"
+          },
+          "loss_scale": {
+            "description": "\u221a(horizon / 10), from 1 to \u221a12",
+            "title": "Loss Scale",
+            "type": "number"
+          },
+          "market": {
+            "description": "Trades sharing one volume: a name, a contract month, an option strike bucket, or one OTC trade",
+            "title": "Market",
+            "type": "string"
+          },
+          "net_exposure": {
+            "title": "Net Exposure",
+            "type": "number"
+          },
+          "net_share": {
+            "title": "Net Share",
+            "type": "number"
+          },
+          "sector": {
+            "title": "Sector",
+            "type": "string"
+          },
+          "spread_cost": {
+            "title": "Spread Cost",
+            "type": "number"
+          },
+          "trade_horizon_days": {
+            "description": "The longest of its trades on its own",
+            "title": "Trade Horizon Days",
+            "type": "number"
+          },
+          "trade_view_cost": {
+            "description": "The same cost trade by trade, as if each had the market to itself",
+            "title": "Trade View Cost",
+            "type": "number"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "market",
+          "kind",
+          "issuer",
+          "sector",
+          "desks",
+          "trades",
+          "net_exposure",
+          "gross_exposure",
+          "net_share",
+          "horizon_days",
+          "trade_horizon_days",
+          "loss_scale",
+          "daily_vol",
+          "spread_cost",
+          "impact_cost",
+          "exit_cost",
+          "trade_view_cost",
+          "concentration_addon"
+        ],
+        "title": "LiquidationMarket",
+        "type": "object"
+      },
+      "LiquidationScenario": {
+        "additionalProperties": true,
+        "properties": {
+          "adjusted_pnl": {
+            "description": "Each trade's P&L \u00d7 its market's loss scale",
+            "title": "Adjusted Pnl",
+            "type": "number"
+          },
+          "exit_cost": {
+            "title": "Exit Cost",
+            "type": "number"
+          },
+          "horizon_addon": {
+            "title": "Horizon Addon",
+            "type": "number"
+          },
+          "liquidation_loss": {
+            "description": "adjusted_pnl - exit_cost",
+            "title": "Liquidation Loss",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "number"
+          },
+          "scaled_trades": {
+            "title": "Scaled Trades",
+            "type": "integer"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "stress_set": {
+            "title": "Stress Set",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "name",
+          "stress_set",
+          "pnl",
+          "adjusted_pnl",
+          "horizon_addon",
+          "exit_cost",
+          "liquidation_loss",
+          "scaled_trades"
+        ],
+        "title": "LiquidationScenario",
+        "type": "object"
+      },
+      "LiquidationStress": {
+        "additionalProperties": true,
+        "description": "Concentration and liquidation stress: markets, issuers and sectors, every scenario's liquidity-adjusted\nloss, and one scenario's desks and positions. Record MR-025. ``available`` is false before round 53.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "desks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Desks",
+            "type": "array"
+          },
+          "issuers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Issuers",
+            "type": "array"
+          },
+          "markets": {
+            "items": {
+              "$ref": "#/components/schemas/LiquidationMarket"
+            },
+            "title": "Markets",
+            "type": "array"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "positions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Positions",
+            "type": "array"
+          },
+          "record": {
+            "title": "Record",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/LiquidationScenario"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "sectors": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sectors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "run_id",
+          "available"
+        ],
+        "title": "LiquidationStress",
+        "type": "object"
+      },
       "LiquidityBucket": {
         "additionalProperties": true,
         "properties": {
@@ -10646,6 +10904,138 @@
               }
             ],
             "title": "Limits Monitored"
+          },
+          "liquidation_concentration_addon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Concentration Addon"
+          },
+          "liquidation_exit_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Exit Cost"
+          },
+          "liquidation_largest_horizon_addon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Largest Horizon Addon"
+          },
+          "liquidation_largest_horizon_addon_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Largest Horizon Addon Scenario"
+          },
+          "liquidation_longest_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Longest Days"
+          },
+          "liquidation_longest_market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Longest Market"
+          },
+          "liquidation_markets_over_10d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Markets Over 10D"
+          },
+          "liquidation_worst_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Worst Loss"
+          },
+          "liquidation_worst_plain": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Worst Plain"
+          },
+          "liquidation_worst_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Worst Scenario"
+          },
+          "liquidation_worst_sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Worst Sector"
+          },
+          "liquidation_worst_sector_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation Worst Sector Loss"
           },
           "liquidity_adjusted_var": {
             "anyOf": [
@@ -23687,6 +24077,97 @@
           }
         },
         "summary": "Limits"
+      }
+    },
+    "/runs/{run_id}/liquidation-stress": {
+      "get": {
+        "operationId": "liquidation_stress_runs__run_id__liquidation_stress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiquidationStress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Run, trade, breach or other record not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Workflow rule violated"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Validation failed"
+          }
+        },
+        "summary": "Liquidation Stress"
       }
     },
     "/runs/{run_id}/liquidity": {

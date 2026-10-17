@@ -1107,6 +1107,107 @@ elif page == "Stress":
             "margin, up to a fixed point. Funding rules are in Admin → Stress funding."
         )
 
+    st.divider()
+    st.subheader("Concentration and liquidation stress")
+    lz = load("liquidation_stress", run_id)
+    if not lz.get("available"):
+        st.info("This run predates the liquidation stress (MR-025); runs from round 53 on carry it.")
+    else:
+        sc_l = df(lz["scenarios"])
+        mk_l = df(lz["markets"])
+        worst_l = sc_l.iloc[0]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Exit cost, whole book", f"{mk_l['exit_cost'].sum() / M:,.0f}m" if len(mk_l) else "–")
+        c2.metric(
+            "Concentration add-on",
+            f"{mk_l['concentration_addon'].sum() / M:,.0f}m" if len(mk_l) else "–",
+            help="Exit cost per market less the same cost trade by trade",
+        )
+        c3.metric("Markets over 10 days", int((mk_l["horizon_days"] > 10).sum()) if len(mk_l) else 0)
+        c4.metric(
+            "Worst liquidation loss",
+            f"{worst_l['liquidation_loss'] / M:,.0f}m",
+            f"{worst_l['name']}: plain {worst_l['pnl'] / M:,.0f}m",
+            delta_color="off",
+        )
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "scenario": sc_l["name"],
+                    "set": sc_l["stress_set"],
+                    "plain loss (m)": sc_l["pnl"] / M,
+                    "slow-exit add-on (m)": sc_l["horizon_addon"] / M,
+                    "exit cost (m)": -sc_l["exit_cost"] / M,
+                    "liquidation loss (m)": sc_l["liquidation_loss"] / M,
+                    "trades scaled": sc_l["scaled_trades"],
+                }
+            ).round(1),
+            use_container_width=True,
+            hide_index=True,
+        )
+        pick_z = st.selectbox(
+            "Scenario", list(sc_l["scenario_id"]), format_func=lambda s_: s_, key="liquidation_scenario"
+        )
+        one_z = load("liquidation_stress", run_id, scenario_id=pick_z)
+        pos_z = df(one_z["positions"])
+        if not pos_z.empty:
+            st.markdown("**Positions that add most when exits are slow**")
+            st.dataframe(
+                pos_z.drop(columns=["scenario_id"]).round(2), use_container_width=True, hide_index=True
+            )
+        if len(mk_l):
+            st.markdown("**Markets by exit cost** (trades sharing one volume)")
+            show = mk_l[
+                [
+                    "market",
+                    "kind",
+                    "desks",
+                    "trades",
+                    "net_exposure",
+                    "horizon_days",
+                    "trade_horizon_days",
+                    "loss_scale",
+                    "exit_cost",
+                    "trade_view_cost",
+                    "concentration_addon",
+                ]
+            ].copy()
+            for c in ("net_exposure", "exit_cost", "trade_view_cost", "concentration_addon"):
+                show[c] = show[c] / M
+            st.dataframe(show.round(2).head(25), use_container_width=True, hide_index=True)
+        iss_z, sec_z = df(lz["issuers"]), df(lz["sectors"])
+        a, b = st.columns(2)
+        if not iss_z.empty:
+            a.markdown("**Issuers**")
+            a.dataframe(
+                iss_z[["issuer", "sector", "markets", "gross_exposure", "longest_days", "exit_cost"]]
+                .assign(
+                    gross_exposure=lambda d: d["gross_exposure"] / M, exit_cost=lambda d: d["exit_cost"] / M
+                )
+                .round(2)
+                .head(15),
+                use_container_width=True,
+                hide_index=True,
+            )
+        if not sec_z.empty:
+            b.markdown("**Sector shocks beyond the market**")
+            b.dataframe(
+                sec_z.assign(pnl=lambda d: d["pnl"] / M, adjusted_pnl=lambda d: d["adjusted_pnl"] / M).round(
+                    3
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        st.caption(
+            "A market is the trades that share one volume: a name, a futures contract month or an "
+            "option strike bucket (each OTC trade is its own). Its exit horizon is the net position "
+            "over participation × stressed volume (the default action rule). A scenario's loss on a "
+            "market slower than 10 days is scaled by √(days/10), at most √12; hedges in liquid markets "
+            "are not, so the add-on shows the basis. Exit cost is the stressed half spread plus "
+            "square-root impact on the market's daily stressed volatility; the concentration add-on "
+            "is that cost less the same cost trade by trade (MR-025, information only)."
+        )
+
 elif page == "Stress library":
     header("Stress library")
     st.caption(

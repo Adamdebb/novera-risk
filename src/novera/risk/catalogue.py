@@ -202,6 +202,16 @@ MEASURE_CATALOGUE: tuple[RiskArea, ...] = (
                 "Margin, collateral and funding chain with the liquidity spiral",
             ),
             MeasureSpec(
+                "MR-025",
+                "Concentration and liquidation stress",
+                "Days to exit each market at stressed volume, the cost of getting out (stressed spread and "
+                "square-root impact) and its concentration add-on over the trade-by-trade view, every stress "
+                "scenario's loss scaled for slow exits, and sector shocks beyond the market.",
+                "reporting currency",
+                "Stress",
+                "Concentration and liquidation stress",
+            ),
+            MeasureSpec(
                 "MR-007",
                 "Daily P&L explain",
                 "Day-on-day P&L as a full-revaluation waterfall (carry, factor moves, new and dead "

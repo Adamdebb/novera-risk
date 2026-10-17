@@ -65,6 +65,7 @@ def seed_limits(
                     reverse_stress=False,
                     stress_monte_carlo=False,
                     stress_paths=False,
+                    liquidation_stress=False,
                 ),
                 day1,
                 runs_dir=tmp / "runs",
